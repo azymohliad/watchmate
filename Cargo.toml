@@ -1,0 +1,13 @@
+[package]
+name = "watchmate"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+gtk = { version = "0.4.7", package = "gtk4" }
+relm4 = {version = "0.4.4", features = ["libadwaita", "macros"] }
+bluer = { version = "0.15.0", features = ["bluetoothd"] }
+tokio = { version = "1.17.0", features = ["rt-multi-thread"] }
+futures = "0.3.21"
