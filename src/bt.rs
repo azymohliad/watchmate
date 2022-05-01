@@ -61,8 +61,8 @@ impl Host {
                     }
                 }
             },
-            Err(e) => {
-                eprintln!("Error: {}", e);
+            Err(error) => {
+                eprintln!("Error: {}", error);
             }
         }
     }

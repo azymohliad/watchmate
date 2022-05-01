@@ -68,7 +68,8 @@ impl FactoryPrototype for DeviceInfo {
 struct AppModel {
     rt: Runtime,
     bt: bt::Host,
-    devices: FactoryVecDeque<DeviceInfo>
+    devices: FactoryVecDeque<DeviceInfo>,
+    toast_overlay: adw::ToastOverlay,
 }
 
 impl Model for AppModel {
@@ -134,6 +135,7 @@ impl AppUpdate for AppModel {
             }
             AppMsg::DeviceConnected(address) => {
                 println!("Connected: {}", address.to_string());
+                self.toast_overlay.add_toast(&adw::Toast::new("Connected"));
             }
         }
         true
@@ -153,31 +155,33 @@ impl Widgets<AppModel, ()> for AppWidgets {
                         set_label: "WatchMate",
                     }
                 },
-                append = &gtk::Box {
-                    set_orientation: gtk::Orientation::Vertical,
-                    set_margin_all: 5,
-                    set_spacing: 5,
+                append = &Clone::clone(&model.toast_overlay) -> adw::ToastOverlay {
+                    set_child = Some(&gtk::Box) {
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_margin_all: 5,
+                        set_spacing: 5,
 
-                    append = &gtk::Button {
-                        set_label: watch!(if model.bt.is_scanning() { "Stop" } else { "Start" }),
-                        connect_clicked(sender) => move |_| {
-                            send!(sender, AppMsg::ScanToggled);
+                        append = &gtk::Button {
+                            set_label: watch!(if model.bt.is_scanning() { "Stop" } else { "Start" }),
+                            connect_clicked(sender) => move |_| {
+                                send!(sender, AppMsg::ScanToggled);
+                            },
                         },
-                    },
 
-                    append = &gtk::ScrolledWindow {
-                        set_hscrollbar_policy: gtk::PolicyType::Never,
-                        set_vexpand: true,
-                        set_child = Some(&adw::Clamp) {
-                            set_maximum_size: 400,
-                            set_child = Some(&gtk::ListBox) {
-                                set_margin_all: 5,
-                                set_valign: gtk::Align::Start,
-                                add_css_class: "boxed-list",
-                                factory!(model.devices),
-                                connect_row_activated(sender) => move |_, row| {
-                                    send!(sender, AppMsg::DeviceSelected(row.index()))
-                                }
+                        append = &gtk::ScrolledWindow {
+                            set_hscrollbar_policy: gtk::PolicyType::Never,
+                            set_vexpand: true,
+                            set_child = Some(&adw::Clamp) {
+                                set_maximum_size: 400,
+                                set_child = Some(&gtk::ListBox) {
+                                    set_margin_all: 5,
+                                    set_valign: gtk::Align::Start,
+                                    add_css_class: "boxed-list",
+                                    factory!(model.devices),
+                                    connect_row_activated(sender) => move |_, row| {
+                                        send!(sender, AppMsg::DeviceSelected(row.index()))
+                                    }
+                                },
                             },
                         },
                     },
@@ -188,12 +192,14 @@ impl Widgets<AppModel, ()> for AppWidgets {
 }
 
 fn main() {
+    gtk::init().unwrap();
     let rt = Runtime::new().unwrap();
     let bt = rt.block_on(async { bt::Host::new().await }).unwrap();
     let model = AppModel {
         rt,
         bt,
         devices: FactoryVecDeque::new(),
+        toast_overlay: adw::ToastOverlay::new(),
     };
     let app = RelmApp::new(model);
     app.run();
