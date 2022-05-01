@@ -11,6 +11,7 @@ enum AppMsg {
     DeviceAdded(bluer::Address),
     DeviceRemoved(bluer::Address),
     DeviceSelected(i32),
+    DeviceConnected(bluer::Address),
 }
 
 #[derive(Debug)]
@@ -115,9 +116,24 @@ impl AppUpdate for AppModel {
                 }
             }
             AppMsg::DeviceSelected(index) => {
-                let device = self.devices.get(index as usize);
-                println!("Selected device: {:?}", device);
-
+                if let Some(info) = self.devices.get(index as usize) {
+                    println!("Selected device: {:?}", info);
+                    match self.bt.device(info.address) {
+                        Ok(device) => {
+                            let address = info.address;
+                            self.rt.spawn(async move {
+                                match device.connect().await {
+                                    Ok(()) => sender.send(AppMsg::DeviceConnected(address)).unwrap(),
+                                    Err(error) => eprintln!("Error: {}", error),
+                                }
+                            });
+                        }
+                        Err(error) => eprintln!("Error: {}", error),
+                    }
+                }
+            }
+            AppMsg::DeviceConnected(address) => {
+                println!("Connected: {}", address.to_string());
             }
         }
         true
