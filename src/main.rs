@@ -1,27 +1,26 @@
-use std::sync::Arc;
-use tokio::{runtime::Runtime, sync::Notify};
+use tokio::runtime::Runtime;
 use adw::prelude::AdwApplicationWindowExt;
 use gtk::prelude::{BoxExt, ButtonExt, GtkWindowExt, OrientableExt, ListBoxRowExt, WidgetExt};
 use relm4::{send, adw, Sender, Widgets, WidgetPlus, Model, AppUpdate, RelmApp, factory::{FactoryPrototype, FactoryVecDeque, DynamicIndex}};
 
-mod ble;
+mod bt;
 
 #[derive(Debug)]
-pub enum AppMsg {
-    ScannerToggled,
-    DeviceAdded(DeviceInfo),
+enum AppMsg {
+    ScanToggled,
+    DeviceAdded(bluer::Address),
     DeviceRemoved(bluer::Address),
     DeviceSelected(i32),
 }
 
 #[derive(Debug)]
-pub struct DeviceInfo {
-    pub address: bluer::Address,
-    pub name: Option<String>,
-    pub rssi: Option<i16>,
+struct DeviceInfo {
+    address: bluer::Address,
+    name: Option<String>,
+    rssi: Option<i16>,
 }
 
-#[relm4::factory_prototype(pub)]
+#[relm4::factory_prototype]
 impl FactoryPrototype for DeviceInfo {
     type Factory = FactoryVecDeque<Self>;
     type Widgets = DeviceInfoWidgets;
@@ -67,8 +66,7 @@ impl FactoryPrototype for DeviceInfo {
 
 struct AppModel {
     rt: Runtime,
-    notifier: Arc<Notify>,
-    is_discovering: bool,
+    bt: bt::Host,
     devices: FactoryVecDeque<DeviceInfo>
 }
 
@@ -81,20 +79,35 @@ impl Model for AppModel {
 impl AppUpdate for AppModel {
     fn update(&mut self, msg: AppMsg, _components: &(), sender: Sender<AppMsg>) -> bool {
         match msg {
-            AppMsg::ScannerToggled => {
-                self.is_discovering = !self.is_discovering;
-                if self.is_discovering {
+            AppMsg::ScanToggled => {
+                if !self.bt.is_scanning() {
                     self.devices.clear();
-                    let notifier = self.notifier.clone();
-                    self.rt.spawn(async {
-                        ble::scan(notifier, sender).await.unwrap();
+                    self.bt.scan_start(&self.rt, move |event| {
+                        match event {
+                            bluer::AdapterEvent::DeviceAdded(address) => {
+                                sender.send(AppMsg::DeviceAdded(address)).unwrap();
+                            }
+                            bluer::AdapterEvent::DeviceRemoved(address) => {
+                                sender.send(AppMsg::DeviceRemoved(address)).unwrap();
+                            }
+                            _ => (),
+                        }
                     });
                 } else {
-                    self.notifier.notify_one();
+                    self.bt.scan_stop();
                 }
             }
-            AppMsg::DeviceAdded(info) => {
-                self.devices.push_front(info);
+            AppMsg::DeviceAdded(address) => {
+                if let Ok(device) = self.bt.device(address) {
+                    let info = self.rt.block_on(async {
+                        DeviceInfo {
+                            address,
+                            name: device.name().await.unwrap(),
+                            rssi: device.rssi().await.unwrap(),
+                        }
+                    });
+                    self.devices.push_front(info);
+                }
             }
             AppMsg::DeviceRemoved(address) => {
                 if let Some((index, _)) = self.devices.iter().enumerate().find(|(_, d)| d.address == address) {
@@ -130,9 +143,9 @@ impl Widgets<AppModel, ()> for AppWidgets {
                     set_spacing: 5,
 
                     append = &gtk::Button {
-                        set_label: watch!(if model.is_discovering { "Stop" } else { "Start" }),
+                        set_label: watch!(if model.bt.is_scanning() { "Stop" } else { "Start" }),
                         connect_clicked(sender) => move |_| {
-                            send!(sender, AppMsg::ScannerToggled);
+                            send!(sender, AppMsg::ScanToggled);
                         },
                     },
 
@@ -160,12 +173,11 @@ impl Widgets<AppModel, ()> for AppWidgets {
 
 fn main() {
     let rt = Runtime::new().unwrap();
-    let notifier = Arc::new(Notify::new());
+    let bt = rt.block_on(async { bt::Host::new().await }).unwrap();
     let model = AppModel {
         rt,
-        notifier,
+        bt,
         devices: FactoryVecDeque::new(),
-        is_discovering: false,
     };
     let app = RelmApp::new(model);
     app.run();
