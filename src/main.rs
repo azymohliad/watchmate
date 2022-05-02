@@ -7,6 +7,7 @@ mod bt;
 
 #[derive(Debug)]
 enum AppMsg {
+    SetView(AppView),
     ScanToggled,
     DeviceAdded(bluer::Address),
     DeviceRemoved(bluer::Address),
@@ -89,11 +90,19 @@ impl FactoryPrototype for DeviceInfo {
     fn position(&self, _index: &DynamicIndex) {}
 }
 
+#[derive(Debug, PartialEq)]
+enum AppView {
+    Main,
+    Scan,
+}
+
 struct AppModel {
     rt: Runtime,
     bt: bt::Host,
     devices: FactoryVecDeque<DeviceInfo>,
     toast_overlay: adw::ToastOverlay,
+    active_view: AppView,
+    device: Option<DeviceInfo>,
 }
 
 impl Model for AppModel {
@@ -105,6 +114,9 @@ impl Model for AppModel {
 impl AppUpdate for AppModel {
     fn update(&mut self, msg: AppMsg, _components: &(), sender: Sender<AppMsg>) -> bool {
         match msg {
+            AppMsg::SetView(view) => {
+                self.active_view = view;
+            }
             AppMsg::ScanToggled => {
                 if !self.bt.is_scanning() {
                     self.devices.clear();
@@ -154,6 +166,11 @@ impl AppUpdate for AppModel {
             AppMsg::DeviceConnected(address) => {
                 println!("Connected: {}", address.to_string());
                 self.toast_overlay.add_toast(&adw::Toast::new("Connected"));
+                self.active_view = AppView::Main;
+                if let Ok(device) = self.bt.device(address) {
+                    let info = self.rt.block_on(DeviceInfo::from(&device)).unwrap();
+                    self.device = Some(info);
+                }
             }
         }
         true
@@ -169,41 +186,90 @@ impl Widgets<AppModel, ()> for AppWidgets {
             set_content = Some(&gtk::Box) {
                 set_orientation: gtk::Orientation::Vertical,
                 append = &adw::HeaderBar {
-                    set_title_widget = Some(&gtk::Label) {
-                        set_label: "WatchMate",
-                    }
+                    set_title_widget = Some(&gtk::Box) {
+                        set_margin_all: 5,
+                        set_orientation: gtk::Orientation::Vertical,
+                        append = &gtk::Label {
+                            set_label: watch!(if let Some(device) = &model.device {
+                                device.name.as_ref().unwrap()
+                            } else {
+                                "WatchMate"
+                            }),
+                        },
+                        append = &gtk::Label {
+                            set_label: watch!(if let Some(_device) = &model.device {
+                                "Connected" // TODO: Print bluetooth address instead
+                            } else {
+                                "Not connected"
+                            }),
+                            add_css_class: "dim-label",
+                        },
+                    },
+                    pack_start = &gtk::Button {
+                        set_label: "Back",
+                        set_icon_name: "go-previous-symbolic",
+                        set_visible: watch!(model.active_view != AppView::Main),
+                        connect_clicked(sender) => move |_| {
+                            send!(sender, AppMsg::SetView(AppView::Main));
+                        },
+                    },
+                    pack_start = &gtk::Button {
+                        set_label: "Devices",
+                        set_icon_name: watch!(if model.device.is_some() {
+                            "bluetooth-symbolic"
+                        } else {
+                            "bluetooth-disconnected-symbolic"
+                        }),
+                        connect_clicked(sender) => move |_| {
+                            send!(sender, AppMsg::SetView(AppView::Scan));
+                        },
+                    },
                 },
                 append = &Clone::clone(&model.toast_overlay) -> adw::ToastOverlay {
-                    set_child = Some(&adw::Clamp) {
-                        set_maximum_size: 400,
-                        set_child = Some(&gtk::Box) {
-                            set_orientation: gtk::Orientation::Vertical,
-                            set_margin_all: 5,
-                            set_spacing: 5,
-                            append = &gtk::Button {
-                                set_child = Some(&adw::ButtonContent) {
-                                    set_label: watch!(if model.bt.is_scanning() { "Scanning..." } else { "Scan" }),
-                                    set_icon_name: watch!(if model.bt.is_scanning() { "bluetooth-acquiring-symbolic" } else { "bluetooth-symbolic" }),
+                    set_child = Some(&gtk::Stack) {
+                        add_named(Some("main_view")) = &gtk::Box {},
+                        add_named(Some("scan_view")) = &adw::Clamp {
+                            set_maximum_size: 400,
+                            set_child = Some(&gtk::Box) {
+                                set_orientation: gtk::Orientation::Vertical,
+                                set_margin_all: 5,
+                                set_spacing: 5,
+                                append = &gtk::Button {
+                                    set_child = Some(&adw::ButtonContent) {
+                                        set_label: watch!(if model.bt.is_scanning() {
+                                            "Scanning..."
+                                        } else {
+                                            "Scan"
+                                        }),
+                                        set_icon_name: watch!(if model.bt.is_scanning() {
+                                            "bluetooth-acquiring-symbolic"
+                                        } else {
+                                            "bluetooth-symbolic"
+                                        }),
+                                    },
+                                    connect_clicked(sender) => move |_| {
+                                        send!(sender, AppMsg::ScanToggled);
+                                    },
                                 },
-                                connect_clicked(sender) => move |_| {
-                                    send!(sender, AppMsg::ScanToggled);
-                                },
-                            },
-
-                            append = &gtk::ScrolledWindow {
-                                set_hscrollbar_policy: gtk::PolicyType::Never,
-                                set_vexpand: true,
-                                set_child = Some(&gtk::ListBox) {
-                                    // set_margin_all: 5,
-                                    set_valign: gtk::Align::Start,
-                                    add_css_class: "boxed-list",
-                                    factory!(model.devices),
-                                    connect_row_activated(sender) => move |_, row| {
-                                        send!(sender, AppMsg::DeviceSelected(row.index()))
-                                    }
+                                append = &gtk::ScrolledWindow {
+                                    set_hscrollbar_policy: gtk::PolicyType::Never,
+                                    set_vexpand: true,
+                                    set_child = Some(&gtk::ListBox) {
+                                        // set_margin_all: 5,
+                                        set_valign: gtk::Align::Start,
+                                        add_css_class: "boxed-list",
+                                        factory!(model.devices),
+                                        connect_row_activated(sender) => move |_, row| {
+                                            send!(sender, AppMsg::DeviceSelected(row.index()))
+                                        }
+                                    },
                                 },
                             },
                         },
+                        set_visible_child_name: watch!(match model.active_view {
+                            AppView::Main => "main_view",
+                            AppView::Scan => "scan_view",
+                        }),
                     },
                 },
             },
@@ -220,6 +286,8 @@ fn main() {
         bt,
         devices: FactoryVecDeque::new(),
         toast_overlay: adw::ToastOverlay::new(),
+        active_view: AppView::Scan,
+        device: None,
     };
     let app = RelmApp::new(model);
     app.run();
