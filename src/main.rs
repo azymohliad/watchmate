@@ -19,6 +19,18 @@ struct DeviceInfo {
     address: bluer::Address,
     name: Option<String>,
     rssi: Option<i16>,
+    connected: bool,
+}
+
+impl DeviceInfo {
+    async fn from(device: &bluer::Device) -> bluer::Result<Self> {
+        Ok(Self {
+            address: device.address(),
+            name: device.name().await?,
+            rssi: device.rssi().await?,
+            connected: device.is_connected().await?,
+        })
+    }
 }
 
 #[relm4::factory_prototype]
@@ -32,9 +44,21 @@ impl FactoryPrototype for DeviceInfo {
         gtk::ListBoxRow {
             set_child = Some(&gtk::Box) {
                 set_orientation: gtk::Orientation::Vertical,
-                append = &gtk::Label {
-                    set_margin_all: 5,
-                    set_label: self.name.as_ref().unwrap_or(&"Unknown Device".to_string()),
+                append = &gtk::Box {
+                    set_orientation: gtk::Orientation::Horizontal,
+                    append = &gtk::Label {
+                        set_margin_all: 5,
+                        set_halign: gtk::Align::Start,
+                        set_hexpand: true,
+                        set_label: self.name.as_ref().unwrap_or(&"Unknown Device".to_string()),
+                    },
+                    append = &gtk::Image {
+                        set_margin_all: 5,
+                        set_halign: gtk::Align::End,
+                        set_hexpand: true,
+                        set_icon_name: Some("emblem-default-symbolic"),
+                        set_visible: watch!(self.connected),
+                    }
                 },
                 append = &gtk::Box {
                     set_orientation: gtk::Orientation::Horizontal,
@@ -48,7 +72,7 @@ impl FactoryPrototype for DeviceInfo {
                         add_css_class: "dim-label",
                     },
                     append = &gtk::Label {
-                        set_margin_end: 5,
+                        set_margin_all: 5,
                         set_halign: gtk::Align::End,
                         set_hexpand: true,
                         set_label: &match self.rssi {
@@ -56,9 +80,9 @@ impl FactoryPrototype for DeviceInfo {
                             None => String::from("Unreachable"),
                         },
                         add_css_class: "dim-label",
-                    }
-                }
-            }
+                    },
+                },
+            },
         }
     }
 
@@ -101,13 +125,7 @@ impl AppUpdate for AppModel {
             }
             AppMsg::DeviceAdded(address) => {
                 if let Ok(device) = self.bt.device(address) {
-                    let info = self.rt.block_on(async {
-                        DeviceInfo {
-                            address,
-                            name: device.name().await.unwrap(),
-                            rssi: device.rssi().await.unwrap(),
-                        }
-                    });
+                    let info = self.rt.block_on(DeviceInfo::from(&device)).unwrap();
                     self.devices.push_front(info);
                 }
             }
@@ -156,25 +174,27 @@ impl Widgets<AppModel, ()> for AppWidgets {
                     }
                 },
                 append = &Clone::clone(&model.toast_overlay) -> adw::ToastOverlay {
-                    set_child = Some(&gtk::Box) {
-                        set_orientation: gtk::Orientation::Vertical,
-                        set_margin_all: 5,
-                        set_spacing: 5,
-
-                        append = &gtk::Button {
-                            set_label: watch!(if model.bt.is_scanning() { "Stop" } else { "Start" }),
-                            connect_clicked(sender) => move |_| {
-                                send!(sender, AppMsg::ScanToggled);
+                    set_child = Some(&adw::Clamp) {
+                        set_maximum_size: 400,
+                        set_child = Some(&gtk::Box) {
+                            set_orientation: gtk::Orientation::Vertical,
+                            set_margin_all: 5,
+                            set_spacing: 5,
+                            append = &gtk::Button {
+                                set_child = Some(&adw::ButtonContent) {
+                                    set_label: watch!(if model.bt.is_scanning() { "Scanning..." } else { "Scan" }),
+                                    set_icon_name: watch!(if model.bt.is_scanning() { "bluetooth-acquiring-symbolic" } else { "bluetooth-symbolic" }),
+                                },
+                                connect_clicked(sender) => move |_| {
+                                    send!(sender, AppMsg::ScanToggled);
+                                },
                             },
-                        },
 
-                        append = &gtk::ScrolledWindow {
-                            set_hscrollbar_policy: gtk::PolicyType::Never,
-                            set_vexpand: true,
-                            set_child = Some(&adw::Clamp) {
-                                set_maximum_size: 400,
+                            append = &gtk::ScrolledWindow {
+                                set_hscrollbar_policy: gtk::PolicyType::Never,
+                                set_vexpand: true,
                                 set_child = Some(&gtk::ListBox) {
-                                    set_margin_all: 5,
+                                    // set_margin_all: 5,
                                     set_valign: gtk::Align::Start,
                                     add_css_class: "boxed-list",
                                     factory!(model.devices),
