@@ -102,8 +102,14 @@ struct AppModel {
     adapter: bluer::Adapter,
     scanner: bt::Scanner,
     devices: FactoryVecDeque<DeviceInfo>,
-    infinitime: Option<DeviceInfo>,
+    infinitime: Option<bt::InfiniTime>,
     toast_overlay: adw::ToastOverlay,
+}
+
+impl AppModel {
+    fn notify(&self, message: &str) {
+        self.toast_overlay.add_toast(&adw::Toast::new(message));
+    }
 }
 
 impl Model for AppModel {
@@ -160,18 +166,28 @@ impl AppUpdate for AppModel {
                                 }
                             });
                         }
-                        Err(error) => eprintln!("Error: {}", error),
+                        Err(error) => self.notify(&format!("Error: {}", error)),
                     }
                 }
             }
             AppMsg::DeviceConnected(address) => {
                 println!("Connected: {}", address.to_string());
-                self.toast_overlay.add_toast(&adw::Toast::new("Connected"));
                 self.active_view = AppView::Main;
-                if let Ok(device) = self.adapter.device(address) {
-                    let info = self.rt.block_on(DeviceInfo::from(&device)).unwrap();
-                    self.infinitime = Some(info);
-                    // self.rt.block_on(infinitime.read_battery_level(&device));
+                match self.adapter.device(address) {
+                    Ok(device) => match self.rt.block_on(bt::InfiniTime::new(device)) {
+                        Ok(infinitime) => {
+                            self.notify("Connected");
+                            let battery_soc = self.rt.block_on(infinitime.read_battery_level()).unwrap();
+                            println!("Battery: {}%", battery_soc);
+                            self.infinitime = Some(infinitime);
+                        }
+                        Err(error) => {
+                            self.notify(&format!("Error: {}", error));
+                        }
+                    }
+                    Err(error) => {
+                        self.notify(&format!("Error: {}", error));
+                    }
                 }
             }
         }
@@ -193,7 +209,7 @@ impl Widgets<AppModel, ()> for AppWidgets {
                         set_orientation: gtk::Orientation::Vertical,
                         append = &gtk::Label {
                             set_label: watch!(if let Some(infinitime) = &model.infinitime {
-                                infinitime.name.as_ref().unwrap()
+                                infinitime.get_name().unwrap_or("")
                             } else {
                                 "WatchMate"
                             }),

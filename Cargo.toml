@@ -11,3 +11,4 @@ relm4 = {version = "0.4.4", features = ["libadwaita", "macros"] }
 bluer = { version = "0.15.0", features = ["bluetoothd"] }
 tokio = { version = "1.17.0", features = ["rt-multi-thread"] }
 futures = "0.3.21"
+uuid = "1.0.0"

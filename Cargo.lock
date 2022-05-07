@@ -1145,6 +1145,7 @@ dependencies = [
  "gtk4",
  "relm4",
  "tokio",
+ "uuid",
 ]
 
 [[package]]
