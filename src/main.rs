@@ -326,12 +326,49 @@ impl Widgets<AppModel, ()> for AppWidgets {
             },
         }
     }
+
+    fn post_init() {
+        // Automatic device selection logic
+        if let Some(device) = model.devices.iter().find(|d| d.connected) {
+            // If suitable device is already connected - just report it as connected
+            send!(sender, AppMsg::DeviceConnected(device.address));
+            println!("InfiniTime ({}) is already connected", device.address.to_string());
+        } else {
+            let suitable_devices = model.devices.iter()
+                .enumerate()
+                .filter(|(_, d)| d.name.as_ref().map(String::as_str) == Some("InfiniTime"))
+                .collect::<Vec<_>>();
+
+            if suitable_devices.is_empty() {
+                // If no suitable devices are known - start scanning automatically
+                send!(sender, AppMsg::ScanToggled);
+                println!("No InfiniTime devices are known. Scanning...");
+            } else if suitable_devices.len() == 1 {
+                // If only one suitable device is known - try to connect to it automatically
+                let (idx, device) = suitable_devices[0];
+                send!(sender, AppMsg::DeviceSelected(idx as i32));
+                println!("Trying to connect to InfiniTime ({})", device.address.to_string());
+            } else {
+                println!("Multiple InfiniTime devices are known. Waiting for the user to select");
+            }
+        }
+    }
 }
 
 fn main() {
     gtk::init().unwrap();
     let rt = Runtime::new().unwrap();
     let adapter = rt.block_on(bt::init_adapter()).unwrap();
+    let known_devices = rt.block_on(async {
+        let mut result = FactoryVecDeque::new();
+        for address in adapter.device_addresses().await? {
+            let device = adapter.device(address)?;
+            let info = DeviceInfo::from(&device).await?;
+            result.push_back(info);
+        }
+        Ok(result) as bluer::Result<FactoryVecDeque<DeviceInfo>>
+    }).unwrap();
+
     let scanner = bt::Scanner::new();
     let model = AppModel {
         // Main UI model
@@ -341,7 +378,7 @@ fn main() {
         // Bluetooth
         adapter,
         scanner,
-        devices: FactoryVecDeque::new(),
+        devices: known_devices,
         infinitime: None,
         battery_level: 0,
         // Widget handles
