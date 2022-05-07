@@ -97,12 +97,13 @@ enum AppView {
 }
 
 struct AppModel {
-    rt: Runtime,
-    bt: bt::Host,
-    devices: FactoryVecDeque<DeviceInfo>,
-    toast_overlay: adw::ToastOverlay,
     active_view: AppView,
-    device: Option<DeviceInfo>,
+    rt: Runtime,
+    adapter: bluer::Adapter,
+    scanner: bt::Scanner,
+    devices: FactoryVecDeque<DeviceInfo>,
+    infinitime: Option<DeviceInfo>,
+    toast_overlay: adw::ToastOverlay,
 }
 
 impl Model for AppModel {
@@ -118,9 +119,9 @@ impl AppUpdate for AppModel {
                 self.active_view = view;
             }
             AppMsg::ScanToggled => {
-                if !self.bt.is_scanning() {
+                if !self.scanner.is_scanning() {
                     self.devices.clear();
-                    self.bt.scan_start(&self.rt, move |event| {
+                    self.scanner.start(self.adapter.clone(), &self.rt, move |event| {
                         match event {
                             bluer::AdapterEvent::DeviceAdded(address) => {
                                 sender.send(AppMsg::DeviceAdded(address)).unwrap();
@@ -132,11 +133,11 @@ impl AppUpdate for AppModel {
                         }
                     });
                 } else {
-                    self.bt.scan_stop();
+                    self.scanner.stop();
                 }
             }
             AppMsg::DeviceAdded(address) => {
-                if let Ok(device) = self.bt.device(address) {
+                if let Ok(device) = self.adapter.device(address) {
                     let info = self.rt.block_on(DeviceInfo::from(&device)).unwrap();
                     self.devices.push_front(info);
                 }
@@ -149,7 +150,7 @@ impl AppUpdate for AppModel {
             AppMsg::DeviceSelected(index) => {
                 if let Some(info) = self.devices.get(index as usize) {
                     println!("Selected device: {:?}", info);
-                    match self.bt.device(info.address) {
+                    match self.adapter.device(info.address) {
                         Ok(device) => {
                             let address = info.address;
                             self.rt.spawn(async move {
@@ -167,9 +168,10 @@ impl AppUpdate for AppModel {
                 println!("Connected: {}", address.to_string());
                 self.toast_overlay.add_toast(&adw::Toast::new("Connected"));
                 self.active_view = AppView::Main;
-                if let Ok(device) = self.bt.device(address) {
+                if let Ok(device) = self.adapter.device(address) {
                     let info = self.rt.block_on(DeviceInfo::from(&device)).unwrap();
-                    self.device = Some(info);
+                    self.infinitime = Some(info);
+                    // self.rt.block_on(infinitime.read_battery_level(&device));
                 }
             }
         }
@@ -190,14 +192,14 @@ impl Widgets<AppModel, ()> for AppWidgets {
                         set_margin_all: 5,
                         set_orientation: gtk::Orientation::Vertical,
                         append = &gtk::Label {
-                            set_label: watch!(if let Some(device) = &model.device {
-                                device.name.as_ref().unwrap()
+                            set_label: watch!(if let Some(infinitime) = &model.infinitime {
+                                infinitime.name.as_ref().unwrap()
                             } else {
                                 "WatchMate"
                             }),
                         },
                         append = &gtk::Label {
-                            set_label: watch!(if let Some(_device) = &model.device {
+                            set_label: watch!(if let Some(_infinitime) = &model.infinitime {
                                 "Connected" // TODO: Print bluetooth address instead
                             } else {
                                 "Not connected"
@@ -215,7 +217,7 @@ impl Widgets<AppModel, ()> for AppWidgets {
                     },
                     pack_start = &gtk::Button {
                         set_label: "Devices",
-                        set_icon_name: watch!(if model.device.is_some() {
+                        set_icon_name: watch!(if model.infinitime.is_some() {
                             "bluetooth-symbolic"
                         } else {
                             "bluetooth-disconnected-symbolic"
@@ -236,12 +238,12 @@ impl Widgets<AppModel, ()> for AppWidgets {
                                 set_spacing: 5,
                                 append = &gtk::Button {
                                     set_child = Some(&adw::ButtonContent) {
-                                        set_label: watch!(if model.bt.is_scanning() {
+                                        set_label: watch!(if model.scanner.is_scanning() {
                                             "Scanning..."
                                         } else {
                                             "Scan"
                                         }),
-                                        set_icon_name: watch!(if model.bt.is_scanning() {
+                                        set_icon_name: watch!(if model.scanner.is_scanning() {
                                             "bluetooth-acquiring-symbolic"
                                         } else {
                                             "bluetooth-symbolic"
@@ -280,14 +282,20 @@ impl Widgets<AppModel, ()> for AppWidgets {
 fn main() {
     gtk::init().unwrap();
     let rt = Runtime::new().unwrap();
-    let bt = rt.block_on(async { bt::Host::new().await }).unwrap();
+    let adapter = rt.block_on(bt::init_adapter()).unwrap();
+    let scanner = bt::Scanner::new();
     let model = AppModel {
-        rt,
-        bt,
-        devices: FactoryVecDeque::new(),
-        toast_overlay: adw::ToastOverlay::new(),
+        // Main UI model
         active_view: AppView::Scan,
-        device: None,
+        // Async runtime
+        rt,
+        // Bluetooth
+        adapter,
+        scanner,
+        devices: FactoryVecDeque::new(),
+        infinitime: None,
+        // Widget handles
+        toast_overlay: adw::ToastOverlay::new(),
     };
     let app = RelmApp::new(model);
     app.run();
