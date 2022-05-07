@@ -103,6 +103,7 @@ struct AppModel {
     scanner: bt::Scanner,
     devices: FactoryVecDeque<DeviceInfo>,
     infinitime: Option<bt::InfiniTime>,
+    battery_level: u8,
     toast_overlay: adw::ToastOverlay,
 }
 
@@ -177,8 +178,7 @@ impl AppUpdate for AppModel {
                     Ok(device) => match self.rt.block_on(bt::InfiniTime::new(device)) {
                         Ok(infinitime) => {
                             self.notify("Connected");
-                            let battery_soc = self.rt.block_on(infinitime.read_battery_level()).unwrap();
-                            println!("Battery: {}%", battery_soc);
+                            self.battery_level = self.rt.block_on(infinitime.read_battery_level()).unwrap();
                             self.infinitime = Some(infinitime);
                         }
                         Err(error) => {
@@ -245,13 +245,46 @@ impl Widgets<AppModel, ()> for AppWidgets {
                 },
                 append = &Clone::clone(&model.toast_overlay) -> adw::ToastOverlay {
                     set_child = Some(&gtk::Stack) {
-                        add_named(Some("main_view")) = &gtk::Box {},
+                        add_named(Some("main_view")) = &adw::Clamp {
+                            set_maximum_size: 400,
+                            set_visible: watch!(model.infinitime.is_some()),
+                            set_child = Some(&gtk::Box) {
+                                set_orientation: gtk::Orientation::Vertical,
+                                set_margin_all: 12,
+                                set_spacing: 10,
+                                append = &gtk::ListBox {
+                                    set_valign: gtk::Align::Start,
+                                    add_css_class: "boxed-list",
+                                    append = &gtk::ListBoxRow {
+                                        set_child = Some(&gtk::Box) {
+                                            set_orientation: gtk::Orientation::Horizontal,
+                                            set_margin_all: 12,
+                                            set_spacing: 10,
+                                            append = &gtk::Label {
+                                                set_label: "Battery",
+                                            },
+                                            append = &gtk::Label {
+                                                set_label: watch!(&format!("{}%", model.battery_level)),
+                                                add_css_class: "dim-label",
+                                            },
+                                            append = &gtk::LevelBar {
+                                                set_min_value: 0.0,
+                                                set_max_value: 100.0,
+                                                set_value: watch!(model.battery_level as f64),
+                                                set_hexpand: true,
+                                                set_valign: gtk::Align::Center,
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
                         add_named(Some("scan_view")) = &adw::Clamp {
                             set_maximum_size: 400,
                             set_child = Some(&gtk::Box) {
                                 set_orientation: gtk::Orientation::Vertical,
-                                set_margin_all: 5,
-                                set_spacing: 5,
+                                set_margin_all: 12,
+                                set_spacing: 10,
                                 append = &gtk::Button {
                                     set_child = Some(&adw::ButtonContent) {
                                         set_label: watch!(if model.scanner.is_scanning() {
@@ -310,6 +343,7 @@ fn main() {
         scanner,
         devices: FactoryVecDeque::new(),
         infinitime: None,
+        battery_level: 0,
         // Widget handles
         toast_overlay: adw::ToastOverlay::new(),
     };
