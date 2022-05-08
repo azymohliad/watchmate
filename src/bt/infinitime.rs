@@ -3,11 +3,9 @@ use bluer::{Address, Device, gatt::remote::Characteristic};
 use uuid::{uuid, Uuid};
 use anyhow::{anyhow, Result};
 
-// const SRV_DEVICE_INFO: Uuid = uuid!("0000180a-0000-1000-8000-00805f9b34fb");
-// const SRV_BATTERY: Uuid = uuid!("0000180f-0000-1000-8000-00805f9b34fb");
-
 const CHR_BATTERY_LEVEL: Uuid = uuid!("00002a19-0000-1000-8000-00805f9b34fb");
 const CHR_FIRMWARE_REVISION: Uuid = uuid!("00002a26-0000-1000-8000-00805f9b34fb");
+const CHR_HEART_RATE: Uuid = uuid!("00002a37-0000-1000-8000-00805f9b34fb");
 
 
 pub struct InfiniTime {
@@ -37,6 +35,12 @@ impl InfiniTime {
 
     pub async fn read_firmware_version(&self) -> Result<String> {
         Ok(String::from_utf8(self.read_characteristic(&CHR_FIRMWARE_REVISION).await?)?)
+    }
+
+    pub async fn read_heart_rate(&self) -> Result<u8> {
+        // TODO: Parse properly according to 3.106 Heart Rate Measurement
+        // from https://www.bluetooth.org/docman/handlers/DownloadDoc.ashx?doc_id=539729
+        Ok(self.read_characteristic(&CHR_HEART_RATE).await?[1])
     }
 
     async fn read_characteristic(&self, uuid: &Uuid) -> Result<Vec<u8>> {

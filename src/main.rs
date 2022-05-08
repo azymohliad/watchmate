@@ -113,6 +113,7 @@ struct AppModel {
     devices: FactoryVecDeque<DeviceInfo>,
     infinitime: Option<bt::InfiniTime>,
     battery_level: u8,
+    heart_rate: u8,
     firmware_version: String,
     toast_overlay: adw::ToastOverlay,
 }
@@ -191,6 +192,7 @@ impl AppUpdate for AppModel {
                             self.notify("Connected");
                             self.battery_level = self.rt.block_on(infinitime.read_battery_level()).unwrap();
                             self.firmware_version = self.rt.block_on(infinitime.read_firmware_version()).unwrap();
+                            self.heart_rate = self.rt.block_on(infinitime.read_heart_rate()).unwrap();
                             self.infinitime = Some(infinitime);
                         }
                         Err(error) => {
@@ -290,6 +292,34 @@ impl Widgets<AppModel, ()> for AppWidgets {
                                             },
                                         },
                                     },
+                                    append = &gtk::ListBoxRow {
+                                        set_selectable: false,
+                                        set_child = Some(&gtk::Box) {
+                                            set_orientation: gtk::Orientation::Horizontal,
+                                            set_margin_all: 12,
+                                            set_spacing: 10,
+                                            append = &gtk::Label {
+                                                set_label: "Heart Rate",
+                                                set_hexpand: true,
+                                                set_halign: gtk::Align::Start,
+                                            },
+                                            append = &gtk::Label {
+                                                set_label: watch!(&format!("{} BPM", model.heart_rate)),
+                                                add_css_class: "dim-label",
+                                                set_hexpand: true,
+                                                set_halign: gtk::Align::End,
+                                            },
+                                        },
+                                    },
+                                },
+                                append = &gtk::Label {
+                                    set_label: "System Info",
+                                    set_halign: gtk::Align::Start,
+                                    set_margin_top: 20,
+                                },
+                                append = &gtk::ListBox {
+                                    set_valign: gtk::Align::Start,
+                                    add_css_class: "boxed-list",
                                     append = &gtk::ListBoxRow {
                                         set_selectable: false,
                                         set_child = Some(&gtk::Box) {
@@ -429,6 +459,7 @@ fn main() {
         devices: known_devices,
         infinitime: None,
         battery_level: 0,
+        heart_rate: 0,
         firmware_version: String::new(),
         // Widget handles
         toast_overlay: adw::ToastOverlay::new(),
