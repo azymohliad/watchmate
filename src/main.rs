@@ -2,6 +2,7 @@ use tokio::runtime::Runtime;
 use adw::prelude::AdwApplicationWindowExt;
 use gtk::prelude::{BoxExt, ButtonExt, GtkWindowExt, OrientableExt, ListBoxRowExt, WidgetExt};
 use relm4::{send, adw, Sender, Widgets, WidgetPlus, Model, AppUpdate, RelmApp, factory::{FactoryPrototype, FactoryVecDeque, DynamicIndex}};
+use anyhow::Result;
 
 mod bt;
 
@@ -18,19 +19,27 @@ enum AppMsg {
 #[derive(Debug)]
 struct DeviceInfo {
     address: bluer::Address,
-    name: Option<String>,
+    alias: String,
     rssi: Option<i16>,
     connected: bool,
 }
 
 impl DeviceInfo {
-    async fn from(device: &bluer::Device) -> bluer::Result<Self> {
+    async fn new(device: &bluer::Device) -> Result<Self> {
         Ok(Self {
             address: device.address(),
-            name: device.name().await?,
+            alias: device.alias().await?,
             rssi: device.rssi().await?,
             connected: device.is_connected().await?,
         })
+    }
+
+    async fn new_filtered(device: &bluer::Device) -> Option<Self> {
+        if bt::InfiniTime::check_device(device).await {
+            Self::new(device).await.ok()
+        } else {
+            None
+        }
     }
 }
 
@@ -51,7 +60,7 @@ impl FactoryPrototype for DeviceInfo {
                         set_margin_all: 5,
                         set_halign: gtk::Align::Start,
                         set_hexpand: true,
-                        set_label: self.name.as_ref().unwrap_or(&"Unknown Device".to_string()),
+                        set_label: &self.alias,
                     },
                     append = &gtk::Image {
                         set_margin_all: 5,
@@ -78,7 +87,7 @@ impl FactoryPrototype for DeviceInfo {
                         set_hexpand: true,
                         set_label: &match self.rssi {
                             Some(rssi) => format!("RSSI: {}", rssi),
-                            None => String::from("Unreachable"),
+                            None => String::from("Saved"),
                         },
                         add_css_class: "dim-label",
                     },
@@ -104,6 +113,7 @@ struct AppModel {
     devices: FactoryVecDeque<DeviceInfo>,
     infinitime: Option<bt::InfiniTime>,
     battery_level: u8,
+    firmware_version: String,
     toast_overlay: adw::ToastOverlay,
 }
 
@@ -145,8 +155,9 @@ impl AppUpdate for AppModel {
             }
             AppMsg::DeviceAdded(address) => {
                 if let Ok(device) = self.adapter.device(address) {
-                    let info = self.rt.block_on(DeviceInfo::from(&device)).unwrap();
-                    self.devices.push_front(info);
+                    if let Some(info) = self.rt.block_on(DeviceInfo::new_filtered(&device)) {
+                        self.devices.push_front(info);
+                    }
                 }
             }
             AppMsg::DeviceRemoved(address) => {
@@ -179,6 +190,7 @@ impl AppUpdate for AppModel {
                         Ok(infinitime) => {
                             self.notify("Connected");
                             self.battery_level = self.rt.block_on(infinitime.read_battery_level()).unwrap();
+                            self.firmware_version = self.rt.block_on(infinitime.read_firmware_version()).unwrap();
                             self.infinitime = Some(infinitime);
                         }
                         Err(error) => {
@@ -209,7 +221,7 @@ impl Widgets<AppModel, ()> for AppWidgets {
                         set_orientation: gtk::Orientation::Vertical,
                         append = &gtk::Label {
                             set_label: watch!(if let Some(infinitime) = &model.infinitime {
-                                infinitime.get_name().unwrap_or("")
+                                infinitime.get_alias()
                             } else {
                                 "WatchMate"
                             }),
@@ -238,6 +250,7 @@ impl Widgets<AppModel, ()> for AppWidgets {
                         } else {
                             "bluetooth-disconnected-symbolic"
                         }),
+                        set_visible: watch!(model.active_view != AppView::Scan),
                         connect_clicked(sender) => move |_| {
                             send!(sender, AppMsg::SetView(AppView::Scan));
                         },
@@ -273,6 +286,24 @@ impl Widgets<AppModel, ()> for AppWidgets {
                                                 set_value: watch!(model.battery_level as f64),
                                                 set_hexpand: true,
                                                 set_valign: gtk::Align::Center,
+                                            },
+                                        },
+                                    },
+                                    append = &gtk::ListBoxRow {
+                                        set_child = Some(&gtk::Box) {
+                                            set_orientation: gtk::Orientation::Horizontal,
+                                            set_margin_all: 12,
+                                            set_spacing: 10,
+                                            append = &gtk::Label {
+                                                set_label: "Firmware Version",
+                                                set_hexpand: true,
+                                                set_halign: gtk::Align::Start,
+                                            },
+                                            append = &gtk::Label {
+                                                set_label: watch!(&model.firmware_version),
+                                                add_css_class: "dim-label",
+                                                set_hexpand: true,
+                                                set_halign: gtk::Align::End,
                                             },
                                         },
                                     },
@@ -334,20 +365,15 @@ impl Widgets<AppModel, ()> for AppWidgets {
             send!(sender, AppMsg::DeviceConnected(device.address));
             println!("InfiniTime ({}) is already connected", device.address.to_string());
         } else {
-            let suitable_devices = model.devices.iter()
-                .enumerate()
-                .filter(|(_, d)| d.name.as_ref().map(String::as_str) == Some("InfiniTime"))
-                .collect::<Vec<_>>();
-
-            if suitable_devices.is_empty() {
+            if model.devices.is_empty() {
                 // If no suitable devices are known - start scanning automatically
                 send!(sender, AppMsg::ScanToggled);
                 println!("No InfiniTime devices are known. Scanning...");
-            } else if suitable_devices.len() == 1 {
+            } else if model.devices.len() == 1 {
                 // If only one suitable device is known - try to connect to it automatically
-                let (idx, device) = suitable_devices[0];
-                send!(sender, AppMsg::DeviceSelected(idx as i32));
-                println!("Trying to connect to InfiniTime ({})", device.address.to_string());
+                send!(sender, AppMsg::DeviceSelected(0));
+                let address = model.devices.get(0).unwrap().address;
+                println!("Trying to connect to InfiniTime ({})", address.to_string());
             } else {
                 println!("Multiple InfiniTime devices are known. Waiting for the user to select");
             }
@@ -363,10 +389,11 @@ fn main() {
         let mut result = FactoryVecDeque::new();
         for address in adapter.device_addresses().await? {
             let device = adapter.device(address)?;
-            let info = DeviceInfo::from(&device).await?;
-            result.push_back(info);
+            if let Some(info) = DeviceInfo::new_filtered(&device).await {
+                result.push_back(info);
+            }
         }
-        Ok(result) as bluer::Result<FactoryVecDeque<DeviceInfo>>
+        Ok(result) as Result<FactoryVecDeque<DeviceInfo>>
     }).unwrap();
 
     let scanner = bt::Scanner::new();
@@ -381,6 +408,7 @@ fn main() {
         devices: known_devices,
         infinitime: None,
         battery_level: 0,
+        firmware_version: String::new(),
         // Widget handles
         toast_overlay: adw::ToastOverlay::new(),
     };
