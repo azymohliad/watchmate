@@ -139,13 +139,13 @@ impl relm4::Widgets<Model, super::Model> for Widgets {
                         set_margin_all: 12,
                         set_spacing: 10,
                         append = &gtk::Label {
-                            set_label: "Firmware Version",
+                            set_label: "Name",
                             set_hexpand: true,
                             set_halign: gtk::Align::Start,
                         },
                         append = &gtk::Label {
                             set_label: watch!(match &model.watch {
-                                Some(watch) => watch.firmware_version.as_str(),
+                                Some(watch) => watch.device.get_alias(),
                                 None => "Unavailable",
                             }),
                             add_css_class: "dim-label",
@@ -170,6 +170,28 @@ impl relm4::Widgets<Model, super::Model> for Widgets {
                                 Some(watch) => watch.device.get_address().to_string(),
                                 None => String::from("Unavailable"),
                             }.as_str()),
+                            add_css_class: "dim-label",
+                            set_hexpand: true,
+                            set_halign: gtk::Align::End,
+                        },
+                    },
+                },
+                append = &gtk::ListBoxRow {
+                    set_selectable: false,
+                    set_child = Some(&gtk::Box) {
+                        set_orientation: gtk::Orientation::Horizontal,
+                        set_margin_all: 12,
+                        set_spacing: 10,
+                        append = &gtk::Label {
+                            set_label: "Firmware Version",
+                            set_hexpand: true,
+                            set_halign: gtk::Align::Start,
+                        },
+                        append = &gtk::Label {
+                            set_label: watch!(match &model.watch {
+                                Some(watch) => watch.firmware_version.as_str(),
+                                None => "Unavailable",
+                            }),
                             add_css_class: "dim-label",
                             set_hexpand: true,
                             set_halign: gtk::Align::End,

@@ -39,7 +39,7 @@ impl relm4::Components<Model> for Components {
 struct Model {
     // UI state
     active_view: View,
-    watch: Option<String>,
+    is_connected: bool,
     // Non-UI state
     runtime: Runtime,
     adapter: Arc<bluer::Adapter>,
@@ -79,6 +79,7 @@ impl AppUpdate for Model {
             }
             Message::DeviceConnected(address) => {
                 println!("Connected: {}", address.to_string());
+                self.is_connected = true;
                 self.active_view = View::Main;
                 match self.adapter.device(address) {
                     Ok(device) => components.watch.send(watch::Message::Connected(device)).unwrap(),
@@ -106,13 +107,10 @@ impl relm4::Widgets<Model, ()> for Widgets {
                         set_margin_all: 5,
                         set_orientation: gtk::Orientation::Vertical,
                         append = &gtk::Label {
-                            set_label: watch!(match &model.watch {
-                                Some(alias) => &alias,
-                                None => "WatchMate",
-                            }),
+                            set_label: "WatchMate",
                         },
                         append = &gtk::Label {
-                            set_label: watch!(if model.watch.is_some() {
+                            set_label: watch!(if model.is_connected {
                                 "Connected"
                             } else {
                                 "Not connected"
@@ -130,7 +128,7 @@ impl relm4::Widgets<Model, ()> for Widgets {
                     },
                     pack_start = &gtk::Button {
                         set_label: "Devices",
-                        set_icon_name: watch!(if model.watch.is_some() {
+                        set_icon_name: watch!(if model.is_connected {
                             "bluetooth-symbolic"
                         } else {
                             "bluetooth-disconnected-symbolic"
@@ -179,7 +177,7 @@ pub fn run(runtime: Runtime, adapter: Arc<bluer::Adapter>) {
     let model = Model {
         // UI state
         active_view: View::Scan,
-        watch: None,
+        is_connected: false,
         // System
         runtime,
         adapter,

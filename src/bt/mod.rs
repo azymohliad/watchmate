@@ -20,10 +20,10 @@ pub async fn init_adapter() -> Result<Adapter> {
 async fn read_characteristics_map(device: &Device) -> Result<HashMap<Uuid, Characteristic>> {
     let mut result = HashMap::new();
     for service in device.services().await? {
-        println!("Service {}", service.uuid().await?.to_string());
+        // println!("Service {}", service.uuid().await?.to_string());
         for characteristic in service.characteristics().await? {
             let uuid = characteristic.uuid().await?;
-            println!("    - Characteristic {}", uuid.to_string());
+            // println!("    - Characteristic {}", uuid.to_string());
             result.insert(uuid, characteristic);
         }
     }
