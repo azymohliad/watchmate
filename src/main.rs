@@ -269,6 +269,7 @@ impl Widgets<AppModel, ()> for AppWidgets {
                                     set_valign: gtk::Align::Start,
                                     add_css_class: "boxed-list",
                                     append = &gtk::ListBoxRow {
+                                        set_selectable: false,
                                         set_child = Some(&gtk::Box) {
                                             set_orientation: gtk::Orientation::Horizontal,
                                             set_margin_all: 12,
@@ -290,6 +291,7 @@ impl Widgets<AppModel, ()> for AppWidgets {
                                         },
                                     },
                                     append = &gtk::ListBoxRow {
+                                        set_selectable: false,
                                         set_child = Some(&gtk::Box) {
                                             set_orientation: gtk::Orientation::Horizontal,
                                             set_margin_all: 12,
@@ -301,6 +303,25 @@ impl Widgets<AppModel, ()> for AppWidgets {
                                             },
                                             append = &gtk::Label {
                                                 set_label: watch!(&model.firmware_version),
+                                                add_css_class: "dim-label",
+                                                set_hexpand: true,
+                                                set_halign: gtk::Align::End,
+                                            },
+                                        },
+                                    },
+                                    append = &gtk::ListBoxRow {
+                                        set_selectable: false,
+                                        set_child = Some(&gtk::Box) {
+                                            set_orientation: gtk::Orientation::Horizontal,
+                                            set_margin_all: 12,
+                                            set_spacing: 10,
+                                            append = &gtk::Label {
+                                                set_label: "Address",
+                                                set_hexpand: true,
+                                                set_halign: gtk::Align::Start,
+                                            },
+                                            append = &gtk::Label {
+                                                set_label: watch!(&model.infinitime.as_ref().map(|d| d.get_address().to_string()).unwrap_or("".to_string())),
                                                 add_css_class: "dim-label",
                                                 set_hexpand: true,
                                                 set_halign: gtk::Align::End,
