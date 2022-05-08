@@ -6,7 +6,7 @@ mod scanner;
 mod infinitime;
 
 pub use scanner::Scanner;
-pub use infinitime::InfiniTime;
+pub use infinitime::{InfiniTime, Notification};
 
 
 pub async fn init_adapter() -> Result<Adapter> {

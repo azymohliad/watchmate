@@ -8,6 +8,7 @@ use crate::bt;
 
 pub enum Message {
     Connected(bluer::Device),
+    HeartRateUpdate(u8),
 }
 
 struct Watch {
@@ -52,10 +53,23 @@ impl ComponentUpdate<super::Model> for Model {
         }
     }
 
-    fn update(&mut self, msg: Message, _components: &(), _sender: Sender<Message>, _parent_sender: Sender<super::Message>) {
+    fn update(&mut self, msg: Message, _components: &(), sender: Sender<Message>, _parent_sender: Sender<super::Message>) {
         match msg {
             Message::Connected(device) => {
                 self.watch = self.runtime.block_on(Watch::new(device)).ok();
+
+                if let Some(watch) = self.watch.as_mut() {
+                    watch.device.start_notification_session(self.runtime.clone(), move |notification| {
+                        match notification {
+                            bt::Notification::HeartRate(value) => sender.send(Message::HeartRateUpdate(value)).unwrap(),
+                        }
+                    })
+                }
+            }
+            Message::HeartRateUpdate(value) => {
+                if let Some(watch) = self.watch.as_mut() {
+                    watch.heart_rate = value;
+                }
             }
         }
     }
