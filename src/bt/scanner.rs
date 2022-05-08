@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use futures::{pin_mut, StreamExt};
-use tokio::{sync::Notify, runtime::Runtime, task::JoinHandle};
+use tokio::{sync::Notify, runtime::Handle, task::JoinHandle};
 use bluer::{Adapter, AdapterEvent};
 
 
@@ -17,13 +17,11 @@ impl Scanner {
         Self { stopper, handle }
     }
 
-    pub fn start<F>(&mut self, adapter: Adapter, rt: &Runtime, callback: F)
+    pub fn start<F>(&mut self, adapter: Arc<Adapter>, rt: Handle, callback: F)
         where F: Fn(AdapterEvent) + Send + 'static
     {
         let stopper = self.stopper.clone();
-        let join_handle = rt.spawn(async {
-            Self::scan(adapter, stopper, callback).await;
-        });
+        let join_handle = rt.spawn(Self::scan(adapter, stopper, callback));
         self.handle = Some(join_handle);
     }
 
@@ -38,7 +36,7 @@ impl Scanner {
         self.handle.is_some()
     }
 
-    async fn scan(adapter: Adapter, stopper: Arc<Notify>, callback: impl Fn(AdapterEvent)) {
+    async fn scan(adapter: Arc<Adapter>, stopper: Arc<Notify>, callback: impl Fn(AdapterEvent)) {
         match adapter.discover_devices().await {
             Ok(events) => {
                 pin_mut!(events);

@@ -8,12 +8,14 @@ mod infinitime;
 pub use scanner::Scanner;
 pub use infinitime::InfiniTime;
 
+
 pub async fn init_adapter() -> Result<Adapter> {
     let session = Session::new().await?;
     let adapter = session.default_adapter().await?;
     adapter.set_powered(true).await?;
     Ok(adapter)
 }
+
 
 async fn read_characteristics_map(device: &Device) -> Result<HashMap<Uuid, Characteristic>> {
     let mut result = HashMap::new();

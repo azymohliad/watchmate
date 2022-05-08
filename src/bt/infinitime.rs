@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use bluer::{Address, Device, gatt::remote::Characteristic};
+use bluer::{gatt::remote::Characteristic, Adapter, Address, Device};
 use uuid::{uuid, Uuid};
 use anyhow::{anyhow, Result};
 
@@ -55,5 +55,16 @@ impl InfiniTime {
             Ok(Some(name)) => name.as_str() == "InfiniTime",
             _ => false,
         }
+    }
+
+    pub async fn list_known_devices(adapter: &Adapter) -> Result<Vec<Device>> {
+        let mut result = Vec::new();
+        for address in adapter.device_addresses().await? {
+            let device = adapter.device(address)?;
+            if Self::check_device(&device).await {
+                result.push(device);
+            }
+        }
+        Ok(result)
     }
 }

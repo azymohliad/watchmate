@@ -8,7 +8,6 @@ use crate::bt;
 
 pub enum Message {
     Connected(bluer::Device),
-
 }
 
 struct Watch {
