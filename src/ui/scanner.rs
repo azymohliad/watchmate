@@ -104,9 +104,13 @@ impl ComponentUpdate<super::Model> for Model {
             }
             Message::DeviceSelected(index) => {
                 if let Some(info) = self.devices.get(index as usize) {
-                    println!("Selected device: {:?}", info);
                     self.scanner.stop();
-                    parent_sender.send(super::Message::DeviceSelected(info.address)).unwrap();
+                    if !info.connected {
+                        println!("Selected device: {:?}", info);
+                        parent_sender.send(super::Message::DeviceSelected(info.address)).unwrap();
+                    } else {
+                        self.runtime.block_on(self.adapter.device(info.address).unwrap().disconnect()).unwrap();
+                    }
                 }
             }
         }
