@@ -4,10 +4,11 @@ use uuid::Uuid;
 
 mod scanner;
 mod infinitime;
+mod uuids;
+pub mod gatt_server;
 
 pub use scanner::Scanner;
 pub use infinitime::{InfiniTime, Notification};
-
 
 pub async fn init_adapter() -> Result<Adapter> {
     let session = Session::new().await?;

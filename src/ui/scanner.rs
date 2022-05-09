@@ -105,6 +105,7 @@ impl ComponentUpdate<super::Model> for Model {
             Message::DeviceSelected(index) => {
                 if let Some(info) = self.devices.get(index as usize) {
                     println!("Selected device: {:?}", info);
+                    self.scanner.stop();
                     parent_sender.send(super::Message::DeviceSelected(info.address)).unwrap();
                 }
             }

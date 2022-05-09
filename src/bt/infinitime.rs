@@ -2,12 +2,10 @@ use std::{collections::HashMap, sync::Arc};
 use tokio::{runtime, sync::Notify, task::JoinHandle};
 use futures::{pin_mut, StreamExt};
 use bluer::{gatt::remote::Characteristic, Adapter, Address, Device};
-use uuid::{uuid, Uuid};
+use uuid::Uuid;
 use anyhow::{anyhow, Result};
 
-const CHR_BATTERY_LEVEL: Uuid = uuid!("00002a19-0000-1000-8000-00805f9b34fb");
-const CHR_FIRMWARE_REVISION: Uuid = uuid!("00002a26-0000-1000-8000-00805f9b34fb");
-const CHR_HEART_RATE: Uuid = uuid!("00002a37-0000-1000-8000-00805f9b34fb");
+use super::uuids;
 
 pub enum Notification {
     HeartRate(u8),
@@ -44,23 +42,23 @@ impl InfiniTime {
     }
 
     pub async fn read_battery_level(&self) -> Result<u8> {
-        Ok(self.read_characteristic(&CHR_BATTERY_LEVEL).await?[0])
+        Ok(self.read_characteristic(&uuids::CHR_BATTERY_LEVEL).await?[0])
     }
 
     pub async fn read_firmware_version(&self) -> Result<String> {
-        Ok(String::from_utf8(self.read_characteristic(&CHR_FIRMWARE_REVISION).await?)?)
+        Ok(String::from_utf8(self.read_characteristic(&uuids::CHR_FIRMWARE_REVISION).await?)?)
     }
 
     pub async fn read_heart_rate(&self) -> Result<u8> {
         // TODO: Parse properly according to 3.106 Heart Rate Measurement
         // from https://www.bluetooth.org/docman/handlers/DownloadDoc.ashx?doc_id=539729
-        Ok(self.read_characteristic(&CHR_HEART_RATE).await?[1])
+        Ok(self.read_characteristic(&uuids::CHR_HEART_RATE).await?[1])
     }
 
     pub fn start_notification_session<F>(&mut self, runtime: runtime::Handle, callback: F)
         where F: Fn(Notification) + Send + 'static
     {
-        let heart_rate_chr = self.characteristics.get(&CHR_HEART_RATE).unwrap().clone();
+        let heart_rate_chr = self.characteristics.get(&uuids::CHR_HEART_RATE).unwrap().clone();
         let stopper = self.notification_stopper.clone();
 
         self.notification_handle = Some(runtime.spawn(async move {
