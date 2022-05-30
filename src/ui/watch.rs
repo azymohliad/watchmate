@@ -1,6 +1,6 @@
 use tokio::runtime;
-use gtk::prelude::{BoxExt, OrientableExt, ListBoxRowExt, WidgetExt};
-use relm4::{ComponentUpdate, Sender, WidgetPlus};
+use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, ListBoxRowExt, WidgetExt};
+use relm4::{adw::{self, prelude::{PreferencesRowExt, ExpanderRowExt}}, send, ComponentUpdate, Sender, WidgetPlus};
 use anyhow::Result;
 
 use crate::bt;
@@ -9,6 +9,7 @@ use crate::bt;
 pub enum Message {
     Connected(bluer::Device),
     HeartRateUpdate(u8),
+    OpenFileDialog,
 }
 
 struct Watch {
@@ -53,7 +54,7 @@ impl ComponentUpdate<super::Model> for Model {
         }
     }
 
-    fn update(&mut self, msg: Message, _components: &(), sender: Sender<Message>, _parent_sender: Sender<super::Message>) {
+    fn update(&mut self, msg: Message, _components: &(), sender: Sender<Message>, parent_sender: Sender<super::Message>) {
         match msg {
             Message::Connected(device) => {
                 self.watch = self.runtime.block_on(Watch::new(device)).ok();
@@ -70,6 +71,9 @@ impl ComponentUpdate<super::Model> for Model {
                 if let Some(watch) = self.watch.as_mut() {
                     watch.heart_rate = value;
                 }
+            }
+            Message::OpenFileDialog => {
+                parent_sender.send(super::Message::SetView(super::View::File)).unwrap()
             }
         }
     }
@@ -190,25 +194,27 @@ impl relm4::Widgets<Model, super::Model> for Widgets {
                         },
                     },
                 },
-                append = &gtk::ListBoxRow {
-                    set_selectable: false,
-                    set_child = Some(&gtk::Box) {
-                        set_orientation: gtk::Orientation::Horizontal,
-                        set_margin_all: 12,
-                        set_spacing: 10,
-                        append = &gtk::Label {
-                            set_label: "Firmware Version",
-                            set_hexpand: true,
-                            set_halign: gtk::Align::Start,
-                        },
-                        append = &gtk::Label {
-                            set_label: watch!(match &model.watch {
-                                Some(watch) => watch.firmware_version.as_str(),
-                                None => "Unavailable",
-                            }),
-                            add_css_class: "dim-label",
-                            set_hexpand: true,
-                            set_halign: gtk::Align::End,
+                append = &adw::ExpanderRow {
+                    set_title: "Firmware Version",
+                    add_action = &gtk::Label {
+                        set_label: watch!(match &model.watch {
+                            Some(watch) => watch.firmware_version.as_str(),
+                            None => "Unavailable",
+                        }),
+                        add_css_class: "dim-label",
+                    },
+                    add_row = &gtk::ListBoxRow {
+                        set_selectable: false,
+                        set_child = Some(&gtk::Box) {
+                            set_orientation: gtk::Orientation::Horizontal,
+                            set_margin_all: 12,
+                            set_spacing: 10,
+                            append = &gtk::Button {
+                                set_label: "Update",
+                                connect_clicked(sender) => move |_| {
+                                    send!(sender, Message::OpenFileDialog)
+                                },
+                            },
                         },
                     },
                 },

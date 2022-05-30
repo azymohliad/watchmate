@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 use adw::prelude::AdwApplicationWindowExt;
-use gtk::prelude::{BoxExt, ButtonExt, GtkWindowExt, OrientableExt, WidgetExt};
+use gtk::prelude::{BoxExt, ButtonExt, GtkWindowExt, OrientableExt, WidgetExt, FileChooserExt};
 use relm4::{send, adw, Sender, WidgetPlus, AppUpdate, RelmApp, RelmComponent};
 
 mod watch;
@@ -99,7 +99,7 @@ impl relm4::Widgets<Model, ()> for Widgets {
     view! {
         adw::ApplicationWindow {
             set_default_width: 480,
-            set_default_height: 720,
+            set_default_height: 640,
             set_content = Some(&gtk::Box) {
                 set_orientation: gtk::Orientation::Vertical,
                 append = &adw::HeaderBar {
@@ -107,7 +107,11 @@ impl relm4::Widgets<Model, ()> for Widgets {
                         set_margin_all: 5,
                         set_orientation: gtk::Orientation::Vertical,
                         append = &gtk::Label {
-                            set_label: "WatchMate",
+                            set_label: watch!(if model.active_view == View::File {
+                                "Choose DFU file"
+                            } else {
+                                "WatchMate"
+                            }),
                         },
                         append = &gtk::Label {
                             set_label: watch!(if model.is_connected {
@@ -115,6 +119,7 @@ impl relm4::Widgets<Model, ()> for Widgets {
                             } else {
                                 "Not connected"
                             }),
+                            set_visible: watch!(model.active_view != View::File),
                             add_css_class: "dim-label",
                         },
                     },
@@ -133,11 +138,17 @@ impl relm4::Widgets<Model, ()> for Widgets {
                         } else {
                             "bluetooth-disconnected-symbolic"
                         }),
-                        set_visible: watch!(model.active_view != View::Scan),
+                        set_visible: watch!(model.active_view == View::Main),
                         connect_clicked(sender) => move |_| {
                             send!(sender, Message::SetView(View::Scan));
                         },
                     },
+                    pack_start = &gtk::Button {
+                        set_label: "Open",
+                        set_icon_name: "document-send-symbolic",
+                        set_sensitive: watch!(file_chooser.file().is_some()),
+                        set_visible: watch!(model.active_view == View::File),
+                    }
                 },
                 append = &Clone::clone(&model.toast_overlay) -> adw::ToastOverlay {
                     set_child = Some(&gtk::Stack) {
@@ -150,9 +161,16 @@ impl relm4::Widgets<Model, ()> for Widgets {
                             set_maximum_size: 400,
                             set_child: Some(components.scanner.root_widget()),
                         },
+                        add_named(Some("file_view")): file_chooser = &gtk::FileChooserWidget {
+                            set_action: gtk::FileChooserAction::Open,
+                            set_filter = &gtk::FileFilter {
+                                add_pattern: "*.zip"
+                            },
+                        },
                         set_visible_child_name: watch!(match model.active_view {
                             View::Main => "main_view",
                             View::Scan => "scan_view",
+                            View::File => "file_view"
                         }),
                     },
                 },
@@ -166,6 +184,7 @@ impl relm4::Widgets<Model, ()> for Widgets {
 enum View {
     Main,
     Scan,
+    File,
 }
 
 
