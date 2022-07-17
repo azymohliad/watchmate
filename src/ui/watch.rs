@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use tokio::runtime;
 use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, ListBoxRowExt, WidgetExt};
 use relm4::{adw::{self, prelude::{PreferencesRowExt, ExpanderRowExt}}, send, ComponentUpdate, Sender, WidgetPlus};
@@ -10,6 +11,7 @@ pub enum Message {
     Connected(bluer::Device),
     HeartRateUpdate(u8),
     OpenFileDialog,
+    FirmwareUpdate(PathBuf),
 }
 
 struct Watch {
@@ -73,7 +75,13 @@ impl ComponentUpdate<super::Model> for Model {
                 }
             }
             Message::OpenFileDialog => {
-                parent_sender.send(super::Message::SetView(super::View::File)).unwrap()
+                parent_sender.send(super::Message::SetView(super::View::FileChooser)).unwrap()
+            }
+            Message::FirmwareUpdate(filename) => {
+                if let Some(watch) = &self.watch {
+                    let res = self.runtime.block_on(watch.device.firmware_upgrade(filename.as_path()));
+                    dbg!(res);
+                }
             }
         }
     }
@@ -212,7 +220,9 @@ impl relm4::Widgets<Model, super::Model> for Widgets {
                             append = &gtk::Button {
                                 set_label: "Update",
                                 connect_clicked(sender) => move |_| {
-                                    send!(sender, Message::OpenFileDialog)
+                                    // let filepath = PathBuf::from("/home/azymohliad/Downloads/OS/pinetime-mcuboot-app-dfu-1.10.0.zip");
+                                    // send!(sender, Message::FirmwareUpdate(filepath));
+                                    send!(sender, Message::OpenFileDialog);
                                 },
                             },
                         },

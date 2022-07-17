@@ -1,8 +1,8 @@
-use std::sync::Arc;
+use std::{sync::Arc, path::PathBuf};
 use tokio::runtime::Runtime;
 use adw::prelude::AdwApplicationWindowExt;
-use gtk::prelude::{BoxExt, ButtonExt, GtkWindowExt, OrientableExt, WidgetExt, FileChooserExt};
-use relm4::{send, adw, Sender, WidgetPlus, AppUpdate, RelmApp, RelmComponent};
+use gtk::prelude::{BoxExt, ButtonExt, GtkWindowExt, OrientableExt, WidgetExt, FileChooserExt, FileExt};
+use relm4::{send, adw, Sender, AppUpdate, RelmApp, RelmComponent};
 
 mod watch;
 mod scanner;
@@ -12,7 +12,8 @@ enum Message {
     SetView(View),
     DeviceSelected(bluer::Address),
     DeviceConnected(bluer::Address),
-    Notification(String)
+    FirmwareUpdate(PathBuf),
+    Notification(String),
 }
 
 
@@ -86,6 +87,10 @@ impl AppUpdate for Model {
                     Err(error) => self.notify(&format!("Error: {}", error)),
                 }
             }
+            Message::FirmwareUpdate(filename) => {
+                components.watch.send(watch::Message::FirmwareUpdate(filename));
+                sender.send(Message::SetView(View::FirmwareUpdate));
+            }
             Message::Notification(message) => {
                 self.notify(&message);
             }
@@ -103,25 +108,13 @@ impl relm4::Widgets<Model, ()> for Widgets {
             set_content = Some(&gtk::Box) {
                 set_orientation: gtk::Orientation::Vertical,
                 append = &adw::HeaderBar {
-                    set_title_widget = Some(&gtk::Box) {
-                        set_margin_all: 5,
-                        set_orientation: gtk::Orientation::Vertical,
-                        append = &gtk::Label {
-                            set_label: watch!(if model.active_view == View::File {
-                                "Choose DFU file"
-                            } else {
-                                "WatchMate"
-                            }),
-                        },
-                        append = &gtk::Label {
-                            set_label: watch!(if model.is_connected {
-                                "Connected"
-                            } else {
-                                "Not connected"
-                            }),
-                            set_visible: watch!(model.active_view != View::File),
-                            add_css_class: "dim-label",
-                        },
+                    set_title_widget = Some(&gtk::Label) {
+                        set_label: watch!(match model.active_view {
+                            View::Main => "WatchMate",
+                            View::Scan => "Devices",
+                            View::FileChooser => "Choose DFU file",
+                            View::FirmwareUpdate => "Firmware Upgrade",
+                        }),
                     },
                     pack_start = &gtk::Button {
                         set_label: "Back",
@@ -146,8 +139,13 @@ impl relm4::Widgets<Model, ()> for Widgets {
                     pack_start = &gtk::Button {
                         set_label: "Open",
                         set_icon_name: "document-send-symbolic",
-                        set_sensitive: watch!(file_chooser.file().is_some()),
-                        set_visible: watch!(model.active_view == View::File),
+                        // set_sensitive: watch!(file_chooser.file().is_some()),
+                        set_visible: watch!(model.active_view == View::FileChooser),
+                        connect_clicked(sender, file_chooser) => move |_| {
+                            if let Some(file) = file_chooser.file() {
+                                send!(sender, Message::FirmwareUpdate(file.path().unwrap()));
+                            }
+                        },
                     }
                 },
                 append = &Clone::clone(&model.toast_overlay) -> adw::ToastOverlay {
@@ -167,10 +165,14 @@ impl relm4::Widgets<Model, ()> for Widgets {
                                 add_pattern: "*.zip"
                             },
                         },
+                        add_named(Some("fwupd_view")) = &adw::Clamp {
+                            set_maximum_size: 400,
+                        },
                         set_visible_child_name: watch!(match model.active_view {
                             View::Main => "main_view",
                             View::Scan => "scan_view",
-                            View::File => "file_view"
+                            View::FileChooser => "file_view",
+                            View::FirmwareUpdate => "fwupd_view",
                         }),
                     },
                 },
@@ -184,7 +186,8 @@ impl relm4::Widgets<Model, ()> for Widgets {
 enum View {
     Main,
     Scan,
-    File,
+    FileChooser,
+    FirmwareUpdate,
 }
 
 
@@ -208,4 +211,3 @@ pub fn run(runtime: Runtime, adapter: Arc<bluer::Adapter>) {
     let app = RelmApp::new(model);
     app.run();
 }
-
