@@ -88,8 +88,8 @@ impl AppUpdate for Model {
                 }
             }
             Message::FirmwareUpdate(filename) => {
-                components.watch.send(watch::Message::FirmwareUpdate(filename));
-                sender.send(Message::SetView(View::FirmwareUpdate));
+                components.watch.send(watch::Message::FirmwareUpdate(filename)).unwrap();
+                sender.send(Message::SetView(View::FirmwareUpdate)).unwrap();
             }
             Message::Notification(message) => {
                 self.notify(&message);

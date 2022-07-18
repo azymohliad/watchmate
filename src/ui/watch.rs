@@ -79,8 +79,10 @@ impl ComponentUpdate<super::Model> for Model {
             }
             Message::FirmwareUpdate(filename) => {
                 if let Some(watch) = &self.watch {
-                    let res = self.runtime.block_on(watch.device.firmware_upgrade(filename.as_path()));
-                    dbg!(res);
+                    if let Err(error) = self.runtime.block_on(watch.device.firmware_upgrade(filename.as_path())) {
+                        parent_sender.send(super::Message::Notification(String::from("Firmware update failed..."))).unwrap();
+                        eprintln!("Firmware update failed: {}", error);
+                    }
                 }
             }
         }
