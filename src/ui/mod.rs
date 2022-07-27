@@ -149,6 +149,7 @@ impl SimpleComponent for Model {
             .launch(runtime.handle().clone())
             .forward(&sender.input, |message| match message {
                 watch::Output::OpenFileDialog => Input::SetView(View::FileChooser),
+                watch::Output::Notification(text) => Input::Notification(text),
             });
 
         let scanner = scanner::Model::builder()

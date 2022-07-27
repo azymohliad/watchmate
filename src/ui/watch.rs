@@ -39,6 +39,7 @@ pub enum Input {
 #[derive(Debug)]
 pub enum Output {
     OpenFileDialog,
+    Notification(String),
 }
 
 pub struct Model {
@@ -235,7 +236,10 @@ impl SimpleComponent for Model {
             Input::FirmwareUpdate(filename) => {
                 if let Some(watch) = &self.watch {
                     let res = self.runtime.block_on(watch.device.firmware_upgrade(filename.as_path()));
-                    dbg!(res);
+                    if let Err(error) = res {
+                        sender.output(Output::Notification(String::from("Firmware update failed...")));
+                        eprintln!("Firmware update failed: {}", error);
+                    }
                 }
             }
         }
