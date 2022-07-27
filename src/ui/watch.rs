@@ -1,18 +1,11 @@
 use std::path::PathBuf;
 use tokio::runtime;
 use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, ListBoxRowExt, WidgetExt};
-use relm4::{adw::{self, prelude::{PreferencesRowExt, ExpanderRowExt}}, send, ComponentUpdate, Sender, WidgetPlus};
+use adw::prelude::{PreferencesRowExt, ExpanderRowExt};
+use relm4::{adw, gtk, ComponentParts, ComponentSender, SimpleComponent, WidgetPlus};
 use anyhow::Result;
 
 use crate::bt;
-
-
-pub enum Message {
-    Connected(bluer::Device),
-    HeartRateUpdate(u8),
-    OpenFileDialog,
-    FirmwareUpdate(PathBuf),
-}
 
 struct Watch {
     device: bt::InfiniTime,
@@ -36,60 +29,30 @@ impl Watch {
     }
 }
 
+#[derive(Debug)]
+pub enum Input {
+    Connected(bluer::Device),
+    HeartRateUpdate(u8),
+    FirmwareUpdate(PathBuf),
+}
+
+#[derive(Debug)]
+pub enum Output {
+    OpenFileDialog,
+}
 
 pub struct Model {
     runtime: runtime::Handle,
     watch: Option<Watch>,
 }
 
-impl relm4::Model for Model {
-    type Msg = Message;
+#[relm4::component(pub)]
+impl SimpleComponent for Model {
+    type InitParams = runtime::Handle;
+    type Input = Input;
+    type Output = Output;
     type Widgets = Widgets;
-    type Components = ();
-}
 
-impl ComponentUpdate<super::Model> for Model {
-    fn init_model(parent: &super::Model) -> Self {
-        Self {
-            runtime: parent.runtime.handle().clone(),
-            watch: None,
-        }
-    }
-
-    fn update(&mut self, msg: Message, _components: &(), sender: Sender<Message>, parent_sender: Sender<super::Message>) {
-        match msg {
-            Message::Connected(device) => {
-                self.watch = self.runtime.block_on(Watch::new(device)).ok();
-
-                if let Some(watch) = self.watch.as_mut() {
-                    watch.device.start_notification_session(self.runtime.clone(), move |notification| {
-                        match notification {
-                            bt::Notification::HeartRate(value) => sender.send(Message::HeartRateUpdate(value)).unwrap(),
-                        }
-                    })
-                }
-            }
-            Message::HeartRateUpdate(value) => {
-                if let Some(watch) = self.watch.as_mut() {
-                    watch.heart_rate = value;
-                }
-            }
-            Message::OpenFileDialog => {
-                parent_sender.send(super::Message::SetView(super::View::FileChooser)).unwrap()
-            }
-            Message::FirmwareUpdate(filename) => {
-                if let Some(watch) = &self.watch {
-                    let res = self.runtime.block_on(watch.device.firmware_upgrade(filename.as_path()));
-                    dbg!(res);
-                }
-            }
-        }
-    }
-}
-
-
-#[relm4::widget(pub)]
-impl relm4::Widgets<Model, super::Model> for Widgets {
     view! {
         gtk::Box {
             set_orientation: gtk::Orientation::Vertical,
@@ -100,7 +63,8 @@ impl relm4::Widgets<Model, super::Model> for Widgets {
                 add_css_class: "boxed-list",
                 append = &gtk::ListBoxRow {
                     set_selectable: false,
-                    set_child = Some(&gtk::Box) {
+                    #[wrap(Some)]
+                    set_child = &gtk::Box {
                         set_orientation: gtk::Orientation::Horizontal,
                         set_margin_all: 12,
                         set_spacing: 10,
@@ -108,20 +72,23 @@ impl relm4::Widgets<Model, super::Model> for Widgets {
                             set_label: "Battery",
                         },
                         append = &gtk::Label {
-                            set_label: watch!(match &model.watch {
+                            #[watch]
+                            set_label: match &model.watch {
                                 Some(watch) => format!("{}%", watch.battery_level),
                                 None => String::from("Unavailable"),
-                            }.as_str()),
+                            }.as_str(),
                             add_css_class: "dim-label",
                         },
                         append = &gtk::LevelBar {
                             set_min_value: 0.0,
                             set_max_value: 100.0,
-                            set_value: watch!(match &model.watch {
+                            #[watch]
+                            set_value: match &model.watch {
                                 Some(watch) => watch.battery_level as f64,
                                 None => 0.0,
-                            }),
-                            set_visible: watch!(model.watch.is_some()),
+                            },
+                            #[watch]
+                            set_visible: model.watch.is_some(),
                             set_hexpand: true,
                             set_valign: gtk::Align::Center,
                         },
@@ -129,7 +96,8 @@ impl relm4::Widgets<Model, super::Model> for Widgets {
                 },
                 append = &gtk::ListBoxRow {
                     set_selectable: false,
-                    set_child = Some(&gtk::Box) {
+                    #[wrap(Some)]
+                    set_child = &gtk::Box {
                         set_orientation: gtk::Orientation::Horizontal,
                         set_margin_all: 12,
                         set_spacing: 10,
@@ -139,10 +107,11 @@ impl relm4::Widgets<Model, super::Model> for Widgets {
                             set_halign: gtk::Align::Start,
                         },
                         append = &gtk::Label {
-                            set_label: watch!(match &model.watch {
+                            #[watch]
+                            set_label: match &model.watch {
                                 Some(watch) => format!("{} BPM", watch.heart_rate),
                                 None => String::from("Unavailable"),
-                            }.as_str()),
+                            }.as_str(),
                             add_css_class: "dim-label",
                             set_hexpand: true,
                             set_halign: gtk::Align::End,
@@ -160,7 +129,8 @@ impl relm4::Widgets<Model, super::Model> for Widgets {
                 add_css_class: "boxed-list",
                 append = &gtk::ListBoxRow {
                     set_selectable: false,
-                    set_child = Some(&gtk::Box) {
+                    #[wrap(Some)]
+                    set_child = &gtk::Box {
                         set_orientation: gtk::Orientation::Horizontal,
                         set_margin_all: 12,
                         set_spacing: 10,
@@ -170,10 +140,11 @@ impl relm4::Widgets<Model, super::Model> for Widgets {
                             set_halign: gtk::Align::Start,
                         },
                         append = &gtk::Label {
-                            set_label: watch!(match &model.watch {
+                            #[watch]
+                            set_label: match &model.watch {
                                 Some(watch) => watch.device.get_alias(),
                                 None => "Unavailable",
-                            }),
+                            },
                             add_css_class: "dim-label",
                             set_hexpand: true,
                             set_halign: gtk::Align::End,
@@ -182,7 +153,8 @@ impl relm4::Widgets<Model, super::Model> for Widgets {
                 },
                 append = &gtk::ListBoxRow {
                     set_selectable: false,
-                    set_child = Some(&gtk::Box) {
+                    #[wrap(Some)]
+                    set_child = &gtk::Box {
                         set_orientation: gtk::Orientation::Horizontal,
                         set_margin_all: 12,
                         set_spacing: 10,
@@ -192,10 +164,11 @@ impl relm4::Widgets<Model, super::Model> for Widgets {
                             set_halign: gtk::Align::Start,
                         },
                         append = &gtk::Label {
-                            set_label: watch!(match &model.watch {
+                            #[watch]
+                            set_label: match &model.watch {
                                 Some(watch) => watch.device.get_address().to_string(),
                                 None => String::from("Unavailable"),
-                            }.as_str()),
+                            }.as_str(),
                             add_css_class: "dim-label",
                             set_hexpand: true,
                             set_halign: gtk::Align::End,
@@ -205,24 +178,26 @@ impl relm4::Widgets<Model, super::Model> for Widgets {
                 append = &adw::ExpanderRow {
                     set_title: "Firmware Version",
                     add_action = &gtk::Label {
-                        set_label: watch!(match &model.watch {
+                        #[watch]
+                        set_label: match &model.watch {
                             Some(watch) => watch.firmware_version.as_str(),
                             None => "Unavailable",
-                        }),
+                        },
                         add_css_class: "dim-label",
                     },
                     add_row = &gtk::ListBoxRow {
                         set_selectable: false,
-                        set_child = Some(&gtk::Box) {
+                        #[wrap(Some)]
+                        set_child = &gtk::Box {
                             set_orientation: gtk::Orientation::Horizontal,
                             set_margin_all: 12,
                             set_spacing: 10,
                             append = &gtk::Button {
                                 set_label: "Update",
-                                connect_clicked(sender) => move |_| {
+                                connect_clicked[sender] => move |_| {
                                     // let filepath = PathBuf::from("/home/azymohliad/Downloads/OS/pinetime-mcuboot-app-dfu-1.10.0.zip");
-                                    // send!(sender, Message::FirmwareUpdate(filepath));
-                                    send!(sender, Message::OpenFileDialog);
+                                    // sender.input(Input::FirmwareUpdate(filepath));
+                                    sender.output(Output::OpenFileDialog);
                                 },
                             },
                         },
@@ -231,4 +206,39 @@ impl relm4::Widgets<Model, super::Model> for Widgets {
             },
         }
     }
+
+    fn init(runtime: Self::InitParams, root: &Self::Root, sender: &ComponentSender<Self>) -> ComponentParts<Self> {
+        let model = Self { runtime, watch: None };
+        let widgets = view_output!();
+        ComponentParts { model, widgets }
+    }
+
+    fn update(&mut self, msg: Self::Input, sender: &ComponentSender<Self>) {
+        match msg {
+            Input::Connected(device) => {
+                self.watch = self.runtime.block_on(Watch::new(device)).ok();
+
+                if let Some(watch) = self.watch.as_mut() {
+                    let send = sender.clone();
+                    watch.device.start_notification_session(self.runtime.clone(), move |notification| {
+                        match notification {
+                            bt::Notification::HeartRate(value) => send.input(Input::HeartRateUpdate(value)),
+                        }
+                    })
+                }
+            }
+            Input::HeartRateUpdate(value) => {
+                if let Some(watch) = self.watch.as_mut() {
+                    watch.heart_rate = value;
+                }
+            }
+            Input::FirmwareUpdate(filename) => {
+                if let Some(watch) = &self.watch {
+                    let res = self.runtime.block_on(watch.device.firmware_upgrade(filename.as_path()));
+                    dbg!(res);
+                }
+            }
+        }
+    }
 }
+

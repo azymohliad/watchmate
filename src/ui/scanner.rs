@@ -1,59 +1,127 @@
-use std::{collections::VecDeque, sync::Arc};
+use std::sync::Arc;
 use tokio::runtime;
 use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, ListBoxRowExt, WidgetExt};
 use relm4::{
-    send, adw, factory::{FactoryPrototype, FactoryVecDeque, DynamicIndex},
-    ComponentUpdate, Sender, WidgetPlus
+    adw, gtk,
+    factory::{FactoryComponent, FactoryVecDeque, DynamicIndex},
+    ComponentParts, ComponentSender, Sender, WidgetPlus, SimpleComponent
 };
 
 use crate::bt;
 
 
-pub enum Message {
+#[derive(Debug)]
+pub enum Input {
     ScanToggled,
-    KnownDevices(VecDeque<DeviceInfo>),
+    KnownDevices(Vec<DeviceInfo>),
     DeviceAdded(bluer::Address),
     DeviceRemoved(bluer::Address),
     DeviceSelected(i32),
 }
 
+#[derive(Debug)]
+pub enum Output {
+    DeviceSelected(bluer::Address),
+    DeviceConnected(bluer::Address),
+}
+
 pub struct Model {
     // UI State
-    devices: FactoryVecDeque<DeviceInfo>,
+    devices: FactoryVecDeque<gtk::ListBox, DeviceInfo, Input>,
     // Non-UI
     runtime: runtime::Handle,
     adapter: Arc<bluer::Adapter>,
     scanner: bt::Scanner,
 }
 
-impl relm4::Model for Model {
-    type Msg = Message;
+#[relm4::component(pub)]
+impl SimpleComponent for Model {
+    type InitParams = (runtime::Handle, Arc<bluer::Adapter>);
+    type Input = Input;
+    type Output = Output;
     type Widgets = Widgets;
-    type Components = ();
-}
 
-impl ComponentUpdate<super::Model> for Model {
-    fn init_model(parent: &super::Model) -> Self {
-        Self {
-            devices: FactoryVecDeque::new(),
-            runtime: parent.runtime.handle().clone(),
-            adapter: parent.adapter.clone(),
-            scanner: bt::Scanner::new(),
+    view! {
+        gtk::Box {
+            set_orientation: gtk::Orientation::Vertical,
+            set_margin_all: 12,
+            set_spacing: 10,
+            append = &gtk::Button {
+                #[wrap(Some)]
+                set_child = &adw::ButtonContent {
+                    #[watch]
+                    set_label: if model.scanner.is_scanning() {
+                        "Scanning..."
+                    } else {
+                        "Scan"
+                    },
+                    #[watch]
+                    set_icon_name: if model.scanner.is_scanning() {
+                        "bluetooth-acquiring-symbolic"
+                    } else {
+                        "bluetooth-symbolic"
+                    },
+                },
+                connect_clicked[sender] => move |_| {
+                    sender.input(Input::ScanToggled);
+                },
+            },
+            append = &gtk::ScrolledWindow {
+                set_hscrollbar_policy: gtk::PolicyType::Never,
+                set_vexpand: true,
+                #[wrap(Some)]
+                #[local_ref]
+                set_child = factory_widget -> gtk::ListBox {
+                    // set_margin_all: 5,
+                    set_valign: gtk::Align::Start,
+                    add_css_class: "boxed-list",
+                    connect_row_activated[sender] => move |_, row| {
+                        sender.input(Input::DeviceSelected(row.index()))
+                    }
+                },
+            },
         }
     }
 
-    fn update(&mut self, msg: Message, _components: &(), sender: Sender<Message>, parent_sender: Sender<super::Message>) {
+    fn init(params: Self::InitParams, root: &Self::Root, sender: &ComponentSender<Self>) -> ComponentParts<Self> {
+        let model = Self {
+            devices: FactoryVecDeque::new(gtk::ListBox::new(), &sender.input),
+            runtime: params.0,
+            adapter: params.1,
+            scanner: bt::Scanner::new(),
+        };
+
+        let factory_widget = model.devices.widget();
+        let widgets = view_output!();
+
+        // Read known devices list
+        let adapter = model.adapter.clone();
+        let send = sender.clone();
+        model.runtime.spawn(async move {
+            let mut devices = Vec::new();
+            for device in bt::InfiniTime::list_known_devices(&adapter).await.unwrap() {
+                devices.push(DeviceInfo::new(&device).await.unwrap())
+            }
+            send.input(Input::KnownDevices(devices));
+        });
+
+        ComponentParts { model, widgets }
+    }
+
+    fn update(&mut self, msg: Self::Input, sender: &ComponentSender<Self>) {
+        let mut devices_guard = self.devices.guard();
         match msg {
-            Message::ScanToggled => {
+            Input::ScanToggled => {
                 if !self.scanner.is_scanning() {
-                    self.devices.clear();
+                    devices_guard.clear();
+                    let send = sender.clone();
                     self.scanner.start(self.adapter.clone(), self.runtime.clone(), move |event| {
                         match event {
                             bluer::AdapterEvent::DeviceAdded(address) => {
-                                sender.send(Message::DeviceAdded(address)).unwrap();
+                                send.input(Input::DeviceAdded(address));
                             }
                             bluer::AdapterEvent::DeviceRemoved(address) => {
-                                sender.send(Message::DeviceRemoved(address)).unwrap();
+                                send.input(Input::DeviceRemoved(address));
                             }
                             _ => (),
                         }
@@ -62,29 +130,33 @@ impl ComponentUpdate<super::Model> for Model {
                     self.scanner.stop();
                 }
             }
-            Message::KnownDevices(devices) => {
-                self.devices = FactoryVecDeque::from_vec_deque(devices);
+            Input::KnownDevices(devices) => {
+                let connected_address = devices.iter().find(|d| d.connected).map(|d| d.address);
+
+                for device in devices {
+                    devices_guard.push_back(device);
+                }
                 // Automatic device selection logic
-                if let Some(device) = self.devices.iter().find(|d| d.connected) {
+                if let Some(address) = connected_address {
                     // If suitable device is already connected - just report it as connected
-                    parent_sender.send(super::Message::DeviceConnected(device.address)).unwrap();
-                    println!("InfiniTime ({}) is already connected", device.address.to_string());
+                    sender.output(Output::DeviceConnected(address));
+                    println!("InfiniTime ({}) is already connected", address.to_string());
                 } else {
-                    if self.devices.is_empty() {
+                    if devices_guard.is_empty() {
                         // If no suitable devices are known - start scanning automatically
-                        sender.send(Message::ScanToggled).unwrap();
+                        sender.input(Input::ScanToggled);
                         println!("No InfiniTime devices are known. Scanning...");
-                    } else if self.devices.len() == 1 {
+                    } else if devices_guard.len() == 1 {
                         // If only one suitable device is known - try to connect to it automatically
-                        let address = self.devices.get(0).unwrap().address;
-                        parent_sender.send(super::Message::DeviceSelected(address)).unwrap();
+                        let address = devices_guard.get(0).unwrap().address;
+                        sender.output(Output::DeviceSelected(address));
                         println!("Trying to connect to InfiniTime ({})", address.to_string());
                     } else {
                         println!("Multiple InfiniTime devices are known. Waiting for the user to select");
                     }
                 }
             }
-            Message::DeviceAdded(address) => {
+            Input::DeviceAdded(address) => {
                 if let Ok(device) = self.adapter.device(address) {
                     if let Some(info) = self.runtime.block_on(async {
                         if bt::InfiniTime::check_device(&device).await {
@@ -93,81 +165,34 @@ impl ComponentUpdate<super::Model> for Model {
                             None
                         }
                     }) {
-                        self.devices.push_front(info);
+                        devices_guard.push_front(info);
                     }
                 }
             }
-            Message::DeviceRemoved(address) => {
-                if let Some((index, _)) = self.devices.iter().enumerate().find(|(_, d)| d.address == address) {
-                    self.devices.remove(index);
+            Input::DeviceRemoved(address) => {
+                // if let Some((index, _)) = devices_guard.iter().enumerate().find(|(_, d)| d.address == address) {
+                //     devices_guard.remove(index);
+                // }
+                for i in (0..devices_guard.len()).rev() {
+                    if let Some(device) = devices_guard.get(i) {
+                        if device.address == address {
+                            devices_guard.remove(i);
+                        }
+                    }
                 }
             }
-            Message::DeviceSelected(index) => {
-                if let Some(info) = self.devices.get(index as usize) {
+            Input::DeviceSelected(index) => {
+                if let Some(info) = devices_guard.get(index as usize) {
                     self.scanner.stop();
                     if !info.connected {
                         println!("Selected device: {:?}", info);
-                        parent_sender.send(super::Message::DeviceSelected(info.address)).unwrap();
+                        sender.output(Output::DeviceSelected(info.address));
                     } else {
                         self.runtime.block_on(self.adapter.device(info.address).unwrap().disconnect()).unwrap();
                     }
                 }
             }
         }
-    }
-}
-
-
-#[relm4::widget(pub)]
-impl relm4::Widgets<Model, super::Model> for Widgets {
-    view! {
-        gtk::Box {
-            set_orientation: gtk::Orientation::Vertical,
-            set_margin_all: 12,
-            set_spacing: 10,
-            append = &gtk::Button {
-                set_child = Some(&adw::ButtonContent) {
-                    set_label: watch!(if model.scanner.is_scanning() {
-                        "Scanning..."
-                    } else {
-                        "Scan"
-                    }),
-                    set_icon_name: watch!(if model.scanner.is_scanning() {
-                        "bluetooth-acquiring-symbolic"
-                    } else {
-                        "bluetooth-symbolic"
-                    }),
-                },
-                connect_clicked(sender) => move |_| {
-                    send!(sender, Message::ScanToggled);
-                },
-            },
-            append = &gtk::ScrolledWindow {
-                set_hscrollbar_policy: gtk::PolicyType::Never,
-                set_vexpand: true,
-                set_child = Some(&gtk::ListBox) {
-                    // set_margin_all: 5,
-                    set_valign: gtk::Align::Start,
-                    add_css_class: "boxed-list",
-                    factory!(model.devices),
-                    connect_row_activated(sender) => move |_, row| {
-                        send!(sender, Message::DeviceSelected(row.index()))
-                    }
-                },
-            },
-        }
-    }
-
-    fn post_init() {
-        // Read known devices list
-        let adapter = model.adapter.clone();
-        model.runtime.spawn(async move {
-            let mut devices = VecDeque::new();
-            for device in bt::InfiniTime::list_known_devices(&adapter).await.unwrap() {
-                devices.push_back(DeviceInfo::new(&device).await.unwrap())
-            }
-            send!(sender, Message::KnownDevices(devices));
-        });
     }
 }
 
@@ -191,16 +216,20 @@ impl DeviceInfo {
 }
 
 // Factory for device list
-#[relm4::factory_prototype(pub)]
-impl FactoryPrototype for DeviceInfo {
-    type Factory = FactoryVecDeque<Self>;
+#[relm4::factory(pub)]
+impl FactoryComponent<gtk::ListBox, Input> for DeviceInfo {
+    type Command = ();
+    type CommandOutput = ();
+    type InitParams = Self;
+    type Input = ();
+    type Output = ();
     type Widgets = DeviceInfoWidgets;
-    type View = gtk::ListBox;
-    type Msg = Message;
 
     view! {
+        #[root]
         gtk::ListBoxRow {
-            set_child = Some(&gtk::Box) {
+            #[wrap(Some)]
+            set_child = &gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
                 append = &gtk::Box {
                     set_orientation: gtk::Orientation::Horizontal,
@@ -215,7 +244,8 @@ impl FactoryPrototype for DeviceInfo {
                         set_halign: gtk::Align::End,
                         set_hexpand: true,
                         set_icon_name: Some("emblem-default-symbolic"),
-                        set_visible: watch!(self.connected),
+                        #[watch]
+                        set_visible: self.connected,
                     }
                 },
                 append = &gtk::Box {
@@ -244,7 +274,26 @@ impl FactoryPrototype for DeviceInfo {
         }
     }
 
-    fn position(&self, _index: &DynamicIndex) {}
+    fn init_model(
+        model: Self,
+        _index: &DynamicIndex,
+        _input: &Sender<Self::Input>,
+        _output: &Sender<Self::Output>,
+    ) -> Self {
+        model
+    }
+
+    fn init_widgets(
+        &mut self,
+        _index: &DynamicIndex,
+        root: &Self::Root,
+        _returned_widget: &gtk::ListBoxRow,
+        _input: &Sender<Self::Input>,
+        _output: &Sender<Self::Output>,
+    ) -> Self::Widgets {
+        let widgets = view_output!();
+        widgets
+    }
 }
 
 
