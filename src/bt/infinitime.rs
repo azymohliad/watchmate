@@ -1,5 +1,4 @@
-use std::{fs::File, collections::HashMap, sync::Arc, path::Path, io::Read};
-use tokio::{runtime, sync::Notify, task::JoinHandle};
+use std::{fs::File, collections::HashMap, path::Path, io::Read};
 use futures::{pin_mut, StreamExt};
 use bluer::{gatt::remote::Characteristic, Adapter, Address, Device};
 use uuid::Uuid;
@@ -16,8 +15,6 @@ pub struct InfiniTime {
     device: Device,
     alias: String,
     characteristics: HashMap<Uuid, Characteristic>,
-    notification_stopper: Arc<Notify>,
-    notification_handle: Option<JoinHandle<()>>,
 }
 
 impl InfiniTime {
@@ -28,8 +25,6 @@ impl InfiniTime {
             device,
             alias,
             characteristics,
-            notification_stopper: Arc::new(Notify::new()),
-            notification_handle: None,
         })
     }
 
@@ -55,32 +50,20 @@ impl InfiniTime {
         Ok(self.read_characteristic(&uuids::CHR_HEART_RATE).await?[1])
     }
 
-    pub fn start_notification_session<F>(&mut self, runtime: runtime::Handle, callback: F)
+    pub async fn run_notification_session<F>(&self, callback: F)
         where F: Fn(Notification) + Send + 'static
     {
-        let heart_rate_chr = self.characteristics.get(&uuids::CHR_HEART_RATE).unwrap().clone();
-        let stopper = self.notification_stopper.clone();
+        let heart_rate_chr = self.characteristics.get(&uuids::CHR_HEART_RATE).unwrap();
+        let heart_rate_stream = heart_rate_chr.notify().await.unwrap();
+        pin_mut!(heart_rate_stream);
 
-        self.notification_handle = Some(runtime.spawn(async move {
-            let heart_rate_stream = heart_rate_chr.notify().await.unwrap();
-            pin_mut!(heart_rate_stream);
-
-            loop {
-                tokio::select! {
-                    Some(value) = heart_rate_stream.next() => {
-                        callback(Notification::HeartRate(value[1]));
-                    }
-                    _ = stopper.notified() => break,
-                    else => break,
+        loop {
+            tokio::select! {
+                Some(value) = heart_rate_stream.next() => {
+                    callback(Notification::HeartRate(value[1]));
                 }
+                else => break,
             }
-        }));
-    }
-
-    pub fn stop_notification_session(&mut self) {
-        if let Some(_handle) = self.notification_handle.take() {
-            self.notification_stopper.notify_one();
-            // TODO: Would it be useful to await on handle?
         }
     }
 
@@ -197,13 +180,6 @@ impl InfiniTime {
         Ok(())
     }
 
-    async fn read_characteristic(&self, uuid: &Uuid) -> Result<Vec<u8>> {
-        match self.characteristics.get(uuid) {
-            Some(c) => Ok(c.read().await?),
-            None => Err(anyhow!("Characteristic {} not found", uuid.to_string())),
-        }
-    }
-
     pub async fn check_device(device: &Device) -> bool {
         match device.name().await {
             Ok(Some(name)) => name.as_str() == "InfiniTime",
@@ -220,5 +196,12 @@ impl InfiniTime {
             }
         }
         Ok(result)
+    }
+
+    async fn read_characteristic(&self, uuid: &Uuid) -> Result<Vec<u8>> {
+        match self.characteristics.get(uuid) {
+            Some(c) => Ok(c.read().await?),
+            None => Err(anyhow!("Characteristic {} not found", uuid.to_string())),
+        }
     }
 }

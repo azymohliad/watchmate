@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{sync::Arc, path::PathBuf};
 use tokio::runtime;
 use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, ListBoxRowExt, WidgetExt};
 use adw::prelude::{PreferencesRowExt, ExpanderRowExt};
@@ -8,7 +8,7 @@ use anyhow::Result;
 use crate::bt;
 
 struct Watch {
-    device: bt::InfiniTime,
+    device: Arc<bt::InfiniTime>,
     battery_level: u8,
     heart_rate: u8,
     firmware_version: String,
@@ -16,7 +16,7 @@ struct Watch {
 
 impl Watch {
     async fn new(device: bluer::Device) -> Result<Self> {
-        let device = bt::InfiniTime::new(device).await?;
+        let device = Arc::new(bt::InfiniTime::new(device).await?);
         let battery_level = device.read_battery_level().await?;
         let heart_rate = device.read_heart_rate().await?;
         let firmware_version = device.read_firmware_version().await?;
@@ -221,11 +221,14 @@ impl SimpleComponent for Model {
 
                 if let Some(watch) = self.watch.as_mut() {
                     let send = sender.clone();
-                    watch.device.start_notification_session(self.runtime.clone(), move |notification| {
-                        match notification {
-                            bt::Notification::HeartRate(value) => send.input(Input::HeartRateUpdate(value)),
-                        }
-                    })
+                    let device_handle = watch.device.clone();
+                    self.runtime.spawn(async move {
+                        device_handle.run_notification_session(move |notification| {
+                            match notification {
+                                bt::Notification::HeartRate(value) => send.input(Input::HeartRateUpdate(value)),
+                            }
+                        }).await;
+                    });
                 }
             }
             Input::HeartRateUpdate(value) => {
