@@ -61,20 +61,26 @@ impl Component for Model {
             set_orientation: gtk::Orientation::Vertical,
             set_margin_all: 12,
             set_spacing: 10,
-            append = &gtk::ListBox {
+
+            gtk::ListBox {
                 set_valign: gtk::Align::Start,
                 add_css_class: "boxed-list",
-                append = &gtk::ListBoxRow {
+
+                gtk::ListBoxRow {
                     set_selectable: false,
-                    #[wrap(Some)]
-                    set_child = &gtk::Box {
+                    #[watch]
+                    set_sensitive: model.battery_level.is_some(),
+
+                    gtk::Box {
                         set_orientation: gtk::Orientation::Horizontal,
                         set_margin_all: 12,
                         set_spacing: 10,
-                        append = &gtk::Label {
+
+                        gtk::Label {
                             set_label: "Battery",
                         },
-                        append = &gtk::Label {
+
+                        gtk::Label {
                             #[watch]
                             set_label: match model.battery_level {
                                 Some(soc) => format!("{}%", soc),
@@ -82,14 +88,12 @@ impl Component for Model {
                             }.as_str(),
                             add_css_class: "dim-label",
                         },
-                        append = &gtk::LevelBar {
+
+                        gtk::LevelBar {
                             set_min_value: 0.0,
                             set_max_value: 100.0,
                             #[watch]
-                            set_value: match model.battery_level {
-                                Some(soc) => soc as f64,
-                                None => 0.0,
-                            },
+                            set_value: model.battery_level.unwrap_or(0) as f64,
                             #[watch]
                             set_visible: model.battery_level.is_some(),
                             set_hexpand: true,
@@ -97,19 +101,24 @@ impl Component for Model {
                         },
                     },
                 },
-                append = &gtk::ListBoxRow {
+
+                gtk::ListBoxRow {
                     set_selectable: false,
-                    #[wrap(Some)]
-                    set_child = &gtk::Box {
+                    #[watch]
+                    set_sensitive: model.heart_rate.is_some(),
+
+                    gtk::Box {
                         set_orientation: gtk::Orientation::Horizontal,
                         set_margin_all: 12,
                         set_spacing: 10,
-                        append = &gtk::Label {
+
+                        gtk::Label {
                             set_label: "Heart Rate",
                             set_hexpand: true,
                             set_halign: gtk::Align::Start,
                         },
-                        append = &gtk::Label {
+
+                        gtk::Label {
                             #[watch]
                             set_label: match model.heart_rate {
                                 Some(rate) => format!("{} BPM", rate),
@@ -122,27 +131,34 @@ impl Component for Model {
                     },
                 },
             },
-            append = &gtk::Label {
+
+            gtk::Label {
                 set_label: "System Info",
                 set_halign: gtk::Align::Start,
                 set_margin_top: 20,
             },
-            append = &gtk::ListBox {
+
+            gtk::ListBox {
                 set_valign: gtk::Align::Start,
                 add_css_class: "boxed-list",
-                append = &gtk::ListBoxRow {
+
+                gtk::ListBoxRow {
                     set_selectable: false,
-                    #[wrap(Some)]
-                    set_child = &gtk::Box {
+                    #[watch]
+                    set_sensitive: model.alias.is_some(),
+
+                    gtk::Box {
                         set_orientation: gtk::Orientation::Horizontal,
                         set_margin_all: 12,
                         set_spacing: 10,
-                        append = &gtk::Label {
+
+                        gtk::Label {
                             set_label: "Name",
                             set_hexpand: true,
                             set_halign: gtk::Align::Start,
                         },
-                        append = &gtk::Label {
+
+                        gtk::Label {
                             #[watch]
                             set_label: match &model.alias {
                                 Some(alias) => alias,
@@ -154,19 +170,24 @@ impl Component for Model {
                         },
                     },
                 },
-                append = &gtk::ListBoxRow {
+
+                gtk::ListBoxRow {
                     set_selectable: false,
-                    #[wrap(Some)]
-                    set_child = &gtk::Box {
+                    #[watch]
+                    set_sensitive: model.address.is_some(),
+
+                    gtk::Box {
                         set_orientation: gtk::Orientation::Horizontal,
                         set_margin_all: 12,
                         set_spacing: 10,
-                        append = &gtk::Label {
+
+                        gtk::Label {
                             set_label: "Address",
                             set_hexpand: true,
                             set_halign: gtk::Align::Start,
                         },
-                        append = &gtk::Label {
+
+                        gtk::Label {
                             #[watch]
                             set_label: match &model.address {
                                 Some(address) => address,
@@ -178,8 +199,12 @@ impl Component for Model {
                         },
                     },
                 },
-                append = &adw::ExpanderRow {
+
+                adw::ExpanderRow {
                     set_title: "Firmware Version",
+                    #[watch]
+                    set_sensitive: model.firmware_version.is_some(),
+
                     add_action = &gtk::Label {
                         #[watch]
                         set_label: match &model.firmware_version {
@@ -188,14 +213,16 @@ impl Component for Model {
                         },
                         add_css_class: "dim-label",
                     },
+
                     add_row = &gtk::ListBoxRow {
                         set_selectable: false,
-                        #[wrap(Some)]
-                        set_child = &gtk::Box {
+
+                        gtk::Box {
                             set_orientation: gtk::Orientation::Horizontal,
                             set_margin_all: 12,
                             set_spacing: 10,
-                            append = &gtk::Button {
+
+                            gtk::Button {
                                 set_label: "Update",
                                 connect_clicked[sender] => move |_| {
                                     sender.output(Output::OpenFileDialog);

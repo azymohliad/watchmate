@@ -110,6 +110,8 @@ impl Component for Model {
 
                 #[local]
                 toast_overlay -> adw::ToastOverlay {
+                    // TODO: Use Relm 0.5 conditional widgets here (automatic stack)
+                    // I can't make it work here for some reason for now.
                     #[wrap(Some)]
                     set_child = &gtk::Stack {
                         add_named[Some("dashboard_view")] = &adw::Clamp {

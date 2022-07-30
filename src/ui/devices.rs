@@ -52,9 +52,9 @@ impl Component for Model {
             set_orientation: gtk::Orientation::Vertical,
             set_margin_all: 12,
             set_spacing: 10,
-            append = &gtk::Button {
-                #[wrap(Some)]
-                set_child = &adw::ButtonContent {
+
+            gtk::Button {
+                adw::ButtonContent {
                     #[watch]
                     set_label: if model.is_scanning {
                         "Scanning..."
@@ -72,12 +72,13 @@ impl Component for Model {
                     sender.input(Input::ScanToggled);
                 },
             },
-            append = &gtk::ScrolledWindow {
+
+            gtk::ScrolledWindow {
                 set_hscrollbar_policy: gtk::PolicyType::Never,
                 set_vexpand: true,
-                #[wrap(Some)]
+
                 #[local_ref]
-                set_child = factory_widget -> gtk::ListBox {
+                factory_widget -> gtk::ListBox {
                     // set_margin_all: 5,
                     set_valign: gtk::Align::Start,
                     add_css_class: "boxed-list",
@@ -301,18 +302,20 @@ impl FactoryComponent<gtk::ListBox, Input> for DeviceInfo {
     view! {
         #[root]
         gtk::ListBoxRow {
-            #[wrap(Some)]
-            set_child = &gtk::Box {
+            gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
-                append = &gtk::Box {
+
+                gtk::Box {
                     set_orientation: gtk::Orientation::Horizontal,
-                    append = &gtk::Label {
+
+                    gtk::Label {
                         set_margin_all: 5,
                         set_halign: gtk::Align::Start,
                         set_hexpand: true,
                         set_label: &self.alias,
                     },
-                    append = &gtk::Image {
+
+                    gtk::Image {
                         set_margin_all: 5,
                         set_halign: gtk::Align::End,
                         set_hexpand: true,
@@ -321,18 +324,21 @@ impl FactoryComponent<gtk::ListBox, Input> for DeviceInfo {
                         set_visible: self.connected,
                     }
                 },
-                append = &gtk::Box {
+
+                gtk::Box {
                     set_orientation: gtk::Orientation::Horizontal,
                     set_spacing: 5,
                     set_margin_all: 5,
-                    append = &gtk::Label {
+
+                    gtk::Label {
                         set_margin_all: 5,
                         set_halign: gtk::Align::Start,
                         set_hexpand: true,
                         set_label: &self.address.to_string(),
                         add_css_class: "dim-label",
                     },
-                    append = &gtk::Label {
+
+                    gtk::Label {
                         set_margin_all: 5,
                         set_halign: gtk::Align::End,
                         set_hexpand: true,
