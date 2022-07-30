@@ -8,7 +8,7 @@ mod uuids;
 pub mod gatt_server;
 
 pub use scanner::Scanner;
-pub use infinitime::{InfiniTime, Notification};
+pub use infinitime::{InfiniTime, Notification, FwUpdNotification};
 
 pub async fn init_adapter() -> Result<Adapter> {
     let session = Session::new().await?;

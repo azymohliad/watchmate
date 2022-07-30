@@ -1,6 +1,6 @@
 use std::{fs::File, collections::HashMap, path::Path, io::Read};
 use futures::{pin_mut, StreamExt};
-use bluer::{gatt::remote::Characteristic, Adapter, Address, Device};
+use bluer::{gatt::remote::Characteristic, Adapter, Device};
 use uuid::Uuid;
 use anyhow::{anyhow, ensure, Result};
 
@@ -10,30 +10,27 @@ pub enum Notification {
     HeartRate(u8),
 }
 
+#[derive(Debug)]
+pub enum FwUpdNotification {
+    Extracted,
+    Initiated,
+    BytesSent(u32, u32),
+}
 
+#[derive(Debug)]
 pub struct InfiniTime {
     device: Device,
-    alias: String,
     characteristics: HashMap<Uuid, Characteristic>,
 }
 
 impl InfiniTime {
     pub async fn new(device: Device) -> Result<Self> {
-        let alias = device.alias().await?;
         let characteristics = super::read_characteristics_map(&device).await?;
-        Ok(Self {
-            device,
-            alias,
-            characteristics,
-        })
+        Ok(Self { device, characteristics })
     }
 
-    pub fn get_alias(&self) -> &str {
-        self.alias.as_str()
-    }
-
-    pub fn get_address(&self) -> Address {
-        self.device.address()
+    pub fn device(&self) -> &bluer::Device {
+        &self.device
     }
 
     pub async fn read_battery_level(&self) -> Result<u8> {
@@ -67,7 +64,9 @@ impl InfiniTime {
         }
     }
 
-    pub async fn firmware_upgrade(&self, filepath: &Path) -> Result<()> {
+    pub async fn firmware_upgrade<F>(&self, filepath: &Path, callback: F) -> Result<()>
+        where F: Fn(FwUpdNotification) + Send + 'static
+    {
         let file = File::open(filepath)?;
         let mut zip = zip::ZipArchive::new(file)?;
 
@@ -98,6 +97,8 @@ impl InfiniTime {
         zip.by_name(&dfu_dat).unwrap().read_to_end(&mut init_packet)?;
         let mut firmware_buffer = Vec::new();
         zip.by_name(&dfu_bin).unwrap().read_to_end(&mut firmware_buffer)?;
+
+        callback(FwUpdNotification::Extracted);
 
         // Obtain characteristics
         let ctl_char = self.characteristics.get(&uuids::CHR_FWUPD_CONTROL_POINT)
@@ -133,7 +134,7 @@ impl InfiniTime {
         ctl_char.write(&[0x02, 0x01]).await?;
 
         // Step 5
-        let receipt_interval = 100;
+        let receipt_interval = 255;
         let receipt = ctl_stream.next().await
             .ok_or(anyhow!("Control point notification stream ended"))?;
         println!("CTL <- {:?}", &receipt);
@@ -145,19 +146,19 @@ impl InfiniTime {
         println!("CTL -> {:?}", [0x03]);
         ctl_char.write(&[0x03]).await?;
 
+        callback(FwUpdNotification::Initiated);
+
         // Step 7
-        let mut sent_size = 0;
-        let mut total_sent_size = 0;
+        let mut bytes_sent = 0;
         for (idx, packet) in firmware_buffer.chunks(20).enumerate() {
             pkt_char.write(&packet).await?;
-            sent_size += packet.len();
-            total_sent_size += packet.len();
+            bytes_sent += packet.len() as u32;
             if (idx + 1) % receipt_interval as usize == 0 {
                 let receipt = ctl_stream.next().await
                     .ok_or(anyhow!("Control point notification stream ended"))?;
-                let received_size = u32::from_le_bytes(receipt[1..5].try_into()?) as usize;
-                ensure!(sent_size == received_size);
-                println!("Bytes sent: {}/{}", total_sent_size, firmware_size);
+                let bytes_received = u32::from_le_bytes(receipt[1..5].try_into()?);
+                ensure!(bytes_sent == bytes_received);
+                callback(FwUpdNotification::BytesSent(bytes_sent, firmware_size))
             }
         }
 

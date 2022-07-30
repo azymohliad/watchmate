@@ -1,39 +1,13 @@
-use std::{sync::Arc, path::PathBuf};
-use tokio::runtime;
+use std::sync::Arc;
 use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, ListBoxRowExt, WidgetExt};
 use adw::prelude::{PreferencesRowExt, ExpanderRowExt};
-use relm4::{adw, gtk, ComponentParts, ComponentSender, SimpleComponent, WidgetPlus};
+use relm4::{adw, gtk, ComponentParts, ComponentSender, Component, Sender, WidgetPlus};
 use anyhow::Result;
-
 use crate::bt;
-
-struct Watch {
-    device: Arc<bt::InfiniTime>,
-    battery_level: u8,
-    heart_rate: u8,
-    firmware_version: String,
-}
-
-impl Watch {
-    async fn new(device: bluer::Device) -> Result<Self> {
-        let device = Arc::new(bt::InfiniTime::new(device).await?);
-        let battery_level = device.read_battery_level().await?;
-        let heart_rate = device.read_heart_rate().await?;
-        let firmware_version = device.read_firmware_version().await?;
-        Ok(Self {
-            device,
-            battery_level,
-            heart_rate,
-            firmware_version,
-        })
-    }
-}
 
 #[derive(Debug)]
 pub enum Input {
-    Connected(bluer::Device),
-    HeartRateUpdate(u8),
-    FirmwareUpdate(PathBuf),
+    Connected(Arc<bt::InfiniTime>),
 }
 
 #[derive(Debug)]
@@ -42,14 +16,42 @@ pub enum Output {
     Notification(String),
 }
 
+#[derive(Debug)]
+pub enum CommandOutput {
+    BatteryLevel(u8),
+    HeartRate(u8),
+    Alias(String),
+    Address(String),
+    FirmwareVersion(String),
+}
+
+#[derive(Default)]
 pub struct Model {
-    runtime: runtime::Handle,
-    watch: Option<Watch>,
+    // UI state
+    battery_level: Option<u8>,
+    heart_rate: Option<u8>,
+    alias: Option<String>,
+    address: Option<String>,
+    firmware_version: Option<String>,
+    // Other
+    infinitime: Option<Arc<bt::InfiniTime>>,
+}
+
+impl Model {
+    async fn read_info(infinitime: Arc<bt::InfiniTime>, sender: Sender<CommandOutput>) -> Result<()> {
+        sender.send(CommandOutput::Address(infinitime.device().address().to_string()));
+        sender.send(CommandOutput::BatteryLevel(infinitime.read_battery_level().await?));
+        sender.send(CommandOutput::HeartRate(infinitime.read_heart_rate().await?));
+        sender.send(CommandOutput::Alias(infinitime.device().alias().await?));
+        sender.send(CommandOutput::FirmwareVersion(infinitime.read_firmware_version().await?));
+        Ok(())
+    }
 }
 
 #[relm4::component(pub)]
-impl SimpleComponent for Model {
-    type InitParams = runtime::Handle;
+impl Component for Model {
+    type CommandOutput = CommandOutput;
+    type InitParams = ();
     type Input = Input;
     type Output = Output;
     type Widgets = Widgets;
@@ -74,8 +76,8 @@ impl SimpleComponent for Model {
                         },
                         append = &gtk::Label {
                             #[watch]
-                            set_label: match &model.watch {
-                                Some(watch) => format!("{}%", watch.battery_level),
+                            set_label: match model.battery_level {
+                                Some(soc) => format!("{}%", soc),
                                 None => String::from("Unavailable"),
                             }.as_str(),
                             add_css_class: "dim-label",
@@ -84,12 +86,12 @@ impl SimpleComponent for Model {
                             set_min_value: 0.0,
                             set_max_value: 100.0,
                             #[watch]
-                            set_value: match &model.watch {
-                                Some(watch) => watch.battery_level as f64,
+                            set_value: match model.battery_level {
+                                Some(soc) => soc as f64,
                                 None => 0.0,
                             },
                             #[watch]
-                            set_visible: model.watch.is_some(),
+                            set_visible: model.battery_level.is_some(),
                             set_hexpand: true,
                             set_valign: gtk::Align::Center,
                         },
@@ -109,8 +111,8 @@ impl SimpleComponent for Model {
                         },
                         append = &gtk::Label {
                             #[watch]
-                            set_label: match &model.watch {
-                                Some(watch) => format!("{} BPM", watch.heart_rate),
+                            set_label: match model.heart_rate {
+                                Some(rate) => format!("{} BPM", rate),
                                 None => String::from("Unavailable"),
                             }.as_str(),
                             add_css_class: "dim-label",
@@ -142,8 +144,8 @@ impl SimpleComponent for Model {
                         },
                         append = &gtk::Label {
                             #[watch]
-                            set_label: match &model.watch {
-                                Some(watch) => watch.device.get_alias(),
+                            set_label: match &model.alias {
+                                Some(alias) => alias,
                                 None => "Unavailable",
                             },
                             add_css_class: "dim-label",
@@ -166,10 +168,10 @@ impl SimpleComponent for Model {
                         },
                         append = &gtk::Label {
                             #[watch]
-                            set_label: match &model.watch {
-                                Some(watch) => watch.device.get_address().to_string(),
-                                None => String::from("Unavailable"),
-                            }.as_str(),
+                            set_label: match &model.address {
+                                Some(address) => address,
+                                None => "Unavailable",
+                            },
                             add_css_class: "dim-label",
                             set_hexpand: true,
                             set_halign: gtk::Align::End,
@@ -180,8 +182,8 @@ impl SimpleComponent for Model {
                     set_title: "Firmware Version",
                     add_action = &gtk::Label {
                         #[watch]
-                        set_label: match &model.watch {
-                            Some(watch) => watch.firmware_version.as_str(),
+                        set_label: match &model.firmware_version {
+                            Some(version) => version,
                             None => "Unavailable",
                         },
                         add_css_class: "dim-label",
@@ -196,8 +198,6 @@ impl SimpleComponent for Model {
                             append = &gtk::Button {
                                 set_label: "Update",
                                 connect_clicked[sender] => move |_| {
-                                    // let filepath = PathBuf::from("/home/azymohliad/Downloads/OS/pinetime-mcuboot-app-dfu-1.10.0.zip");
-                                    // sender.input(Input::FirmwareUpdate(filepath));
                                     sender.output(Output::OpenFileDialog);
                                 },
                             },
@@ -208,43 +208,44 @@ impl SimpleComponent for Model {
         }
     }
 
-    fn init(runtime: Self::InitParams, root: &Self::Root, sender: &ComponentSender<Self>) -> ComponentParts<Self> {
-        let model = Self { runtime, watch: None };
+    fn init(_: Self::InitParams, root: &Self::Root, sender: &ComponentSender<Self>) -> ComponentParts<Self> {
+        let model = Self::default();
         let widgets = view_output!();
         ComponentParts { model, widgets }
     }
 
     fn update(&mut self, msg: Self::Input, sender: &ComponentSender<Self>) {
         match msg {
-            Input::Connected(device) => {
-                self.watch = self.runtime.block_on(Watch::new(device)).ok();
-
-                if let Some(watch) = self.watch.as_mut() {
-                    let send = sender.clone();
-                    let device_handle = watch.device.clone();
-                    self.runtime.spawn(async move {
-                        device_handle.run_notification_session(move |notification| {
+            Input::Connected(infinitime) => {
+                self.infinitime = Some(infinitime.clone());
+                sender.command(move |out, shutdown| {
+                    // TODO: Remove this extra clone once ComponentSender::command
+                    // is patched to accept FnOnce instead of Fn
+                    let infinitime = infinitime.clone();
+                    shutdown.register(async move {
+                        // Read inital data
+                        if let Err(error) = Self::read_info(infinitime.clone(), out.clone()).await {
+                            eprintln!("Failed to read info: {}", error);
+                        }
+                        // Run data update session
+                        infinitime.run_notification_session(move |notification| {
                             match notification {
-                                bt::Notification::HeartRate(value) => send.input(Input::HeartRateUpdate(value)),
+                                bt::Notification::HeartRate(value) => out.send(CommandOutput::HeartRate(value)),
                             }
                         }).await;
-                    });
-                }
+                    }).drop_on_shutdown()
+                });
             }
-            Input::HeartRateUpdate(value) => {
-                if let Some(watch) = self.watch.as_mut() {
-                    watch.heart_rate = value;
-                }
-            }
-            Input::FirmwareUpdate(filename) => {
-                if let Some(watch) = &self.watch {
-                    let res = self.runtime.block_on(watch.device.firmware_upgrade(filename.as_path()));
-                    if let Err(error) = res {
-                        sender.output(Output::Notification(String::from("Firmware update failed...")));
-                        eprintln!("Firmware update failed: {}", error);
-                    }
-                }
-            }
+        }
+    }
+
+    fn update_cmd(&mut self, msg: Self::CommandOutput, _sender: &ComponentSender<Self>) {
+        match msg {
+            CommandOutput::BatteryLevel(soc) => self.battery_level = Some(soc),
+            CommandOutput::HeartRate(rate) => self.heart_rate = Some(rate),
+            CommandOutput::Alias(alias) => self.alias = Some(alias),
+            CommandOutput::Address(address) => self.address = Some(address),
+            CommandOutput::FirmwareVersion(version) => self.firmware_version = Some(version),
         }
     }
 }

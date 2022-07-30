@@ -1,34 +1,38 @@
 use std::{sync::Arc, path::PathBuf};
-use tokio::runtime::Runtime;
 use gtk::prelude::{ButtonExt, GtkWindowExt, OrientableExt, WidgetExt, FileChooserExt, FileExt};
-use relm4::{adw, gtk,
-    Component, ComponentController, ComponentParts, ComponentSender,
-    Controller, RelmApp, SimpleComponent
+use relm4::{
+    adw, gtk, Component, ComponentController, ComponentParts, ComponentSender, Controller, RelmApp
 };
+use crate::bt;
 
-mod watch;
-mod scanner;
+mod dashboard;
+mod devices;
+mod fwupd;
 
 #[derive(Debug)]
 enum Input {
     SetView(View),
-    DeviceSelected(bluer::Address),
-    DeviceConnected(bluer::Address),
+    DeviceConnected(bluer::Device),
     FirmwareUpdate(PathBuf),
     Notification(String),
+}
+
+#[derive(Debug)]
+enum CommandOutput {
+    DeviceReady(Arc<bt::InfiniTime>),
 }
 
 struct Model {
     // UI state
     active_view: View,
     is_connected: bool,
-    // Non-UI state
-    runtime: Runtime,
-    adapter: Arc<bluer::Adapter>,
-    toast_overlay: adw::ToastOverlay,
     // Components
-    watch: Controller<watch::Model>,
-    scanner: Controller<scanner::Model>,
+    dashboard: Controller<dashboard::Model>,
+    devices: Controller<devices::Model>,
+    fwupd: Controller<fwupd::Model>,
+    // Other
+    infinitime: Option<Arc<bt::InfiniTime>>,
+    toast_overlay: adw::ToastOverlay,
 }
 
 impl Model {
@@ -38,8 +42,9 @@ impl Model {
 }
 
 #[relm4::component]
-impl SimpleComponent for Model {
-    type InitParams = (Runtime, Arc<bluer::Adapter>);
+impl Component for Model {
+    type CommandOutput = CommandOutput;
+    type InitParams = Arc<bluer::Adapter>;
     type Input = Input;
     type Output = ();
     type Widgets = Widgets;
@@ -57,8 +62,8 @@ impl SimpleComponent for Model {
                     set_title_widget = &gtk::Label {
                         #[watch]
                         set_label: match model.active_view {
-                            View::Main => "WatchMate",
-                            View::Scan => "Devices",
+                            View::Dashboard => "WatchMate",
+                            View::Devices => "Devices",
                             View::FileChooser => "Choose DFU file",
                             View::FirmwareUpdate => "Firmware Upgrade",
                         },
@@ -68,9 +73,9 @@ impl SimpleComponent for Model {
                         set_label: "Back",
                         set_icon_name: "go-previous-symbolic",
                         #[watch]
-                        set_visible: model.active_view != View::Main,
+                        set_visible: model.active_view != View::Dashboard,
                         connect_clicked[sender] => move |_| {
-                            sender.input(Input::SetView(View::Main));
+                            sender.input(Input::SetView(View::Dashboard));
                         },
                     },
 
@@ -83,9 +88,9 @@ impl SimpleComponent for Model {
                             "bluetooth-disconnected-symbolic"
                         },
                         #[watch]
-                        set_visible: model.active_view == View::Main,
+                        set_visible: model.active_view == View::Dashboard,
                         connect_clicked[sender] => move |_| {
-                            sender.input(Input::SetView(View::Scan));
+                            sender.input(Input::SetView(View::Devices));
                         },
                     },
 
@@ -107,14 +112,14 @@ impl SimpleComponent for Model {
                 toast_overlay -> adw::ToastOverlay {
                     #[wrap(Some)]
                     set_child = &gtk::Stack {
-                        add_named[Some("main_view")] = &adw::Clamp {
+                        add_named[Some("dashboard_view")] = &adw::Clamp {
                             set_maximum_size: 400,
-                            // set_visible: watch!(components.watch.model.device.is_some()),
-                            set_child: Some(model.watch.widget()),
+                            // set_visible: watch!(components.dashboard.model.device.is_some()),
+                            set_child: Some(model.dashboard.widget()),
                         },
-                        add_named[Some("scan_view")] = &adw::Clamp {
+                        add_named[Some("devices_view")] = &adw::Clamp {
                             set_maximum_size: 400,
-                            set_child: Some(model.scanner.widget()),
+                            set_child: Some(model.devices.widget()),
                         },
                         #[name(file_chooser)]
                         add_named[Some("file_view")] = &gtk::FileChooserWidget {
@@ -125,11 +130,12 @@ impl SimpleComponent for Model {
                         },
                         add_named[Some("fwupd_view")] = &adw::Clamp {
                             set_maximum_size: 400,
+                            set_child: Some(model.fwupd.widget()),
                         },
                         #[watch]
                         set_visible_child_name: match model.active_view {
-                            View::Main => "main_view",
-                            View::Scan => "scan_view",
+                            View::Dashboard => "dashboard_view",
+                            View::Devices => "devices_view",
                             View::FileChooser => "file_view",
                             View::FirmwareUpdate => "fwupd_view",
                         },
@@ -139,40 +145,37 @@ impl SimpleComponent for Model {
         }
     }
 
-    fn init(params: Self::InitParams, root: &Self::Root, sender: &ComponentSender<Self>) -> ComponentParts<Self> {
-        // Init params
-        let runtime = params.0;
-        let adapter = params.1;
-
+    fn init(adapter: Self::InitParams, root: &Self::Root, sender: &ComponentSender<Self>) -> ComponentParts<Self> {
         // Components
-        let watch = watch::Model::builder()
-            .launch(runtime.handle().clone())
+        let dashboard = dashboard::Model::builder()
+            .launch(())
             .forward(&sender.input, |message| match message {
-                watch::Output::OpenFileDialog => Input::SetView(View::FileChooser),
-                watch::Output::Notification(text) => Input::Notification(text),
+                dashboard::Output::OpenFileDialog => Input::SetView(View::FileChooser),
+                dashboard::Output::Notification(text) => Input::Notification(text),
             });
 
-        let scanner = scanner::Model::builder()
-            .launch((runtime.handle().clone(), adapter.clone()))
+        let devices = devices::Model::builder()
+            .launch(adapter)
             .forward(&sender.input, |message| match message {
-                scanner::Output::DeviceConnected(address) => Input::DeviceConnected(address),
-                scanner::Output::DeviceSelected(address) => Input::DeviceSelected(address),
+                devices::Output::DeviceConnected(address) => Input::DeviceConnected(address),
+                devices::Output::Notification(text) => Input::Notification(text),
             });
+
+        let fwupd = fwupd::Model::builder().launch(()).detach();
 
         let toast_overlay = adw::ToastOverlay::new();
 
         let model = Model {
             // UI state
-            active_view: View::Scan,
+            active_view: View::Devices,
             is_connected: false,
-            // System
-            runtime,
-            adapter,
-            // Widget handles
-            toast_overlay: toast_overlay.clone(),
             // Components
-            watch,
-            scanner,
+            dashboard,
+            devices,
+            fwupd,
+            // Other
+            infinitime: None,
+            toast_overlay: toast_overlay.clone(),
         };
 
         let widgets = view_output!();
@@ -186,35 +189,37 @@ impl SimpleComponent for Model {
             Input::SetView(view) => {
                 self.active_view = view;
             }
-            Input::DeviceSelected(address) => {
-                match self.adapter.device(address) {
-                    Ok(device) => {
-                        let send = sender.clone();
-                        self.runtime.spawn(async move {
-                            match device.connect().await {
-                                Ok(()) => send.input(Input::DeviceConnected(address)),
-                                Err(error) => eprintln!("Error: {}", error),
-                            }
-                        });
-                    }
-                    Err(error) => self.notify(&format!("Error: {}", error)),
-                }
-            }
-            Input::DeviceConnected(address) => {
-                println!("Connected: {}", address.to_string());
+            Input::DeviceConnected(device) => {
                 self.is_connected = true;
-                self.active_view = View::Main;
-                match self.adapter.device(address) {
-                    Ok(device) => self.watch.emit(watch::Input::Connected(device)),
-                    Err(error) => self.notify(&format!("Error: {}", error)),
-                }
+                self.active_view = View::Dashboard;
+                sender.command(move |out, shutdown| {
+                    // TODO: Remove this extra clone once ComponentSender::command
+                    // is patched to accept FnOnce instead of Fn
+                    let device = device.clone();
+                    let task = async move {
+                        let infinitime = bt::InfiniTime::new(device).await.unwrap();
+                        out.send(CommandOutput::DeviceReady(Arc::new(infinitime)));
+                    };
+                    shutdown.register(task).drop_on_shutdown()
+                })
             }
             Input::FirmwareUpdate(filename) => {
-                self.watch.emit(watch::Input::FirmwareUpdate(filename));
-                sender.input(Input::SetView(View::FirmwareUpdate));
+                if let Some(infinitime) = self.infinitime.clone() {
+                    self.fwupd.emit(fwupd::Input::FirmwareUpdate(filename, infinitime));
+                    sender.input(Input::SetView(View::FirmwareUpdate));
+                }
             }
             Input::Notification(message) => {
                 self.notify(&message);
+            }
+        }
+    }
+
+    fn update_cmd(&mut self, msg: Self::CommandOutput, _sender: &ComponentSender<Self>) {
+        match msg {
+            CommandOutput::DeviceReady(infinitime) => {
+                self.infinitime = Some(infinitime.clone());
+                self.dashboard.emit(dashboard::Input::Connected(infinitime));
             }
         }
     }
@@ -224,18 +229,18 @@ impl SimpleComponent for Model {
 
 #[derive(Debug, PartialEq)]
 enum View {
-    Main,
-    Scan,
+    Dashboard,
+    Devices,
     FileChooser,
     FirmwareUpdate,
 }
 
 
-pub fn run(runtime: Runtime, adapter: Arc<bluer::Adapter>) {
+pub fn run(adapter: Arc<bluer::Adapter>) {
     // Init GTK before libadwaita (ToastOverlay)
     gtk::init().unwrap();
 
     // Run app
     let app = RelmApp::new("io.gitlab.azymohliad.WatchMate");
-    app.run::<Model>((runtime, adapter));
+    app.run::<Model>(adapter);
 }
