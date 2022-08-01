@@ -17,6 +17,7 @@ pub enum Input {
 #[derive(Debug)]
 pub enum Output {
     DeviceConnected(bluer::Device),
+    DeviceDisconnected(bluer::Device),
     Notification(String),
 }
 
@@ -265,6 +266,7 @@ impl Component for Model {
                         }
                     }
                 }
+                sender.output(Output::DeviceDisconnected(device));
             }
         }
     }

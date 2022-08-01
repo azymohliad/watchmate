@@ -13,6 +13,7 @@ mod fwupd;
 enum Input {
     SetView(View),
     DeviceConnected(bluer::Device),
+    DeviceDisconnected(bluer::Device),
     FirmwareUpdate(PathBuf),
     Notification(String),
 }
@@ -159,7 +160,8 @@ impl Component for Model {
         let devices = devices::Model::builder()
             .launch(adapter)
             .forward(&sender.input, |message| match message {
-                devices::Output::DeviceConnected(address) => Input::DeviceConnected(address),
+                devices::Output::DeviceConnected(device) => Input::DeviceConnected(device),
+                devices::Output::DeviceDisconnected(device) => Input::DeviceDisconnected(device),
                 devices::Output::Notification(text) => Input::Notification(text),
             });
 
@@ -204,6 +206,14 @@ impl Component for Model {
                     };
                     shutdown.register(task).drop_on_shutdown()
                 })
+            }
+            Input::DeviceDisconnected(device) => {
+                if self.infinitime.as_ref().map_or(false, |i| i.device().address() == device.address()) {
+                // Use this once is_some_and is stabilized:
+                // if self.infinitime.is_some_and(|i| i.device().address() == device.address()) {
+                    self.infinitime = None;
+                }
+                self.dashboard.emit(dashboard::Input::Disconnected);
             }
             Input::FirmwareUpdate(filename) => {
                 if let Some(infinitime) = self.infinitime.clone() {

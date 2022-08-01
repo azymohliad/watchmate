@@ -8,6 +8,7 @@ use crate::bt;
 #[derive(Debug)]
 pub enum Input {
     Connected(Arc<bt::InfiniTime>),
+    Disconnected,
 }
 
 #[derive(Debug)]
@@ -262,6 +263,14 @@ impl Component for Model {
                         }).await;
                     }).drop_on_shutdown()
                 });
+            }
+            Input::Disconnected => {
+                self.battery_level = None;
+                self.heart_rate = None;
+                self.alias = None;
+                self.address = None;
+                self.firmware_version = None;
+                self.infinitime = None;
             }
         }
     }
