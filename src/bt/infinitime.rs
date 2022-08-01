@@ -12,8 +12,7 @@ pub enum Notification {
 
 #[derive(Debug)]
 pub enum FwUpdNotification {
-    Extracted,
-    Initiated,
+    Message(&'static str),
     BytesSent(u32, u32),
 }
 
@@ -67,6 +66,8 @@ impl InfiniTime {
     pub async fn firmware_upgrade<F>(&self, filepath: &Path, callback: F) -> Result<()>
         where F: Fn(FwUpdNotification) + Send + 'static
     {
+        callback(FwUpdNotification::Message("Extracting firmware files..."));
+
         let file = File::open(filepath)?;
         let mut zip = zip::ZipArchive::new(file)?;
 
@@ -98,7 +99,6 @@ impl InfiniTime {
         let mut firmware_buffer = Vec::new();
         zip.by_name(&dfu_bin).unwrap().read_to_end(&mut firmware_buffer)?;
 
-        callback(FwUpdNotification::Extracted);
 
         // Obtain characteristics
         let ctl_char = self.characteristics.get(&uuids::CHR_FWUPD_CONTROL_POINT)
@@ -109,46 +109,41 @@ impl InfiniTime {
         pin_mut!(ctl_stream);
 
         // Step 1
-        println!("CTL -> {:?}", [0x01, 0x04]);
+        callback(FwUpdNotification::Message("Initiating firmware upgrade..."));
         ctl_char.write(&[0x01, 0x04]).await?;
 
         // Step 2
         let mut size_packet = vec![0; 8];
         let firmware_size = firmware_buffer.len() as u32;
         size_packet.extend_from_slice(&firmware_size.to_le_bytes());
-        println!("PKT -> {:?}", &size_packet);
         pkt_char.write(&size_packet).await?;
 
-        // Step 3
         let receipt = ctl_stream.next().await
             .ok_or(anyhow!("Control point notification stream ended"))?;
-        println!("CTL <- {:?}", &receipt);
         ensure!(receipt == &[0x10, 0x01, 0x01]);
-        println!("CTL -> {:?}", [0x02, 0x00]);
+
+        // Step 3
+        callback(FwUpdNotification::Message("Sending DFU init packet..."));
         ctl_char.write(&[0x02, 0x00]).await?;
 
         // Step 4
-        println!("PKT -> {:?}", &init_packet);
         pkt_char.write(&init_packet).await?;
-        println!("CTL -> {:?}", [0x02, 0x01]);
         ctl_char.write(&[0x02, 0x01]).await?;
 
-        // Step 5
-        let receipt_interval = 255;
         let receipt = ctl_stream.next().await
             .ok_or(anyhow!("Control point notification stream ended"))?;
-        println!("CTL <- {:?}", &receipt);
         ensure!(receipt == &[0x10, 0x02, 0x01]);
-        println!("CTL -> {:?}", [0x08, receipt_interval]);
+
+        // Step 5
+        callback(FwUpdNotification::Message("Configuring receipt interval..."));
+        let receipt_interval = 100;
         ctl_char.write(&[0x08, receipt_interval]).await?;
 
         // Step 6
-        println!("CTL -> {:?}", [0x03]);
         ctl_char.write(&[0x03]).await?;
 
-        callback(FwUpdNotification::Initiated);
-
         // Step 7
+        callback(FwUpdNotification::Message("Sending firmware..."));
         let mut bytes_sent = 0;
         for (idx, packet) in firmware_buffer.chunks(20).enumerate() {
             pkt_char.write(&packet).await?;
@@ -163,20 +158,21 @@ impl InfiniTime {
         }
 
         // Step 8
+        callback(FwUpdNotification::Message("Waiting for firmware receipt..."));
         let receipt = ctl_stream.next().await
             .ok_or(anyhow!("Control point notification stream ended"))?;
-        println!("CTL <- {:?}", &receipt);
         ensure!(receipt == &[0x10, 0x03, 0x01]);
-        println!("CTL -> {:?}", [0x04]);
         ctl_char.write(&[0x04]).await?;
 
+
         // Step 9
+        callback(FwUpdNotification::Message("Waiting for firmware validation..."));
         let receipt = ctl_stream.next().await
             .ok_or(anyhow!("Control point notification stream ended"))?;
-        println!("CTL <- {:?}", &receipt);
         ensure!(receipt == &[0x10, 0x04, 0x01]);
-        println!("CTL -> {:?}", [0x05]);
         ctl_char.write(&[0x05]).await?;
+
+        callback(FwUpdNotification::Message("Done!"));
 
         Ok(())
     }

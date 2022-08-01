@@ -15,9 +15,9 @@ pub enum Output {
 
 #[derive(Debug)]
 pub enum CommandOutput {
-    UpdateSuccessful,
+    UpdateFinished,
     UpdateFailed,
-    Message(String),
+    Message(&'static str),
     Progress(u32, u32),
 }
 
@@ -25,6 +25,7 @@ pub struct Model {
     message: String,
     sent: u32,
     total: u32,
+    state: State,
 }
 
 #[relm4::component(pub)]
@@ -41,25 +42,27 @@ impl Component for Model {
             set_margin_all: 12,
             set_spacing: 10,
 
+            gtk::Label {
+                #[watch]
+                set_label: &model.message,
+                set_halign: gtk::Align::Center,
+                set_margin_top: 20,
+            },
+
             gtk::LevelBar {
                 set_min_value: 0.0,
                 #[watch]
                 set_max_value: model.total as f64,
                 #[watch]
                 set_value: model.sent as f64,
-            },
-
-            gtk::Label {
                 #[watch]
-                set_label: &model.message,
-                set_halign: gtk::Align::Start,
-                set_margin_top: 20,
+                set_visible: model.state == State::InProgress,
             },
         }
     }
 
     fn init(_: Self::InitParams, root: &Self::Root, _sender: &ComponentSender<Self>) -> ComponentParts<Self> {
-        let model = Self { message: String::new(), sent: 0, total: 0 };
+        let model = Self { message: String::new(), sent: 0, total: 0, state: State::InProgress };
         let widgets = view_output!();
         ComponentParts { model, widgets }
     }
@@ -74,11 +77,8 @@ impl Component for Model {
                     let filename = filename.clone();
                     let sender = out.clone();
                     let callback = move |notification| match notification {
-                        bt::FwUpdNotification::Extracted => {
-                            sender.send(CommandOutput::Message(format!("Firmware files extracted")));
-                        }
-                        bt::FwUpdNotification::Initiated => {
-                            sender.send(CommandOutput::Message(format!("Firmware update initiated")));
+                        bt::FwUpdNotification::Message(text) => {
+                            sender.send(CommandOutput::Message(text));
                         }
                         bt::FwUpdNotification::BytesSent(sent, total) => {
                             sender.send(CommandOutput::Progress(sent, total));
@@ -86,7 +86,7 @@ impl Component for Model {
                     };
                     let task = async move {
                         match infinitime.firmware_upgrade(filename.as_path(), callback).await {
-                            Ok(()) => out.send(CommandOutput::UpdateSuccessful),
+                            Ok(()) => out.send(CommandOutput::UpdateFinished),
                             Err(_error) => out.send(CommandOutput::UpdateFailed),
                         }
                     };
@@ -98,17 +98,19 @@ impl Component for Model {
 
     fn update_cmd(&mut self, msg: Self::CommandOutput, _sender: &ComponentSender<Self>) {
         match msg {
-            CommandOutput::UpdateSuccessful => {
-                self.message = format!("Update suffessful :)");
+            CommandOutput::UpdateFinished => {
+                self.message = format!("Firmware update complete :)");
+                self.state = State::Finished;
             }
             CommandOutput::UpdateFailed => {
-                self.message = format!("Update failed :(");
+                self.message = format!("Firmware update failed :(");
+                self.state = State::Aborted;
             }
             CommandOutput::Message(text) => {
-                self.message = text;
+                self.message = text.to_string();
             }
             CommandOutput::Progress(sent, total) => {
-                self.message = format!("Sending firmware to InfiniTime");
+                self.message = format!("Sending firmware: {:.01}/{:.01} kB", sent as f32 / 1024.0, total as f32 / 1024.0);
                 self.sent = sent;
                 self.total = total;
             }
@@ -116,3 +118,9 @@ impl Component for Model {
     }
 }
 
+#[derive(PartialEq)]
+pub enum State {
+    InProgress,
+    Finished,
+    Aborted,
+}
