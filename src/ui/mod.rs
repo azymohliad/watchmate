@@ -217,7 +217,7 @@ impl Component for Model {
             }
             Input::FirmwareUpdate(filename) => {
                 if let Some(infinitime) = self.infinitime.clone() {
-                    self.fwupd.emit(fwupd::Input::FirmwareUpdate(filename, infinitime));
+                    self.fwupd.emit(fwupd::Input::Init(filename, infinitime));
                     sender.input(Input::SetView(View::FirmwareUpdate));
                 }
             }

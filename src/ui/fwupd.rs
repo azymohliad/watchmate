@@ -1,36 +1,38 @@
 use std::{sync::Arc, path::PathBuf};
-use gtk::prelude::{BoxExt, OrientableExt, WidgetExt};
-use relm4::{gtk, ComponentParts, ComponentSender, Component, WidgetPlus};
+use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, WidgetExt};
+use relm4::{gtk, ComponentParts, ComponentSender, Component, WidgetPlus, JoinHandle};
 
 use crate::bt;
 
 #[derive(Debug)]
 pub enum Input {
-    FirmwareUpdate(PathBuf, Arc<bt::InfiniTime>),
+    Init(PathBuf, Arc<bt::InfiniTime>),
+    Start,
+    Abort,
+    Finished,
+    Failed,
+    Message(&'static str),
+    Progress(u32, u32),
 }
 
 #[derive(Debug)]
 pub enum Output {
 }
 
-#[derive(Debug)]
-pub enum CommandOutput {
-    UpdateFinished,
-    UpdateFailed,
-    Message(&'static str),
-    Progress(u32, u32),
-}
-
+#[derive(Default)]
 pub struct Model {
     message: String,
-    sent: u32,
-    total: u32,
+    sent_size: u32,
+    total_size: u32,
     state: State,
+
+    context: Option<(Arc<PathBuf>, Arc<bt::InfiniTime>)>,
+    handle: Option<JoinHandle<()>>,
 }
 
 #[relm4::component(pub)]
 impl Component for Model {
-    type CommandOutput = CommandOutput;
+    type CommandOutput = ();
     type InitParams = ();
     type Input = Input;
     type Output = Output;
@@ -52,74 +54,98 @@ impl Component for Model {
             gtk::LevelBar {
                 set_min_value: 0.0,
                 #[watch]
-                set_max_value: model.total as f64,
+                set_max_value: model.total_size as f64,
                 #[watch]
-                set_value: model.sent as f64,
+                set_value: model.sent_size as f64,
                 #[watch]
                 set_visible: model.state == State::InProgress,
+            },
+
+            gtk::Button {
+                set_label: "Abort",
+                #[watch]
+                set_visible: model.state == State::InProgress,
+                connect_clicked[sender] => move |_| sender.input(Input::Abort),
+            },
+
+            gtk::Button {
+                set_label: "Retry",
+                #[watch]
+                set_visible: model.state == State::Aborted,
+                connect_clicked[sender] => move |_| sender.input(Input::Start),
             },
         }
     }
 
-    fn init(_: Self::InitParams, root: &Self::Root, _sender: &ComponentSender<Self>) -> ComponentParts<Self> {
-        let model = Self { message: String::new(), sent: 0, total: 0, state: State::InProgress };
+    fn init(_: Self::InitParams, root: &Self::Root, sender: &ComponentSender<Self>) -> ComponentParts<Self> {
+        let model = Self::default();
         let widgets = view_output!();
         ComponentParts { model, widgets }
     }
 
     fn update(&mut self, msg: Self::Input, sender: &ComponentSender<Self>) {
         match msg {
-            Input::FirmwareUpdate(filename, infinitime) => {
-                sender.command(move |out, shutdown| {
-                    // TODO: Remove these extra clones once ComponentSender::command
-                    // is patched to accept FnOnce instead of Fn
-                    let infinitime = infinitime.clone();
-                    let filename = filename.clone();
-                    let sender = out.clone();
-                    let callback = move |notification| match notification {
-                        bt::FwUpdNotification::Message(text) => {
-                            sender.send(CommandOutput::Message(text));
-                        }
-                        bt::FwUpdNotification::BytesSent(sent, total) => {
-                            sender.send(CommandOutput::Progress(sent, total));
-                        }
-                    };
-                    let task = async move {
-                        match infinitime.firmware_upgrade(filename.as_path(), callback).await {
-                            Ok(()) => out.send(CommandOutput::UpdateFinished),
-                            Err(_error) => out.send(CommandOutput::UpdateFailed),
-                        }
-                    };
-                    shutdown.register(task).drop_on_shutdown()
-                });
+            Input::Init(filename, infinitime) => {
+                self.context = Some((Arc::new(filename), infinitime.clone()));
+                sender.input(Input::Start);
             }
-        }
-    }
-
-    fn update_cmd(&mut self, msg: Self::CommandOutput, _sender: &ComponentSender<Self>) {
-        match msg {
-            CommandOutput::UpdateFinished => {
+            Input::Start => {
+                self.state = State::InProgress;
+                let sender = sender.clone();
+                if let Some((filename, infinitime)) = &self.context {
+                    let filename = filename.clone();
+                    let infinitime = infinitime.clone();
+                    self.handle = Some(relm4::spawn(async move {
+                        let snd = sender.clone();
+                        let callback = move |notification| match notification {
+                            bt::FwUpdNotification::Message(text) => {
+                                snd.input(Input::Message(text));
+                            }
+                            bt::FwUpdNotification::BytesSent(sent, total) => {
+                                snd.input(Input::Progress(sent, total));
+                            }
+                        };
+                        match infinitime.firmware_upgrade(filename.as_path(), callback).await {
+                            Ok(()) => sender.input(Input::Finished),
+                            Err(_error) => sender.input(Input::Failed),
+                        };
+                    }));
+                }
+            }
+            Input::Abort => {
+                if let Some(handle) = self.handle.take() {
+                    handle.abort();
+                    self.message = format!("Firmware update aborted");
+                    self.state = State::Aborted;
+                }
+            }
+            Input::Finished => {
                 self.message = format!("Firmware update complete :)");
                 self.state = State::Finished;
+                self.handle = None;
+                self.context = None;
             }
-            CommandOutput::UpdateFailed => {
+            Input::Failed => {
                 self.message = format!("Firmware update failed :(");
                 self.state = State::Aborted;
+                self.handle = None;
             }
-            CommandOutput::Message(text) => {
+            Input::Message(text) => {
                 self.message = text.to_string();
             }
-            CommandOutput::Progress(sent, total) => {
+            Input::Progress(sent, total) => {
                 self.message = format!("Sending firmware: {:.01}/{:.01} kB", sent as f32 / 1024.0, total as f32 / 1024.0);
-                self.sent = sent;
-                self.total = total;
+                self.sent_size = sent;
+                self.total_size = total;
             }
         }
     }
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Default)]
 pub enum State {
+    #[default]
+    Ready,
     InProgress,
     Finished,
     Aborted,
