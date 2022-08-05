@@ -2,10 +2,26 @@
 
 InfiniTime companion app for GNOME desktop/mobile.
 
+![watchmate_2022-08-05](https://user-images.githubusercontent.com/4020369/183119553-487882c8-8834-41ac-9e69-2b865f1081e9.png)
+
+## Requirements
+
+- GNU/Linux OS
+- [Rust](https://www.rust-lang.org/tools/install)
+- [GTK4](https://gtk-rs.org/gtk4-rs/git/book/installation_linux.html)
+
+## Running
+
+To compile and run the project, execute the following command from repo directory:
+
+```
+cargo run --release
+```
+
 ## Roadmap
 
 - [x] Bluetooth scanning, connecting to InfiniTime watch
-- [x] Serving current time to the watch
+- [x] Sharing time via Current Time Service
 - [x] Reading data from the watch
     - [x] Battery level
     - [x] Firmware version
@@ -16,8 +32,10 @@ InfiniTime companion app for GNOME desktop/mobile.
 - [ ] Media-player control
 - [ ] Secure pairing
 - [ ] Notifications
-- [ ] Packages
+- [ ] Release checklist
+    - [ ] Icon
+    - [ ] About dialog
+    - [ ] Metadata
+- [ ] Packaging and distribution
     - [ ] Flatpak
     - [ ] AUR
-
-Plus, of course, continuous improvements, refactoring, UI polishing, etc.
