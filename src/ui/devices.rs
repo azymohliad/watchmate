@@ -19,6 +19,7 @@ pub enum Output {
     DeviceConnected(bluer::Device),
     DeviceDisconnected(bluer::Device),
     Notification(String),
+    SetView(super::View),
 }
 
 #[derive(Debug)]
@@ -50,44 +51,69 @@ impl Component for Model {
 
     view! {
         gtk::Box {
+            set_hexpand: true,
             set_orientation: gtk::Orientation::Vertical,
-            set_margin_all: 12,
-            set_spacing: 10,
 
-            gtk::Button {
-                adw::ButtonContent {
-                    #[watch]
-                    set_label: if model.is_scanning {
-                        "Scanning..."
-                    } else {
-                        "Scan"
-                    },
-                    #[watch]
-                    set_icon_name: if model.is_scanning {
-                        "bluetooth-acquiring-symbolic"
-                    } else {
-                        "bluetooth-symbolic"
-                    },
+            adw::HeaderBar {
+                #[wrap(Some)]
+                set_title_widget = &gtk::Label {
+                    set_label: "Devices",
                 },
-                connect_clicked[sender] => move |_| {
-                    sender.input(Input::ScanToggled);
+
+                pack_start = &gtk::Button {
+                    set_tooltip_text: Some("Back"),
+                    set_icon_name: "go-previous-symbolic",
+                    connect_clicked[sender] => move |_| {
+                        sender.output(Output::SetView(super::View::Dashboard));
+                    },
                 },
             },
 
-            gtk::ScrolledWindow {
-                set_hscrollbar_policy: gtk::PolicyType::Never,
-                set_vexpand: true,
+            adw::Clamp {
+                set_maximum_size: 400,
 
-                #[local_ref]
-                factory_widget -> gtk::ListBox {
-                    // set_margin_all: 5,
-                    set_valign: gtk::Align::Start,
-                    add_css_class: "boxed-list",
-                    connect_row_activated[sender] => move |_, row| {
-                        sender.input(Input::DeviceSelected(row.index()))
-                    }
-                },
-            },
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Vertical,
+                    set_margin_all: 12,
+                    set_spacing: 10,
+
+
+                    gtk::ScrolledWindow {
+                        set_hscrollbar_policy: gtk::PolicyType::Never,
+                        set_vexpand: true,
+
+                        #[local_ref]
+                        factory_widget -> gtk::ListBox {
+                            // set_margin_all: 5,
+                            set_valign: gtk::Align::Start,
+                            add_css_class: "boxed-list",
+                            connect_row_activated[sender] => move |_, row| {
+                                sender.input(Input::DeviceSelected(row.index()))
+                            }
+                        },
+                    },
+
+                    gtk::Spinner {
+                        #[watch]
+                        set_visible: model.is_scanning,
+                        set_spinning: true,
+                    },
+
+                    gtk::Button {
+                        #[watch]
+                        set_label: if model.is_scanning {
+                            "Stop Scanning"
+                        } else {
+                            "Start Scanning"
+                        },
+                        set_valign: gtk::Align::End,
+                        connect_clicked[sender] => move |_| {
+                            sender.input(Input::ScanToggled);
+                        },
+                    },
+                }
+            }
+
         }
     }
 
@@ -321,7 +347,7 @@ impl FactoryComponent<gtk::ListBox, Input> for DeviceInfo {
                         set_margin_all: 5,
                         set_halign: gtk::Align::End,
                         set_hexpand: true,
-                        set_icon_name: Some("emblem-default-symbolic"),
+                        set_icon_name: Some("bluetooth-symbolic"),
                         #[watch]
                         set_visible: self.connected,
                     }

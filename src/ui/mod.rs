@@ -1,5 +1,5 @@
 use std::{sync::Arc, path::PathBuf};
-use gtk::prelude::{ButtonExt, GtkWindowExt, OrientableExt, WidgetExt, FileChooserExt, FileExt};
+use gtk::prelude::{BoxExt, ButtonExt, GtkWindowExt, OrientableExt, WidgetExt, FileChooserExt, FileExt};
 use relm4::{
     adw, gtk, Component, ComponentController, ComponentParts, ComponentSender, Controller, RelmApp
 };
@@ -55,93 +55,72 @@ impl Component for Model {
             set_default_width: 480,
             set_default_height: 640,
 
-            gtk::Box {
-                set_orientation: gtk::Orientation::Vertical,
-
-                adw::HeaderBar {
-                    #[wrap(Some)]
-                    set_title_widget = &gtk::Label {
-                        #[watch]
-                        set_label: match model.active_view {
-                            View::Dashboard => "WatchMate",
-                            View::Devices => "Devices",
-                            View::FileChooser => "Choose DFU file",
-                            View::FirmwareUpdate => "Firmware Upgrade",
-                        },
+            #[local]
+            toast_overlay -> adw::ToastOverlay {
+                // TODO: Use Relm 0.5 conditional widgets here (automatic stack)
+                // I can't make it work here for some reason for now.
+                #[wrap(Some)]
+                set_child = &gtk::Stack {
+                    add_named[Some("dashboard_view")] = &gtk::Box {
+                        // set_visible: watch!(components.dashboard.model.device.is_some()),
+                        append: model.dashboard.widget(),
                     },
-
-                    pack_start = &gtk::Button {
-                        set_label: "Back",
-                        set_icon_name: "go-previous-symbolic",
-                        #[watch]
-                        set_visible: model.active_view != View::Dashboard,
-                        connect_clicked[sender] => move |_| {
-                            sender.input(Input::SetView(View::Dashboard));
-                        },
+                    add_named[Some("devices_view")] = &gtk::Box {
+                        append: model.devices.widget(),
                     },
+                    add_named[Some("file_view")] = &gtk::Box {
+                        set_hexpand: true,
+                        set_orientation: gtk::Orientation::Vertical,
 
-                    pack_start = &gtk::Button {
-                        set_label: "Devices",
-                        #[watch]
-                        set_icon_name: if model.is_connected {
-                            "bluetooth-symbolic"
-                        } else {
-                            "bluetooth-disconnected-symbolic"
-                        },
-                        #[watch]
-                        set_visible: model.active_view == View::Dashboard,
-                        connect_clicked[sender] => move |_| {
-                            sender.input(Input::SetView(View::Devices));
-                        },
-                    },
+                        adw::HeaderBar {
+                            #[wrap(Some)]
+                            set_title_widget = &gtk::Label {
+                                set_label: "Choose DFU File",
+                            },
 
-                    pack_start = &gtk::Button {
-                        set_label: "Open",
-                        set_icon_name: "document-send-symbolic",
-                        // set_sensitive: watch!(file_chooser.file().is_some()),
-                        #[watch]
-                        set_visible: model.active_view == View::FileChooser,
-                        connect_clicked[sender, file_chooser] => move |_| {
-                            if let Some(file) = file_chooser.file() {
-                                sender.input(Input::FirmwareUpdate(file.path().unwrap()));
-                            }
-                        },
-                    }
-                },
+                            pack_start = &gtk::Button {
+                                set_label: "Back",
+                                set_icon_name: "go-previous-symbolic",
+                                connect_clicked[sender] => move |_| {
+                                    sender.input(Input::SetView(View::Dashboard));
+                                },
+                            },
 
-                #[local]
-                toast_overlay -> adw::ToastOverlay {
-                    // TODO: Use Relm 0.5 conditional widgets here (automatic stack)
-                    // I can't make it work here for some reason for now.
-                    #[wrap(Some)]
-                    set_child = &gtk::Stack {
-                        add_named[Some("dashboard_view")] = &adw::Clamp {
-                            set_maximum_size: 400,
-                            // set_visible: watch!(components.dashboard.model.device.is_some()),
-                            set_child: Some(model.dashboard.widget()),
+                            pack_start = &gtk::Button {
+                                set_label: "Open",
+                                set_icon_name: "document-send-symbolic",
+                                // #[watch]
+                                // set_sensitive: file_chooser.file().is_some(),
+                                #[watch]
+                                set_visible: model.active_view == View::FileChooser,
+                                connect_clicked[sender, file_chooser] => move |_| {
+                                    if let Some(file) = file_chooser.file() {
+                                        sender.input(Input::FirmwareUpdate(file.path().unwrap()));
+                                    }
+                                },
+                            },
                         },
-                        add_named[Some("devices_view")] = &adw::Clamp {
-                            set_maximum_size: 400,
-                            set_child: Some(model.devices.widget()),
-                        },
+
                         #[name(file_chooser)]
-                        add_named[Some("file_view")] = &gtk::FileChooserWidget {
+                        gtk::FileChooserWidget {
+                            set_vexpand: true,
+                            set_hexpand: true,
                             set_action: gtk::FileChooserAction::Open,
                             set_filter = &gtk::FileFilter {
                                 add_pattern: "*.zip"
                             },
                         },
-                        add_named[Some("fwupd_view")] = &adw::Clamp {
-                            set_maximum_size: 400,
-                            set_child: Some(model.fwupd.widget()),
-                        },
-                        #[watch]
-                        set_visible_child_name: match model.active_view {
-                            View::Dashboard => "dashboard_view",
-                            View::Devices => "devices_view",
-                            View::FileChooser => "file_view",
-                            View::FirmwareUpdate => "fwupd_view",
-                        },
+
+                    },
+                    add_named[Some("fwupd_view")] = &gtk::Box {
+                        append: model.fwupd.widget(),
+                    },
+                    #[watch]
+                    set_visible_child_name: match model.active_view {
+                        View::Dashboard => "dashboard_view",
+                        View::Devices => "devices_view",
+                        View::FileChooser => "file_view",
+                        View::FirmwareUpdate => "fwupd_view",
                     },
                 },
             },
@@ -153,8 +132,9 @@ impl Component for Model {
         let dashboard = dashboard::Model::builder()
             .launch(())
             .forward(&sender.input, |message| match message {
-                dashboard::Output::OpenFileDialog => Input::SetView(View::FileChooser),
+                dashboard::Output::DfuOpenRequest => Input::SetView(View::FileChooser),
                 dashboard::Output::Notification(text) => Input::Notification(text),
+                dashboard::Output::SetView(view) => Input::SetView(view),
             });
 
         let devices = devices::Model::builder()
@@ -163,9 +143,14 @@ impl Component for Model {
                 devices::Output::DeviceConnected(device) => Input::DeviceConnected(device),
                 devices::Output::DeviceDisconnected(device) => Input::DeviceDisconnected(device),
                 devices::Output::Notification(text) => Input::Notification(text),
+                devices::Output::SetView(view) => Input::SetView(view),
             });
 
-        let fwupd = fwupd::Model::builder().launch(()).detach();
+        let fwupd = fwupd::Model::builder()
+            .launch(())
+            .forward(&sender.input, |message| match message {
+                fwupd::Output::SetView(view) => Input::SetView(view),
+            });
 
         let toast_overlay = adw::ToastOverlay::new();
 
@@ -240,7 +225,7 @@ impl Component for Model {
 
 
 #[derive(Debug, PartialEq)]
-enum View {
+pub enum View {
     Dashboard,
     Devices,
     FileChooser,

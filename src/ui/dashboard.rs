@@ -13,8 +13,9 @@ pub enum Input {
 
 #[derive(Debug)]
 pub enum Output {
-    OpenFileDialog,
+    DfuOpenRequest,
     Notification(String),
+    SetView(super::View),
 }
 
 #[derive(Debug)]
@@ -59,174 +60,197 @@ impl Component for Model {
 
     view! {
         gtk::Box {
+            set_hexpand: true,
             set_orientation: gtk::Orientation::Vertical,
-            set_margin_all: 12,
-            set_spacing: 10,
 
-            gtk::ListBox {
-                set_valign: gtk::Align::Start,
-                add_css_class: "boxed-list",
-
-                gtk::ListBoxRow {
-                    set_selectable: false,
-                    #[watch]
-                    set_sensitive: model.battery_level.is_some(),
-
-                    gtk::Box {
-                        set_orientation: gtk::Orientation::Horizontal,
-                        set_margin_all: 12,
-                        set_spacing: 10,
-
-                        gtk::Label {
-                            set_label: "Battery",
-                        },
-
-                        gtk::Label {
-                            #[watch]
-                            set_label: match model.battery_level {
-                                Some(soc) => format!("{}%", soc),
-                                None => String::from("Unavailable"),
-                            }.as_str(),
-                            add_css_class: "dim-label",
-                        },
-
-                        gtk::LevelBar {
-                            set_min_value: 0.0,
-                            set_max_value: 100.0,
-                            #[watch]
-                            set_value: model.battery_level.unwrap_or(0) as f64,
-                            #[watch]
-                            set_visible: model.battery_level.is_some(),
-                            set_hexpand: true,
-                            set_valign: gtk::Align::Center,
-                        },
-                    },
+            adw::HeaderBar {
+                #[wrap(Some)]
+                set_title_widget = &gtk::Label {
+                    set_label: "Watchmate",
                 },
 
-                gtk::ListBoxRow {
-                    set_selectable: false,
-                    #[watch]
-                    set_sensitive: model.heart_rate.is_some(),
-
-                    gtk::Box {
-                        set_orientation: gtk::Orientation::Horizontal,
-                        set_margin_all: 12,
-                        set_spacing: 10,
-
-                        gtk::Label {
-                            set_label: "Heart Rate",
-                            set_hexpand: true,
-                            set_halign: gtk::Align::Start,
-                        },
-
-                        gtk::Label {
-                            #[watch]
-                            set_label: match model.heart_rate {
-                                Some(rate) => format!("{} BPM", rate),
-                                None => String::from("Unavailable"),
-                            }.as_str(),
-                            add_css_class: "dim-label",
-                            set_hexpand: true,
-                            set_halign: gtk::Align::End,
-                        },
+                pack_start = &gtk::Button {
+                    set_tooltip_text: Some("Devices"),
+                    set_icon_name: "open-menu-symbolic",
+                    connect_clicked[sender] => move |_| {
+                        sender.output(Output::SetView(super::View::Devices));
                     },
                 },
             },
 
-            gtk::Label {
-                set_label: "System Info",
-                set_halign: gtk::Align::Start,
-                set_margin_top: 20,
-            },
+            adw::Clamp {
+                set_maximum_size: 400,
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Vertical,
+                    set_margin_all: 12,
+                    set_spacing: 10,
 
-            gtk::ListBox {
-                set_valign: gtk::Align::Start,
-                add_css_class: "boxed-list",
+                    gtk::ListBox {
+                        set_valign: gtk::Align::Start,
+                        add_css_class: "boxed-list",
 
-                gtk::ListBoxRow {
-                    set_selectable: false,
-                    #[watch]
-                    set_sensitive: model.alias.is_some(),
-
-                    gtk::Box {
-                        set_orientation: gtk::Orientation::Horizontal,
-                        set_margin_all: 12,
-                        set_spacing: 10,
-
-                        gtk::Label {
-                            set_label: "Name",
-                            set_hexpand: true,
-                            set_halign: gtk::Align::Start,
-                        },
-
-                        gtk::Label {
+                        gtk::ListBoxRow {
+                            set_selectable: false,
                             #[watch]
-                            set_label: match &model.alias {
-                                Some(alias) => alias,
-                                None => "Unavailable",
+                            set_sensitive: model.battery_level.is_some(),
+
+                            gtk::Box {
+                                set_orientation: gtk::Orientation::Horizontal,
+                                set_margin_all: 12,
+                                set_spacing: 10,
+
+                                gtk::Label {
+                                    set_label: "Battery",
+                                },
+
+                                gtk::LevelBar {
+                                    set_min_value: 0.0,
+                                    set_max_value: 100.0,
+                                    #[watch]
+                                    set_value: model.battery_level.unwrap_or(0) as f64,
+                                    #[watch]
+                                    set_visible: model.battery_level.is_some(),
+                                    set_hexpand: true,
+                                    set_valign: gtk::Align::Center,
+                                },
+
+                                gtk::Label {
+                                    #[watch]
+                                    set_label: match model.battery_level {
+                                        Some(soc) => format!("{}%", soc),
+                                        None => String::from("Unavailable"),
+                                    }.as_str(),
+                                    add_css_class: "dim-label",
+                                },
                             },
-                            add_css_class: "dim-label",
-                            set_hexpand: true,
-                            set_halign: gtk::Align::End,
-                        },
-                    },
-                },
-
-                gtk::ListBoxRow {
-                    set_selectable: false,
-                    #[watch]
-                    set_sensitive: model.address.is_some(),
-
-                    gtk::Box {
-                        set_orientation: gtk::Orientation::Horizontal,
-                        set_margin_all: 12,
-                        set_spacing: 10,
-
-                        gtk::Label {
-                            set_label: "Address",
-                            set_hexpand: true,
-                            set_halign: gtk::Align::Start,
                         },
 
-                        gtk::Label {
+                        gtk::ListBoxRow {
+                            set_selectable: false,
                             #[watch]
-                            set_label: match &model.address {
-                                Some(address) => address,
-                                None => "Unavailable",
+                            set_sensitive: model.heart_rate.is_some(),
+
+                            gtk::Box {
+                                set_orientation: gtk::Orientation::Horizontal,
+                                set_margin_all: 12,
+                                set_spacing: 10,
+
+                                gtk::Label {
+                                    set_label: "Heart Rate",
+                                    set_hexpand: true,
+                                    set_halign: gtk::Align::Start,
+                                },
+
+                                gtk::Label {
+                                    #[watch]
+                                    set_label: match model.heart_rate {
+                                        Some(rate) => format!("{} BPM", rate),
+                                        None => String::from("Unavailable"),
+                                    }.as_str(),
+                                    add_css_class: "dim-label",
+                                    set_hexpand: true,
+                                    set_halign: gtk::Align::End,
+                                },
                             },
-                            add_css_class: "dim-label",
-                            set_hexpand: true,
-                            set_halign: gtk::Align::End,
                         },
                     },
-                },
 
-                adw::ExpanderRow {
-                    set_title: "Firmware Version",
-                    #[watch]
-                    set_sensitive: model.firmware_version.is_some(),
-
-                    add_action = &gtk::Label {
-                        #[watch]
-                        set_label: match &model.firmware_version {
-                            Some(version) => version,
-                            None => "Unavailable",
-                        },
-                        add_css_class: "dim-label",
+                    gtk::Label {
+                        set_label: "System Info",
+                        set_halign: gtk::Align::Start,
+                        set_margin_top: 20,
                     },
 
-                    add_row = &gtk::ListBoxRow {
-                        set_selectable: false,
+                    gtk::ListBox {
+                        set_valign: gtk::Align::Start,
+                        add_css_class: "boxed-list",
 
-                        gtk::Box {
-                            set_orientation: gtk::Orientation::Horizontal,
-                            set_margin_all: 12,
-                            set_spacing: 10,
+                        gtk::ListBoxRow {
+                            set_selectable: false,
+                            #[watch]
+                            set_sensitive: model.alias.is_some(),
 
-                            gtk::Button {
-                                set_label: "Update",
-                                connect_clicked[sender] => move |_| {
-                                    sender.output(Output::OpenFileDialog);
+                            gtk::Box {
+                                set_orientation: gtk::Orientation::Horizontal,
+                                set_margin_all: 12,
+                                set_spacing: 10,
+
+                                gtk::Label {
+                                    set_label: "Name",
+                                    set_hexpand: true,
+                                    set_halign: gtk::Align::Start,
+                                },
+
+                                gtk::Label {
+                                    #[watch]
+                                    set_label: match &model.alias {
+                                        Some(alias) => alias,
+                                        None => "Unavailable",
+                                    },
+                                    add_css_class: "dim-label",
+                                    set_hexpand: true,
+                                    set_halign: gtk::Align::End,
+                                },
+                            },
+                        },
+
+                        gtk::ListBoxRow {
+                            set_selectable: false,
+                            #[watch]
+                            set_sensitive: model.address.is_some(),
+
+                            gtk::Box {
+                                set_orientation: gtk::Orientation::Horizontal,
+                                set_margin_all: 12,
+                                set_spacing: 10,
+
+                                gtk::Label {
+                                    set_label: "Address",
+                                    set_hexpand: true,
+                                    set_halign: gtk::Align::Start,
+                                },
+
+                                gtk::Label {
+                                    #[watch]
+                                    set_label: match &model.address {
+                                        Some(address) => address,
+                                        None => "Unavailable",
+                                    },
+                                    add_css_class: "dim-label",
+                                    set_hexpand: true,
+                                    set_halign: gtk::Align::End,
+                                },
+                            },
+                        },
+
+                        adw::ExpanderRow {
+                            set_title: "Firmware Version",
+                            #[watch]
+                            set_sensitive: model.firmware_version.is_some(),
+
+                            add_action = &gtk::Label {
+                                #[watch]
+                                set_label: match &model.firmware_version {
+                                    Some(version) => version,
+                                    None => "Unavailable",
+                                },
+                                add_css_class: "dim-label",
+                            },
+
+                            add_row = &gtk::ListBoxRow {
+                                set_selectable: false,
+
+                                gtk::Box {
+                                    set_orientation: gtk::Orientation::Horizontal,
+                                    set_margin_all: 12,
+                                    set_spacing: 10,
+
+                                    gtk::Button {
+                                        set_label: "Update",
+                                        connect_clicked[sender] => move |_| {
+                                            sender.output(Output::DfuOpenRequest);
+                                        },
+                                    },
                                 },
                             },
                         },

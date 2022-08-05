@@ -1,6 +1,6 @@
 use std::{sync::Arc, path::PathBuf};
 use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, WidgetExt};
-use relm4::{gtk, ComponentParts, ComponentSender, Component, WidgetPlus, JoinHandle};
+use relm4::{adw, gtk, ComponentParts, ComponentSender, Component, WidgetPlus, JoinHandle};
 
 use crate::bt;
 
@@ -17,6 +17,7 @@ pub enum Input {
 
 #[derive(Debug)]
 pub enum Output {
+    SetView(super::View),
 }
 
 #[derive(Default)]
@@ -40,39 +41,88 @@ impl Component for Model {
 
     view! {
         gtk::Box {
+            set_hexpand: true,
             set_orientation: gtk::Orientation::Vertical,
-            set_margin_all: 12,
-            set_spacing: 10,
 
-            gtk::Label {
-                #[watch]
-                set_label: &model.message,
-                set_halign: gtk::Align::Center,
-                set_margin_top: 20,
+            adw::HeaderBar {
+                #[wrap(Some)]
+                set_title_widget = &gtk::Label {
+                    set_label: "Firmware Update",
+                },
+
+                pack_start = &gtk::Button {
+                    set_tooltip_text: Some("Back"),
+                    set_icon_name: "go-previous-symbolic",
+                    #[watch]
+                    set_visible: model.state != State::InProgress,
+                    connect_clicked[sender] => move |_| {
+                        sender.output(Output::SetView(super::View::Dashboard));
+                    },
+                },
             },
 
-            gtk::LevelBar {
-                set_min_value: 0.0,
-                #[watch]
-                set_max_value: model.total_size as f64,
-                #[watch]
-                set_value: model.sent_size as f64,
-                #[watch]
-                set_visible: model.state == State::InProgress,
-            },
+            adw::Clamp {
+                set_maximum_size: 400,
 
-            gtk::Button {
-                set_label: "Abort",
-                #[watch]
-                set_visible: model.state == State::InProgress,
-                connect_clicked[sender] => move |_| sender.input(Input::Abort),
-            },
+                gtk::CenterBox {
+                    set_orientation: gtk::Orientation::Vertical,
+                    set_margin_all: 12,
+                    set_vexpand: true,
 
-            gtk::Button {
-                set_label: "Retry",
-                #[watch]
-                set_visible: model.state == State::Aborted,
-                connect_clicked[sender] => move |_| sender.input(Input::Start),
+                    #[wrap(Some)]
+                    set_center_widget = &gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_spacing: 10,
+
+                        gtk::Label {
+                            #[watch]
+                            set_label: &model.message,
+                            set_halign: gtk::Align::Center,
+                            set_margin_top: 20,
+                        },
+
+                        gtk::LevelBar {
+                            set_min_value: 0.0,
+                            #[watch]
+                            set_max_value: model.total_size as f64,
+                            #[watch]
+                            set_value: model.sent_size as f64,
+                            #[watch]
+                            set_visible: model.state == State::InProgress,
+                        },
+                    },
+
+                    #[wrap(Some)]
+                    set_end_widget = &gtk::Box {
+                        set_orientation: gtk::Orientation::Horizontal,
+                        set_spacing: 10,
+                        set_halign: gtk::Align::Center,
+
+                        gtk::Button {
+                            set_label: "Abort",
+                            add_css_class:"destructive-action",
+                            #[watch]
+                            set_visible: model.state == State::InProgress,
+                            connect_clicked[sender] => move |_| sender.input(Input::Abort),
+                        },
+
+                        gtk::Button {
+                            set_label: "Retry",
+                            #[watch]
+                            set_visible: model.state == State::Aborted,
+                            connect_clicked[sender] => move |_| sender.input(Input::Start),
+                        },
+
+                        gtk::Button {
+                            set_label: "Back",
+                            #[watch]
+                            set_visible: model.state != State::InProgress,
+                            connect_clicked[sender] => move |_| {
+                                sender.output(Output::SetView(super::View::Dashboard));
+                            },
+                        },
+                    }
+                },
             },
         }
     }
