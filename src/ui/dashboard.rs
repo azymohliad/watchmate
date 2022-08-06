@@ -3,12 +3,14 @@ use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, ListBoxRowExt, WidgetExt};
 use adw::prelude::{PreferencesRowExt, ExpanderRowExt};
 use relm4::{adw, gtk, ComponentParts, ComponentSender, Component, Sender, WidgetPlus};
 use anyhow::Result;
-use crate::bt;
+
+use crate::{bt, firmware_download as fw};
 
 #[derive(Debug)]
 pub enum Input {
     Connected(Arc<bt::InfiniTime>),
     Disconnected,
+    FirmwareReleasesRequest,
 }
 
 #[derive(Debug)]
@@ -25,16 +27,20 @@ pub enum CommandOutput {
     Alias(String),
     Address(String),
     FirmwareVersion(String),
+    FirmwareReleases(Vec<fw::ReleaseInfo>),
 }
 
 #[derive(Default)]
 pub struct Model {
     // UI state
+    // - InfiniTime data
     battery_level: Option<u8>,
     heart_rate: Option<u8>,
     alias: Option<String>,
     address: Option<String>,
     firmware_version: Option<String>,
+    // - Firmware releases
+    firmware_releases: Option<gtk::StringList>,
     // Other
     infinitime: Option<Arc<bt::InfiniTime>>,
 }
@@ -241,14 +247,53 @@ impl Component for Model {
                                 set_selectable: false,
 
                                 gtk::Box {
-                                    set_orientation: gtk::Orientation::Horizontal,
+                                    set_orientation: gtk::Orientation::Vertical,
                                     set_margin_all: 12,
                                     set_spacing: 10,
 
+                                    gtk::Label {
+                                        set_label: "Update from file",
+                                        set_halign: gtk::Align::Start,
+                                    },
+
                                     gtk::Button {
-                                        set_label: "Update",
+                                        set_label: "Select File",
                                         connect_clicked[sender] => move |_| {
                                             sender.output(Output::DfuOpenRequest);
+                                        },
+                                    },
+
+                                    gtk::Separator {
+                                        set_orientation: gtk::Orientation::Horizontal,
+                                    },
+
+                                    gtk::Label {
+                                        set_label: "Update from Github release",
+                                        set_halign: gtk::Align::Start,
+                                    },
+
+                                    gtk::Box {
+                                        set_spacing: 10,
+
+                                        gtk::DropDown {
+                                            #[watch]
+                                            set_sensitive: model.firmware_releases.is_some(),
+                                            #[watch]
+                                            set_model: model.firmware_releases.as_ref(),
+                                        },
+
+                                        gtk::Button {
+                                            #[watch]
+                                            set_sensitive: model.firmware_releases.is_some(),
+                                            set_label: "Update",
+                                        },
+
+                                        gtk::Button {
+                                            set_tooltip_text: Some("Refresh releases list"),
+                                            set_icon_name: "view-refresh-symbolic",
+                                            connect_clicked[sender] => move |_| {
+                                                sender.input(Input::FirmwareReleasesRequest);
+                                            },
                                         },
                                     },
                                 },
@@ -287,6 +332,8 @@ impl Component for Model {
                         }).await;
                     }).drop_on_shutdown()
                 });
+                // Automatically load the list of releases from GitHub
+                sender.input(Input::FirmwareReleasesRequest);
             }
             Input::Disconnected => {
                 self.battery_level = None;
@@ -295,6 +342,25 @@ impl Component for Model {
                 self.address = None;
                 self.firmware_version = None;
                 self.infinitime = None;
+            }
+            Input::FirmwareReleasesRequest => {
+                let sender_ = sender.clone();
+                sender.command(move |out, shutdown| {
+                    // TODO: Remove this extra clone once ComponentSender::command
+                    // is patched to accept FnOnce instead of Fn
+                    let sender_ = sender_.clone();
+                    shutdown.register(async move {
+                        match fw::list_releases().await {
+                            Ok(releases) => {
+                                out.send(CommandOutput::FirmwareReleases(releases));
+                            }
+                            Err(error) => {
+                                eprintln!("Failed to fetch the list of firmware releases: {}", error);
+                                sender_.output(Output::Notification(format!("Failed to fetch firmware releases")));
+                            }
+                        }
+                    }).drop_on_shutdown()
+                });
             }
         }
     }
@@ -306,6 +372,10 @@ impl Component for Model {
             CommandOutput::Alias(alias) => self.alias = Some(alias),
             CommandOutput::Address(address) => self.address = Some(address),
             CommandOutput::FirmwareVersion(version) => self.firmware_version = Some(version),
+            CommandOutput::FirmwareReleases(releases) => {
+                let tags = releases.iter().map(|r| r.tag.as_str()).collect::<Vec<&str>>();
+                self.firmware_releases = Some(gtk::StringList::new(&tags));
+            }
         }
     }
 }
