@@ -1,13 +1,12 @@
-use std::collections::HashMap;
-use bluer::{Adapter, Device, Result, Session, gatt::remote::Characteristic};
+use std::{sync::Arc, collections::HashMap};
+use futures::{pin_mut, StreamExt};
+use bluer::{Adapter, AdapterEvent, Device, Result, Session, gatt::remote::Characteristic};
 use uuid::Uuid;
 
-mod scanner;
 mod infinitime;
 mod uuids;
 pub mod gatt_server;
 
-pub use scanner::Scanner;
 pub use infinitime::{InfiniTime, Notification, FwUpdNotification};
 
 pub async fn init_adapter() -> Result<Adapter> {
@@ -29,4 +28,22 @@ async fn read_characteristics_map(device: &Device) -> Result<HashMap<Uuid, Chara
         }
     }
     Ok(result)
+}
+
+pub async fn scan(adapter: Arc<Adapter>, callback: impl Fn(AdapterEvent)) {
+    match adapter.discover_devices().await {
+        Ok(events) => {
+            pin_mut!(events);
+
+            loop {
+                tokio::select! {
+                    Some(event) = events.next() => callback(event),
+                    else => break,
+                }
+            }
+        },
+        Err(error) => {
+            eprintln!("Scanning failure: {}", error);
+        }
+    }
 }

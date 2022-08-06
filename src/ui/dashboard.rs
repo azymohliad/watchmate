@@ -142,7 +142,7 @@ impl Component for Model {
                                         #[watch]
                                         set_label: match model.battery_level {
                                             Some(soc) => format!("{}%", soc),
-                                            None => String::from("Unavailable"),
+                                            None => String::from("Loading..."),
                                         }.as_str(),
                                         add_css_class: "dim-label",
                                     },
@@ -169,7 +169,7 @@ impl Component for Model {
                                         #[watch]
                                         set_label: match model.heart_rate {
                                             Some(rate) => format!("{} BPM", rate),
-                                            None => String::from("Unavailable"),
+                                            None => String::from("Loading..."),
                                         }.as_str(),
                                         add_css_class: "dim-label",
                                         set_hexpand: true,
@@ -209,7 +209,7 @@ impl Component for Model {
                                         #[watch]
                                         set_label: match &model.alias {
                                             Some(alias) => alias,
-                                            None => "Unavailable",
+                                            None => "Loading...",
                                         },
                                         add_css_class: "dim-label",
                                         set_hexpand: true,
@@ -238,7 +238,7 @@ impl Component for Model {
                                         #[watch]
                                         set_label: match &model.address {
                                             Some(address) => address,
-                                            None => "Unavailable",
+                                            None => "Loading...",
                                         },
                                         add_css_class: "dim-label",
                                         set_hexpand: true,
@@ -249,8 +249,8 @@ impl Component for Model {
 
                             adw::ExpanderRow {
                                 set_title: "Firmware Version",
-                                // #[watch]
-                                // set_sensitive: model.firmware_version.is_some(),
+                                #[watch]
+                                set_sensitive: model.firmware_version.is_some(),
 
                                 add_action = &gtk::Box {
                                     set_spacing: 10,
@@ -259,7 +259,7 @@ impl Component for Model {
                                         #[watch]
                                         set_label: match &model.firmware_version {
                                             Some(version) => version,
-                                            None => "Unavailable",
+                                            None => "Loading...",
                                         },
                                         add_css_class: "dim-label",
                                     },
@@ -380,6 +380,7 @@ impl Component for Model {
     fn init(_: Self::InitParams, root: &Self::Root, sender: &ComponentSender<Self>) -> ComponentParts<Self> {
         let model = Self::default();
         let widgets = view_output!();
+        sender.input(Input::FirmwareReleasesRequest);
         ComponentParts { model, widgets }
     }
 
@@ -407,8 +408,6 @@ impl Component for Model {
                         }).await;
                     }).drop_on_shutdown()
                 });
-                // Automatically load the list of releases from GitHub
-                sender.input(Input::FirmwareReleasesRequest);
             }
             Input::Disconnected => {
                 self.battery_level = None;

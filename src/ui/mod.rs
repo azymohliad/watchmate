@@ -12,8 +12,8 @@ mod fwupd;
 #[derive(Debug)]
 enum Input {
     SetView(View),
-    DeviceConnected(bluer::Device),
-    DeviceDisconnected(bluer::Device),
+    DeviceConnected(Arc<bluer::Device>),
+    DeviceDisconnected(Arc<bluer::Device>),
     FirmwareUpdate(PathBuf),
     Notification(String),
 }

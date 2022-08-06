@@ -2,7 +2,7 @@ use std::sync::Arc;
 use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, ListBoxRowExt, WidgetExt};
 use relm4::{
     adw, gtk, factory::{FactoryComponent, FactoryVecDeque, DynamicIndex},
-    ComponentParts, ComponentSender, Sender, WidgetPlus, Component
+    ComponentParts, ComponentSender, Sender, WidgetPlus, Component, JoinHandle
 };
 
 use crate::bt;
@@ -11,34 +11,31 @@ use crate::bt;
 #[derive(Debug)]
 pub enum Input {
     ScanToggled,
+    KnownDevicesReady(Vec<DeviceInfo>),
+    DeviceInfoReady(DeviceInfo),
+    DeviceAdded(bluer::Address),
+    DeviceRemoved(bluer::Address),
     DeviceSelected(i32),
+    DeviceConnected(Arc<bluer::Device>),
+    DeviceDisconnected(Arc<bluer::Device>),
 }
 
 #[derive(Debug)]
 pub enum Output {
-    DeviceConnected(bluer::Device),
-    DeviceDisconnected(bluer::Device),
+    DeviceConnected(Arc<bluer::Device>),
+    DeviceDisconnected(Arc<bluer::Device>),
     Notification(String),
     SetView(super::View),
 }
 
 #[derive(Debug)]
 pub enum CommandOutput {
-    KnownDevices(Vec<DeviceInfo>),
-    DeviceInfoReady(DeviceInfo),
-    DeviceAdded(bluer::Address),
-    DeviceRemoved(bluer::Address),
-    DeviceConnected(bluer::Device),
-    DeviceDisconnected(bluer::Device),
 }
 
 pub struct Model {
-    // UI State
-    is_scanning: bool,
     devices: FactoryVecDeque<gtk::ListBox, DeviceInfo, Input>,
-    // Non-UI
     adapter: Arc<bluer::Adapter>,
-    scanner: bt::Scanner,
+    scan_handle: Option<JoinHandle<()>>,
 }
 
 #[relm4::component(pub)]
@@ -96,13 +93,13 @@ impl Component for Model {
 
                     gtk::Spinner {
                         #[watch]
-                        set_visible: model.is_scanning,
+                        set_visible: model.scan_handle.is_some(),
                         set_spinning: true,
                     },
 
                     gtk::Button {
                         #[watch]
-                        set_label: if model.is_scanning {
+                        set_label: if model.scan_handle.is_some() {
                             "Stop Scanning"
                         } else {
                             "Start Scanning"
@@ -120,10 +117,9 @@ impl Component for Model {
 
     fn init(adapter: Self::InitParams, root: &Self::Root, sender: &ComponentSender<Self>) -> ComponentParts<Self> {
         let model = Self {
-            is_scanning: false,
             devices: FactoryVecDeque::new(gtk::ListBox::new(), &sender.input),
             adapter,
-            scanner: bt::Scanner::new(),
+            scan_handle: None,
         };
 
         let factory_widget = model.devices.widget();
@@ -131,104 +127,57 @@ impl Component for Model {
 
         // Read known devices list
         let adapter = model.adapter.clone();
-        sender.command(move |out, shutdown| {
-            // TODO: Remove this extra clone once ComponentSender::command
-            // is patched to accept FnOnce instead of Fn
-            let adapter = adapter.clone();
-            let task = async move {
-                let mut devices = Vec::new();
-                for device in bt::InfiniTime::list_known_devices(&adapter).await.unwrap() {
-                    devices.push(DeviceInfo::new(&device).await.unwrap())
-                }
-                out.send(CommandOutput::KnownDevices(devices));
-            };
-            shutdown.register(task).drop_on_shutdown()
+        let sender = sender.clone();
+        relm4::spawn(async move {
+            let mut devices = Vec::new();
+            for device in bt::InfiniTime::list_known_devices(&adapter).await.unwrap() {
+                devices.push(DeviceInfo::new(Arc::new(device)).await.unwrap())
+            }
+            sender.input(Input::KnownDevicesReady(devices));
         });
 
         ComponentParts { model, widgets }
     }
 
     fn update(&mut self, msg: Self::Input, sender: &ComponentSender<Self>) {
-        let mut devices_guard = self.devices.guard();
         match msg {
             Input::ScanToggled => {
-                if self.is_scanning {
-                    self.is_scanning = false;
-                    self.scanner.stop();
+                if self.scan_handle.is_some() {
+                    self.scan_handle.take().unwrap().abort();
                 } else {
-                    self.is_scanning = true;
-                    devices_guard.clear();
                     let adapter = self.adapter.clone();
-                    let scanner = self.scanner.clone();
-                    sender.command(move |out, shutdown| {
-                        // TODO: Remove these extra clones once ComponentSender::command
-                        // is patched to accept FnOnce instead of Fn
-                        let adapter = adapter.clone();
-                        let scanner = scanner.clone();
-                        shutdown.register(scanner.run(adapter, move |event| {
-                            match event {
-                                bluer::AdapterEvent::DeviceAdded(address) => {
-                                    out.send(CommandOutput::DeviceAdded(address));
-                                }
-                                bluer::AdapterEvent::DeviceRemoved(address) => {
-                                    out.send(CommandOutput::DeviceRemoved(address));
-                                }
-                                _ => (),
+                    let sender = sender.clone();
+                    let callback = move |event| {
+                        match event {
+                            bluer::AdapterEvent::DeviceAdded(address) => {
+                                sender.input(Input::DeviceAdded(address));
                             }
-                        })).drop_on_shutdown()
-                    });
+                            bluer::AdapterEvent::DeviceRemoved(address) => {
+                                sender.input(Input::DeviceRemoved(address));
+                            }
+                            _ => (),
+                        }
+                    };
+                    self.devices.guard().clear();
+                    self.scan_handle = Some(relm4::spawn(bt::scan(adapter, callback)));
                 }
             }
 
-            Input::DeviceSelected(index) => {
-                if let Some(info) = devices_guard.get(index as usize) {
-                    self.scanner.stop();
-                    self.is_scanning = false;
-                    match self.adapter.device(info.address) {
-                        Ok(device) => {
-                            let connected = info.connected;
-                            sender.command(move |out, shutdown| {
-                                // TODO: Remove this extra clone once ComponentSender::command
-                                // is patched to accept FnOnce instead of Fn
-                                let device = device.clone();
-                                shutdown.register(async move {
-                                    if !connected {
-                                        match device.connect().await {
-                                            Ok(()) => out.send(CommandOutput::DeviceConnected(device)),
-                                            Err(error) => eprintln!("Connection failure: {}", error),
-                                        }
-                                    } else {
-                                        match device.disconnect().await {
-                                            Ok(()) => out.send(CommandOutput::DeviceDisconnected(device)),
-                                            Err(error) => eprintln!("Connection failure: {}", error),
-                                        }
-                                    }
-                                }).drop_on_shutdown()
-                            });
-                        }
-                        Err(error) => {
-                            eprintln!("Connection failure: {}", error);
-                            sender.output(Output::Notification(String::from("Connection failure")));
-                        }
-                    }
-                }
-            }
-        }
-    }
+            Input::KnownDevicesReady(devices) => {
+                let connected = devices.iter()
+                    .find(|d| d.state == DeviceState::Connected)
+                    .map(|d| d.address);
 
-    fn update_cmd(&mut self, msg: Self::CommandOutput, sender: &ComponentSender<Self>) {
-        let mut devices_guard = self.devices.guard();
-        match msg {
-            CommandOutput::KnownDevices(devices) => {
-                let connected = devices.iter().find(|d| d.connected).map(|d| d.address);
-
+                let mut devices_guard = self.devices.guard();
                 for device in devices {
                     devices_guard.push_back(device);
                 }
+
                 // Automatic device selection logic
                 if let Some(address) = connected {
                     // If suitable device is already connected - just report it as connected
                     if let Ok(device) = self.adapter.device(address) {
+                        let device = Arc::new(device);
                         sender.output(Output::DeviceConnected(device));
                         println!("InfiniTime ({}) is already connected", address.to_string());
                     }
@@ -246,28 +195,28 @@ impl Component for Model {
                     }
                 }
             }
-            CommandOutput::DeviceInfoReady(info) => {
-                devices_guard.push_front(info);
+
+            Input::DeviceInfoReady(info) => {
+                self.devices.guard().push_front(info);
             }
-            CommandOutput::DeviceAdded(address) => {
+
+            Input::DeviceAdded(address) => {
                 if let Ok(device) = self.adapter.device(address) {
-                    sender.command(move |out, shutdown| {
-                        // TODO: Remove this extra clone once ComponentSender::command
-                        // is patched to accept FnOnce instead of Fn
-                        let device = device.clone();
-                        let task = async move {
-                            if bt::InfiniTime::check_device(&device).await {
-                                match DeviceInfo::new(&device).await {
-                                    Ok(info) => out.send(CommandOutput::DeviceInfoReady(info)),
-                                    Err(error) => eprintln!("Failed to read device info: {}", error),
-                                }
+                    let device = Arc::new(device);
+                    let sender = sender.clone();
+                    relm4::spawn(async move {
+                        if bt::InfiniTime::check_device(&device).await {
+                            match DeviceInfo::new(device).await {
+                                Ok(info) => sender.input(Input::DeviceInfoReady(info)),
+                                Err(error) => eprintln!("Failed to read device info: {}", error),
                             }
-                        };
-                        shutdown.register(task).drop_on_shutdown()
+                        }
                     });
                 }
             }
-            CommandOutput::DeviceRemoved(address) => {
+
+            Input::DeviceRemoved(address) => {
+                let mut devices_guard = self.devices.guard();
                 for i in (0..devices_guard.len()).rev() {
                     if let Some(device) = devices_guard.get(i) {
                         if device.address == address {
@@ -276,26 +225,20 @@ impl Component for Model {
                     }
                 }
             }
-            CommandOutput::DeviceConnected(device) => {
-                for i in (0..devices_guard.len()).rev() {
-                    if let Some(info) = devices_guard.get(i) {
-                        if info.address == device.address() {
-                            devices_guard.get_mut(i).unwrap().connected = true;
-                        }
-                    }
-                }
+
+            Input::DeviceSelected(index) => {
+                self.scan_handle.take().map(|h| h.abort());
+                self.devices.send(index as usize, DeviceInput::Connect);
+            }
+
+            Input::DeviceConnected(device) => {
                 sender.output(Output::DeviceConnected(device));
             }
-            CommandOutput::DeviceDisconnected(device) => {
-                for i in (0..devices_guard.len()).rev() {
-                    if let Some(info) = devices_guard.get(i) {
-                        if info.address == device.address() {
-                            devices_guard.get_mut(i).unwrap().connected = false;
-                        }
-                    }
-                }
+
+            Input::DeviceDisconnected(device) => {
                 sender.output(Output::DeviceDisconnected(device));
             }
+
         }
     }
 }
@@ -305,18 +248,45 @@ pub struct DeviceInfo {
     address: bluer::Address,
     alias: String,
     rssi: Option<i16>,
-    connected: bool,
+    state: DeviceState,
+    device: Arc<bluer::Device>,
 }
 
 impl DeviceInfo {
-    async fn new(device: &bluer::Device) -> bluer::Result<Self> {
+    async fn new(device: Arc<bluer::Device>) -> bluer::Result<Self> {
+        let state = if device.is_connected().await? {
+            DeviceState::Connected
+        } else {
+            DeviceState::Disconnected
+        };
         Ok(Self {
             address: device.address(),
             alias: device.alias().await?,
             rssi: device.rssi().await?,
-            connected: device.is_connected().await?,
+            state,
+            device,
         })
     }
+}
+
+#[derive(PartialEq, Debug)]
+pub enum DeviceState {
+    Disconnected,
+    Transitioning,
+    Connected,
+}
+
+#[derive(Debug)]
+pub enum DeviceInput {
+    Connect,
+    Disconnect,
+    StateUpdated(DeviceState),
+}
+
+#[derive(Debug)]
+pub enum DeviceOutput {
+    Connected(Arc<bluer::Device>),
+    Disconnected(Arc<bluer::Device>),
 }
 
 // Factory for device list
@@ -325,62 +295,70 @@ impl FactoryComponent<gtk::ListBox, Input> for DeviceInfo {
     type Command = ();
     type CommandOutput = ();
     type InitParams = Self;
-    type Input = ();
-    type Output = ();
+    type Input = DeviceInput;
+    type Output = DeviceOutput;
     type Widgets = DeviceInfoWidgets;
 
     view! {
         #[root]
         gtk::ListBoxRow {
             gtk::Box {
-                set_orientation: gtk::Orientation::Vertical,
+                set_orientation: gtk::Orientation::Horizontal,
+                set_margin_all: 12,
+                set_spacing: 10,
+                set_hexpand: true,
 
                 gtk::Box {
-                    set_orientation: gtk::Orientation::Horizontal,
+                    set_orientation: gtk::Orientation::Vertical,
+                    set_spacing: 10,
 
                     gtk::Label {
-                        set_margin_all: 5,
                         set_halign: gtk::Align::Start,
                         set_hexpand: true,
                         set_label: &self.alias,
                     },
 
-                    gtk::Image {
-                        set_margin_all: 5,
-                        set_halign: gtk::Align::End,
-                        set_hexpand: true,
-                        set_icon_name: Some("bluetooth-symbolic"),
-                        #[watch]
-                        set_visible: self.connected,
-                    }
-                },
-
-                gtk::Box {
-                    set_orientation: gtk::Orientation::Horizontal,
-                    set_spacing: 5,
-                    set_margin_all: 5,
-
                     gtk::Label {
-                        set_margin_all: 5,
                         set_halign: gtk::Align::Start,
                         set_hexpand: true,
                         set_label: &self.address.to_string(),
                         add_css_class: "dim-label",
                     },
+                },
 
-                    gtk::Label {
-                        set_margin_all: 5,
-                        set_halign: gtk::Align::End,
-                        set_hexpand: true,
-                        set_label: &match self.rssi {
-                            Some(rssi) => format!("RSSI: {}", rssi),
-                            None => String::from("Saved"),
-                        },
-                        add_css_class: "dim-label",
+                gtk::Label {
+                    set_label: &match self.rssi {
+                        Some(rssi) => format!("RSSI: {}", rssi),
+                        None => String::from("Saved"),
                     },
+                    add_css_class: "dim-label",
+                },
+
+                gtk::Button {
+                    set_tooltip_text: Some("Click to disconnect"),
+                    set_icon_name: "bluetooth-symbolic",
+                    add_css_class: "flat",
+                    #[watch]
+                    set_visible: self.state == DeviceState::Connected,
+                    connect_clicked[input] => move |_| {
+                        input.send(DeviceInput::Disconnect);
+                    }
+                },
+
+                gtk::Spinner {
+                    #[watch]
+                    set_visible: self.state == DeviceState::Transitioning,
+                    set_spinning: true,
                 },
             },
         }
+    }
+
+    fn output_to_parent_msg(output: Self::Output) -> Option<Input> {
+        Some(match output {
+            DeviceOutput::Connected(device) => Input::DeviceConnected(device),
+            DeviceOutput::Disconnected(device) => Input::DeviceDisconnected(device),
+        })
     }
 
     fn init_model(
@@ -397,11 +375,62 @@ impl FactoryComponent<gtk::ListBox, Input> for DeviceInfo {
         _index: &DynamicIndex,
         root: &Self::Root,
         _returned_widget: &gtk::ListBoxRow,
-        _input: &Sender<Self::Input>,
+        input: &Sender<Self::Input>,
         _output: &Sender<Self::Output>,
     ) -> Self::Widgets {
         let widgets = view_output!();
         widgets
+    }
+
+    fn update(
+        &mut self,
+        msg: Self::Input,
+        input: &Sender<Self::Input>,
+        output: &Sender<Self::Output>
+    ) -> Option<()> {
+        let input = input.clone();
+        let output = output.clone();
+
+        match msg {
+            DeviceInput::Connect => {
+                self.state = DeviceState::Transitioning;
+                let device = self.device.clone();
+                relm4::spawn(async move {
+                    match device.connect().await {
+                        Ok(()) => {
+                            input.send(DeviceInput::StateUpdated(DeviceState::Connected));
+                            output.send(DeviceOutput::Connected(device));
+                        }
+                        Err(error) => {
+                            input.send(DeviceInput::StateUpdated(DeviceState::Disconnected));
+                            eprintln!("Connection failure: {}", error);
+                        }
+                    }
+                });
+            }
+
+            DeviceInput::Disconnect => {
+                self.state = DeviceState::Transitioning;
+                let device = self.device.clone();
+                relm4::spawn(async move {
+                    match device.disconnect().await {
+                        Ok(()) => {
+                            input.send(DeviceInput::StateUpdated(DeviceState::Disconnected));
+                            output.send(DeviceOutput::Disconnected(device));
+                        }
+                        Err(error) => {
+                            input.send(DeviceInput::StateUpdated(DeviceState::Connected));
+                            eprintln!("Disconnection failure: {}", error);
+                        }
+                    }
+                });
+            }
+
+            DeviceInput::StateUpdated(state) => {
+                self.state = state;
+            }
+        }
+        None
     }
 }
 

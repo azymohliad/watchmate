@@ -1,4 +1,4 @@
-use std::{fs::File, collections::HashMap, path::Path, io::Read};
+use std::{fs::File, collections::HashMap, path::Path, sync::Arc, io::Read};
 use futures::{pin_mut, StreamExt};
 use bluer::{gatt::remote::Characteristic, Adapter, Device};
 use uuid::Uuid;
@@ -18,12 +18,12 @@ pub enum FwUpdNotification {
 
 #[derive(Debug)]
 pub struct InfiniTime {
-    device: Device,
+    device: Arc<Device>,
     characteristics: HashMap<Uuid, Characteristic>,
 }
 
 impl InfiniTime {
-    pub async fn new(device: Device) -> Result<Self> {
+    pub async fn new(device: Arc<Device>) -> Result<Self> {
         let characteristics = super::read_characteristics_map(&device).await?;
         Ok(Self { device, characteristics })
     }
