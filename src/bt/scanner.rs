@@ -30,7 +30,7 @@ impl Scanner {
                 }
             },
             Err(error) => {
-                eprintln!("Error: {}", error);
+                eprintln!("Scanning failure: {}", error);
             }
         }
     }

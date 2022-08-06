@@ -181,13 +181,22 @@ impl Component for Model {
             Input::DeviceConnected(device) => {
                 self.is_connected = true;
                 self.active_view = View::Dashboard;
+                let sender_ = sender.clone();
                 sender.command(move |out, shutdown| {
                     // TODO: Remove this extra clone once ComponentSender::command
                     // is patched to accept FnOnce instead of Fn
                     let device = device.clone();
+                    let sender_ = sender_.clone();
                     let task = async move {
-                        let infinitime = bt::InfiniTime::new(device).await.unwrap();
-                        out.send(CommandOutput::DeviceReady(Arc::new(infinitime)));
+                        match bt::InfiniTime::new(device).await {
+                            Ok(infinitime) => {
+                                out.send(CommandOutput::DeviceReady(Arc::new(infinitime)));
+                            }
+                            Err(error) => {
+                                eprintln!("Failed to connect to InfiniTime: {}", error);
+                                sender_.input(Input::Notification(format!("Failed to connect to the watch")));
+                            }
+                        }
                     };
                     shutdown.register(task).drop_on_shutdown()
                 })

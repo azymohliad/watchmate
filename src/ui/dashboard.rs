@@ -303,6 +303,7 @@ impl Component for Model {
 
                                         #[name(releases_dropdown)]
                                         gtk::DropDown {
+                                            set_hexpand: true,
                                             #[watch]
                                             set_sensitive: model.firmware_tags.is_some(),
                                             #[watch]
@@ -362,14 +363,17 @@ impl Component for Model {
         match msg {
             Input::Connected(infinitime) => {
                 self.infinitime = Some(infinitime.clone());
+                let sender_ = sender.clone();
                 sender.command(move |out, shutdown| {
                     // TODO: Remove this extra clone once ComponentSender::command
                     // is patched to accept FnOnce instead of Fn
                     let infinitime = infinitime.clone();
+                    let sender_ = sender_.clone();
                     shutdown.register(async move {
                         // Read inital data
                         if let Err(error) = Self::read_info(infinitime.clone(), out.clone()).await {
-                            eprintln!("Failed to read info: {}", error);
+                            eprintln!("Failed to read data: {}", error);
+                            sender_.output(Output::Notification(format!("Failed to read data")));
                         }
                         // Run data update session
                         infinitime.run_notification_session(move |notification| {

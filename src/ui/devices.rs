@@ -182,6 +182,7 @@ impl Component for Model {
             Input::DeviceSelected(index) => {
                 if let Some(info) = devices_guard.get(index as usize) {
                     self.scanner.stop();
+                    self.is_scanning = false;
                     match self.adapter.device(info.address) {
                         Ok(device) => {
                             let connected = info.connected;
@@ -193,20 +194,20 @@ impl Component for Model {
                                     if !connected {
                                         match device.connect().await {
                                             Ok(()) => out.send(CommandOutput::DeviceConnected(device)),
-                                            Err(error) => eprintln!("Error: {}", error),
+                                            Err(error) => eprintln!("Connection failure: {}", error),
                                         }
                                     } else {
                                         match device.disconnect().await {
                                             Ok(()) => out.send(CommandOutput::DeviceDisconnected(device)),
-                                            Err(error) => eprintln!("Error: {}", error),
+                                            Err(error) => eprintln!("Connection failure: {}", error),
                                         }
                                     }
                                 }).drop_on_shutdown()
                             });
                         }
                         Err(error) => {
-                            eprintln!("Error: {}", error);
-                            sender.output(Output::Notification(String::from("Connection error")));
+                            eprintln!("Connection failure: {}", error);
+                            sender.output(Output::Notification(String::from("Connection failure")));
                         }
                     }
                 }
