@@ -2142,6 +2142,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "uuid",
+ "version-compare",
  "zip",
 ]
 

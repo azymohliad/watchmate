@@ -3,6 +3,7 @@ use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, ListBoxRowExt, WidgetExt};
 use adw::prelude::{PreferencesRowExt, ExpanderRowExt};
 use relm4::{adw, gtk, ComponentParts, ComponentSender, Component, Sender, WidgetPlus};
 use anyhow::Result;
+use version_compare::Version;
 
 use crate::{bt, firmware_download as fw};
 
@@ -41,6 +42,7 @@ pub struct Model {
     address: Option<String>,
     firmware_version: Option<String>,
     // - Firmware releases
+    firmware_update_available: bool,
     firmware_releases: Option<Vec<fw::ReleaseInfo>>,
     firmware_tags: Option<gtk::StringList>,
     // Other
@@ -55,6 +57,17 @@ impl Model {
         sender.send(CommandOutput::Alias(infinitime.device().alias().await?));
         sender.send(CommandOutput::FirmwareVersion(infinitime.read_firmware_version().await?));
         Ok(())
+    }
+
+    fn check_firmware_latest(&mut self) {
+        let latest = self.firmware_releases.as_ref()
+            .map(|rs| rs.first()).flatten()
+            .map(|r| Version::from(&r.tag)).flatten();
+        let current = self.firmware_version.as_ref()
+            .map(|v| Version::from(v)).flatten();
+        if let (Some(latest), Some(current)) = (latest, current) {
+            self.firmware_update_available = latest > current;
+        }
     }
 }
 
@@ -233,16 +246,27 @@ impl Component for Model {
 
                         adw::ExpanderRow {
                             set_title: "Firmware Version",
-                            #[watch]
-                            set_sensitive: model.firmware_version.is_some(),
+                            // #[watch]
+                            // set_sensitive: model.firmware_version.is_some(),
 
-                            add_action = &gtk::Label {
-                                #[watch]
-                                set_label: match &model.firmware_version {
-                                    Some(version) => version,
-                                    None => "Unavailable",
+                            add_action = &gtk::Box {
+                                set_spacing: 10,
+
+                                gtk::Label {
+                                    #[watch]
+                                    set_label: match &model.firmware_version {
+                                        Some(version) => version,
+                                        None => "Unavailable",
+                                    },
+                                    add_css_class: "dim-label",
                                 },
-                                add_css_class: "dim-label",
+
+                                gtk::Image {
+                                    #[watch]
+                                    set_visible: model.firmware_update_available,
+                                    set_tooltip_text: Some("Firmware update available"),
+                                    set_icon_name: Some("software-update-available-symbolic"),
+                                },
                             },
 
                             add_row = &gtk::ListBoxRow {
@@ -399,11 +423,15 @@ impl Component for Model {
             CommandOutput::HeartRate(rate) => self.heart_rate = Some(rate),
             CommandOutput::Alias(alias) => self.alias = Some(alias),
             CommandOutput::Address(address) => self.address = Some(address),
-            CommandOutput::FirmwareVersion(version) => self.firmware_version = Some(version),
+            CommandOutput::FirmwareVersion(version) => {
+                self.firmware_version = Some(version);
+                self.check_firmware_latest();
+            }
             CommandOutput::FirmwareReleases(releases) => {
                 let tags = releases.iter().map(|r| r.tag.as_str()).collect::<Vec<&str>>();
                 self.firmware_tags = Some(gtk::StringList::new(&tags));
                 self.firmware_releases = Some(releases);
+                self.check_firmware_latest();
             }
         }
     }
