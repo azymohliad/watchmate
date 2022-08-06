@@ -63,37 +63,32 @@ impl Component for Model {
 
             adw::Clamp {
                 set_maximum_size: 400,
+                set_vexpand: true,
 
-                gtk::CenterBox {
+                gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
                     set_margin_all: 12,
-                    set_vexpand: true,
+                    set_spacing: 10,
+                    set_valign: gtk::Align::Center,
 
-                    #[wrap(Some)]
-                    set_center_widget = &gtk::Box {
-                        set_orientation: gtk::Orientation::Vertical,
-                        set_spacing: 10,
-
-                        gtk::Label {
-                            #[watch]
-                            set_label: &model.message,
-                            set_halign: gtk::Align::Center,
-                            set_margin_top: 20,
-                        },
-
-                        gtk::LevelBar {
-                            set_min_value: 0.0,
-                            #[watch]
-                            set_max_value: model.total_size as f64,
-                            #[watch]
-                            set_value: model.sent_size as f64,
-                            #[watch]
-                            set_visible: model.state == State::InProgress,
-                        },
+                    gtk::Label {
+                        #[watch]
+                        set_label: &model.message,
+                        set_halign: gtk::Align::Center,
+                        set_margin_top: 20,
                     },
 
-                    #[wrap(Some)]
-                    set_end_widget = &gtk::Box {
+                    gtk::LevelBar {
+                        set_min_value: 0.0,
+                        #[watch]
+                        set_max_value: model.total_size as f64,
+                        #[watch]
+                        set_value: model.sent_size as f64,
+                        #[watch]
+                        set_visible: model.state == State::InProgress,
+                    },
+
+                    gtk::Box {
                         set_orientation: gtk::Orientation::Horizontal,
                         set_spacing: 10,
                         set_halign: gtk::Align::Center,

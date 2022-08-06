@@ -180,7 +180,6 @@ impl Component for Model {
             }
             Input::DeviceConnected(device) => {
                 self.is_connected = true;
-                self.active_view = View::Dashboard;
                 let sender_ = sender.clone();
                 sender.command(move |out, shutdown| {
                     // TODO: Remove this extra clone once ComponentSender::command
@@ -225,6 +224,7 @@ impl Component for Model {
         match msg {
             CommandOutput::DeviceReady(infinitime) => {
                 self.infinitime = Some(infinitime.clone());
+                self.active_view = View::Dashboard;
                 self.dashboard.emit(dashboard::Input::Connected(infinitime));
             }
         }

@@ -71,6 +71,7 @@ impl Component for Model {
 
             adw::Clamp {
                 set_maximum_size: 400,
+                set_vexpand: true,
 
                 gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
