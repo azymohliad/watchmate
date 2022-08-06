@@ -11,6 +11,7 @@ pub enum Input {
     Connected(Arc<bt::InfiniTime>),
     Disconnected,
     FirmwareReleasesRequest,
+    FirmwareReleaseNotes(u32),
 }
 
 #[derive(Debug)]
@@ -40,7 +41,8 @@ pub struct Model {
     address: Option<String>,
     firmware_version: Option<String>,
     // - Firmware releases
-    firmware_releases: Option<gtk::StringList>,
+    firmware_releases: Option<Vec<fw::ReleaseInfo>>,
+    firmware_tags: Option<gtk::StringList>,
     // Other
     infinitime: Option<Arc<bt::InfiniTime>>,
 }
@@ -72,7 +74,7 @@ impl Component for Model {
             adw::HeaderBar {
                 #[wrap(Some)]
                 set_title_widget = &gtk::Label {
-                    set_label: "Watchmate",
+                    set_label: "WatchMate",
                 },
 
                 pack_start = &gtk::Button {
@@ -275,17 +277,38 @@ impl Component for Model {
                                     gtk::Box {
                                         set_spacing: 10,
 
+                                        #[name(releases_dropdown)]
                                         gtk::DropDown {
                                             #[watch]
-                                            set_sensitive: model.firmware_releases.is_some(),
+                                            set_sensitive: model.firmware_tags.is_some(),
                                             #[watch]
-                                            set_model: model.firmware_releases.as_ref(),
+                                            set_model: model.firmware_tags.as_ref(),
                                         },
 
-                                        gtk::Button {
+                                        adw::SplitButton {
                                             #[watch]
-                                            set_sensitive: model.firmware_releases.is_some(),
+                                            set_sensitive: model.firmware_tags.is_some(),
                                             set_label: "Update",
+                                            connect_clicked[sender] => move |_| {},
+                                            #[wrap(Some)]
+                                            set_popover = &gtk::Popover {
+                                                gtk::Box {
+                                                    set_spacing: 10,
+                                                    set_orientation: gtk::Orientation::Vertical,
+
+                                                    gtk::Button {
+                                                        set_label: "Download Only",
+                                                        connect_clicked[sender] => move |_| {},
+                                                    },
+
+                                                    gtk::Button {
+                                                        set_label: "Release Notes",
+                                                        connect_clicked[sender, releases_dropdown] => move |_| {
+                                                            sender.input(Input::FirmwareReleaseNotes(releases_dropdown.selected()));
+                                                        },
+                                                    },
+                                                },
+                                            },
                                         },
 
                                         gtk::Button {
@@ -362,6 +385,11 @@ impl Component for Model {
                     }).drop_on_shutdown()
                 });
             }
+            Input::FirmwareReleaseNotes(index) => {
+                if let Some(releases) = &self.firmware_releases {
+                    gtk::show_uri(None as Option<&adw::ApplicationWindow>, &releases[index as usize].url, 0);
+                }
+            }
         }
     }
 
@@ -374,7 +402,8 @@ impl Component for Model {
             CommandOutput::FirmwareVersion(version) => self.firmware_version = Some(version),
             CommandOutput::FirmwareReleases(releases) => {
                 let tags = releases.iter().map(|r| r.tag.as_str()).collect::<Vec<&str>>();
-                self.firmware_releases = Some(gtk::StringList::new(&tags));
+                self.firmware_tags = Some(gtk::StringList::new(&tags));
+                self.firmware_releases = Some(releases);
             }
         }
     }

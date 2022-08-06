@@ -6,6 +6,8 @@ pub struct ReleaseInfo {
     pub name: String,
     #[serde(rename = "tag_name")]
     pub tag: String,
+    #[serde(rename = "html_url")]
+    pub url: String,
 }
 
 pub async fn list_releases() -> Result<Vec<ReleaseInfo>> {
@@ -27,3 +29,4 @@ pub async fn list_releases() -> Result<Vec<ReleaseInfo>> {
         Err(anyhow!("Request failed: {}", status))
     }
 }
+
