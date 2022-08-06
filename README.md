@@ -20,7 +20,7 @@ cargo run --release
 
 ## Roadmap
 
-- [x] Bluetooth scanning, connecting to InfiniTime watch
+- [x] Bluetooth device discovery, connecting to InfiniTime watch
 - [x] Sharing time via Current Time Service
 - [x] Reading data from the watch
     - [x] Battery level
@@ -28,10 +28,11 @@ cargo run --release
     - [x] Heart rate
 - [ ] OTA firmware update
     - [x] Firmware update from manually selected file
-    - [ ] Automatic downloading from [InfiniTime releases](https://github.com/InfiniTimeOrg/InfiniTime/releases)
+    - [ ] Automatic firmware downloading from [InfiniTime releases](https://github.com/InfiniTimeOrg/InfiniTime/releases)
 - [ ] Media-player control
 - [ ] Secure pairing
 - [ ] Notifications
+- [ ] Settings
 - [ ] Release checklist
     - [ ] Icon
     - [ ] About dialog
