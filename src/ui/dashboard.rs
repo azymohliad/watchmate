@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, path::PathBuf};
 use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, ListBoxRowExt, WidgetExt};
 use adw::prelude::{PreferencesRowExt, ExpanderRowExt};
 use relm4::{adw, gtk, ComponentParts, ComponentSender, Component, Sender, WidgetPlus};
@@ -13,6 +13,7 @@ pub enum Input {
     Disconnected,
     FirmwareReleasesRequest,
     FirmwareReleaseNotes(u32),
+    FirmwareDownload(u32),
 }
 
 #[derive(Debug)]
@@ -30,6 +31,7 @@ pub enum CommandOutput {
     Address(String),
     FirmwareVersion(String),
     FirmwareReleases(Vec<fw::ReleaseInfo>),
+    FirmwareDownloaded(PathBuf),
 }
 
 #[derive(Default)]
@@ -45,6 +47,7 @@ pub struct Model {
     firmware_update_available: bool,
     firmware_releases: Option<Vec<fw::ReleaseInfo>>,
     firmware_tags: Option<gtk::StringList>,
+    firmware_downloading: bool,
     // Other
     infinitime: Option<Arc<bt::InfiniTime>>,
 }
@@ -315,7 +318,7 @@ impl Component for Model {
 
                                             adw::SplitButton {
                                                 #[watch]
-                                                set_sensitive: model.firmware_tags.is_some(),
+                                                set_sensitive: model.firmware_tags.is_some() && !model.firmware_downloading,
                                                 set_label: "Update",
                                                 connect_clicked[sender] => move |_| {},
                                                 #[wrap(Some)]
@@ -326,7 +329,9 @@ impl Component for Model {
 
                                                         gtk::Button {
                                                             set_label: "Download Only",
-                                                            connect_clicked[sender] => move |_| {},
+                                                            connect_clicked[sender, releases_dropdown] => move |_| {
+                                                                sender.input(Input::FirmwareDownload(releases_dropdown.selected()));
+                                                            },
                                                         },
 
                                                         gtk::Button {
@@ -339,13 +344,19 @@ impl Component for Model {
                                                 },
                                             },
 
-                                            gtk::Button {
-                                                set_tooltip_text: Some("Refresh releases list"),
-                                                set_icon_name: "view-refresh-symbolic",
-                                                connect_clicked[sender] => move |_| {
-                                                    sender.input(Input::FirmwareReleasesRequest);
-                                                },
-                                            },
+                                            if model.firmware_downloading {
+                                                gtk::Spinner {
+                                                    set_spinning: true,
+                                                }
+                                            } else {
+                                                gtk::Button {
+                                                    set_tooltip_text: Some("Refresh releases list"),
+                                                    set_icon_name: "view-refresh-symbolic",
+                                                    connect_clicked[sender] => move |_| {
+                                                        sender.input(Input::FirmwareReleasesRequest);
+                                                    },
+                                                }
+                                            }
                                         },
                                     },
                                 },
@@ -441,10 +452,44 @@ impl Component for Model {
                     gtk::show_uri(None as Option<&adw::ApplicationWindow>, &releases[index as usize].url, 0);
                 }
             }
+            Input::FirmwareDownload(index) => {
+                if let Some(releases) = &self.firmware_releases {
+                    match releases[index as usize].get_dfu_asset() {
+                        Some(asset) => {
+                            self.firmware_downloading = true;
+                            let sender_ = sender.clone();
+                            let url = asset.url.clone();
+                            let filepath = fw::get_download_filepath(&asset.name).unwrap();
+                            sender.command(move |out, shutdown| {
+                                // TODO: Remove this extra clone once ComponentSender::command
+                                // is patched to accept FnOnce instead of Fn
+                                let sender_ = sender_.clone();
+                                let url = url.clone();
+                                let filepath = filepath.clone();
+                                shutdown.register(async move {
+                                    match fw::download_dfu_file(url.as_str(), filepath.as_path()).await {
+                                        Ok(()) => {
+                                            out.send(CommandOutput::FirmwareDownloaded(filepath));
+                                        }
+                                        Err(error) => {
+                                            eprintln!("Failed to download of DFU file: {}", error);
+                                            sender_.output(Output::Notification(format!("Failed to fetch firmware releases")));
+                                        }
+                                    }
+                                }).drop_on_shutdown()
+                            });
+                        }
+                        None => {
+                            Output::Notification(format!("DFU file not found"));
+                        }
+                    }
+                }
+
+            }
         }
     }
 
-    fn update_cmd(&mut self, msg: Self::CommandOutput, _sender: &ComponentSender<Self>) {
+    fn update_cmd(&mut self, msg: Self::CommandOutput, sender: &ComponentSender<Self>) {
         match msg {
             CommandOutput::BatteryLevel(soc) => self.battery_level = Some(soc),
             CommandOutput::HeartRate(rate) => self.heart_rate = Some(rate),
@@ -459,6 +504,10 @@ impl Component for Model {
                 self.firmware_tags = Some(gtk::StringList::new(&tags));
                 self.firmware_releases = Some(releases);
                 self.check_firmware_latest();
+            }
+            CommandOutput::FirmwareDownloaded(_filepath) => {
+                self.firmware_downloading = false;
+                sender.output(Output::Notification(format!("Firmware downloaded")));
             }
         }
     }
