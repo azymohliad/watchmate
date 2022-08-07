@@ -26,9 +26,9 @@ cargo run --release
     - [x] Battery level
     - [x] Firmware version
     - [x] Heart rate
-- [ ] OTA firmware update
+- [x] OTA firmware update
     - [x] Firmware update from manually selected file
-    - [ ] Automatic firmware downloading from [InfiniTime releases](https://github.com/InfiniTimeOrg/InfiniTime/releases)
+    - [x] Automatic firmware downloading from [InfiniTime releases](https://github.com/InfiniTimeOrg/InfiniTime/releases)
 - [ ] Media-player control
 - [ ] Secure pairing
 - [ ] Notifications
