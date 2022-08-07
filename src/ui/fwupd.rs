@@ -1,18 +1,26 @@
 use std::{sync::Arc, path::PathBuf};
+use tokio::{fs::File, io::AsyncReadExt};
 use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, WidgetExt};
 use relm4::{adw, gtk, ComponentParts, ComponentSender, Component, WidgetPlus, JoinHandle};
-
-use crate::bt;
+use crate::{bt, firmware_download as fw};
 
 #[derive(Debug)]
 pub enum Input {
-    Init(PathBuf, Arc<bt::InfiniTime>),
-    Start,
+    Connected(Arc<bt::InfiniTime>),
+    Disconnected,
+
+    FirmwareUpdateFromFile(PathBuf),
+    FirmwareUpdateFromUrl(String),
+
+    FirmwareContentReady(Vec<u8>),
+    FirmwareUpdateFinished,
+    FirmwareUpdateFailed(&'static str),
+
+    StatusMessage(&'static str),
+    FlashProgress { flashed: u32, total: u32 },
+
+    Retry,
     Abort,
-    Finished,
-    Failed,
-    Message(&'static str),
-    Progress(u32, u32),
 }
 
 #[derive(Debug)]
@@ -20,15 +28,75 @@ pub enum Output {
     SetView(super::View),
 }
 
+pub enum Source {
+    File(Arc<PathBuf>),
+    Url(Arc<String>),
+}
+
+#[derive(PartialEq, Default)]
+pub enum State {
+    InProgress,
+    Aborted,
+    #[default]
+    Finished,
+}
+
 #[derive(Default)]
 pub struct Model {
-    message: String,
-    sent_size: u32,
-    total_size: u32,
+    status_message: String,
+    progress: f64,
     state: State,
+    dfu_content: Option<Arc<Vec<u8>>>,
+    dfu_source: Option<Source>,
 
-    context: Option<(Arc<PathBuf>, Arc<bt::InfiniTime>)>,
-    handle: Option<JoinHandle<()>>,
+    infinitime: Option<Arc<bt::InfiniTime>>,
+    task_handle: Option<JoinHandle<()>>,
+}
+
+impl Model {
+    fn download_dfu(url: Arc<String>, sender: ComponentSender<Self>) -> JoinHandle<()> {
+        relm4::spawn(async move {
+            match fw::download_dfu_content(url.as_str()).await {
+                Ok(content) => sender.input(Input::FirmwareContentReady(content)),
+                Err(_) => sender.input(Input::FirmwareUpdateFailed("Failed to download DFU file")),
+            }
+        })
+    }
+
+    fn read_dfu_file(filepath: Arc<PathBuf>, sender: ComponentSender<Self>) -> JoinHandle<()> {
+        relm4::spawn(async move {
+            match File::open(filepath.as_path()).await {
+                Ok(mut file) => {
+                    let mut content = Vec::new();
+                    match file.read_to_end(&mut content).await {
+                        Ok(_) => sender.input(Input::FirmwareContentReady(content)),
+                        Err(_) => sender.input(Input::FirmwareUpdateFailed("Failed to open DFU file")),
+                    }
+                }
+                Err(_) => {
+                    sender.input(Input::FirmwareUpdateFailed("Failed to read DFU file"));
+                }
+            }
+        })
+    }
+
+    fn flash(infinitime: Arc<bt::InfiniTime>, dfu: Arc<Vec<u8>>, sender: ComponentSender<Self>) -> JoinHandle<()> {
+        relm4::spawn(async move {
+            let sender_ = sender.clone();
+            let callback = move |notification| match notification {
+                bt::FwUpdNotification::Message(text) => {
+                    sender_.input(Input::StatusMessage(text));
+                }
+                bt::FwUpdNotification::BytesSent(flashed, total) => {
+                    sender_.input(Input::FlashProgress { flashed, total });
+                }
+            };
+            match infinitime.firmware_upgrade(dfu.as_slice(), callback).await {
+                Ok(()) => sender.input(Input::FirmwareUpdateFinished),
+                Err(_) => sender.input(Input::FirmwareUpdateFailed("Failed to flash firmware")),
+            };
+        })
+    }
 }
 
 #[relm4::component(pub)]
@@ -73,7 +141,7 @@ impl Component for Model {
 
                     gtk::Label {
                         #[watch]
-                        set_label: &model.message,
+                        set_label: &model.status_message,
                         set_halign: gtk::Align::Center,
                         set_margin_top: 20,
                     },
@@ -81,11 +149,17 @@ impl Component for Model {
                     gtk::LevelBar {
                         set_min_value: 0.0,
                         #[watch]
-                        set_max_value: model.total_size as f64,
+                        set_max_value: 1.0,
                         #[watch]
-                        set_value: model.sent_size as f64,
+                        set_value: model.progress,
                         #[watch]
-                        set_visible: model.state == State::InProgress,
+                        set_visible: model.state == State::InProgress && model.progress > 0.0,
+                    },
+
+                    gtk::Spinner {
+                        #[watch]
+                        set_visible: model.state == State::InProgress && model.progress == 0.0,
+                        set_spinning: true,
                     },
 
                     gtk::Box {
@@ -105,7 +179,7 @@ impl Component for Model {
                             set_label: "Retry",
                             #[watch]
                             set_visible: model.state == State::Aborted,
-                            connect_clicked[sender] => move |_| sender.input(Input::Start),
+                            connect_clicked[sender] => move |_| sender.input(Input::Retry),
                         },
 
                         gtk::Button {
@@ -130,68 +204,78 @@ impl Component for Model {
 
     fn update(&mut self, msg: Self::Input, sender: &ComponentSender<Self>) {
         match msg {
-            Input::Init(filename, infinitime) => {
-                self.context = Some((Arc::new(filename), infinitime.clone()));
-                sender.input(Input::Start);
+            Input::Connected(infinitime) => {
+                self.infinitime = Some(infinitime);
             }
-            Input::Start => {
+            Input::Disconnected => {
+                self.infinitime = None;
+            }
+            Input::FirmwareUpdateFromFile(filepath) => {
+                let filepath = Arc::new(filepath);
+                self.status_message = format!("Reading firmware file");
                 self.state = State::InProgress;
-                let sender = sender.clone();
-                if let Some((filename, infinitime)) = &self.context {
-                    let filename = filename.clone();
-                    let infinitime = infinitime.clone();
-                    self.handle = Some(relm4::spawn(async move {
-                        let snd = sender.clone();
-                        let callback = move |notification| match notification {
-                            bt::FwUpdNotification::Message(text) => {
-                                snd.input(Input::Message(text));
-                            }
-                            bt::FwUpdNotification::BytesSent(sent, total) => {
-                                snd.input(Input::Progress(sent, total));
-                            }
-                        };
-                        match infinitime.firmware_upgrade(filename.as_path(), callback).await {
-                            Ok(()) => sender.input(Input::Finished),
-                            Err(_error) => sender.input(Input::Failed),
-                        };
-                    }));
+                self.dfu_source = Some(Source::File(filepath.clone()));
+                self.task_handle = Some(Self::read_dfu_file(filepath.clone(), sender.clone()));
+            }
+            Input::FirmwareUpdateFromUrl(url) => {
+                let url = Arc::new(url);
+                self.status_message = format!("Downloading firmware");
+                self.state = State::InProgress;
+                self.dfu_source = Some(Source::Url(url.clone()));
+                self.task_handle = Some(Self::download_dfu(url.clone(), sender.clone()));
+            }
+            Input::FirmwareContentReady(content) => {
+                if let Some(infinitime) = &self.infinitime {
+                    let content = Arc::new(content);
+                    self.dfu_source = None;
+                    self.dfu_content = Some(content.clone());
+                    self.task_handle = Some(Self::flash(infinitime.clone(), content, sender.clone()));
+                }
+            }
+            Input::FirmwareUpdateFinished => {
+                self.status_message = format!("Firmware update complete :)");
+                self.state = State::Finished;
+                self.task_handle = None;
+                self.dfu_content = None;
+            }
+            Input::FirmwareUpdateFailed(message) => {
+                self.status_message = format!("Firmware update error: {message}");
+                self.state = State::Aborted;
+                self.task_handle = None;
+            }
+            Input::StatusMessage(text) => {
+                self.status_message = text.to_string();
+            }
+            Input::FlashProgress { flashed, total } => {
+                let flashed = flashed as f64 / 1024.0;
+                let total = total as f64 / 1024.0;
+                self.status_message = format!("Flashing firmware: {flashed:.01}/{total:.01} kB");
+                self.progress = (flashed / total) as f64;
+            }
+            Input::Retry => {
+                if let Some(content) = &self.dfu_content {
+                    if let Some(infinitime) = &self.infinitime {
+                        self.task_handle = Some(Self::flash(infinitime.clone(), content.clone(), sender.clone()));
+                    }
+                } else {
+                    match &self.dfu_source {
+                        Some(Source::File(filepath)) => {
+                            self.task_handle = Some(Self::read_dfu_file(filepath.clone(), sender.clone()));
+                        }
+                        Some(Source::Url(url)) => {
+                            self.task_handle = Some(Self::download_dfu(url.clone(), sender.clone()));
+                        }
+                        None => {}
+                    }
                 }
             }
             Input::Abort => {
-                if let Some(handle) = self.handle.take() {
+                if let Some(handle) = self.task_handle.take() {
                     handle.abort();
-                    self.message = format!("Firmware update aborted");
+                    self.status_message = format!("Firmware update aborted");
                     self.state = State::Aborted;
                 }
             }
-            Input::Finished => {
-                self.message = format!("Firmware update complete :)");
-                self.state = State::Finished;
-                self.handle = None;
-                self.context = None;
-            }
-            Input::Failed => {
-                self.message = format!("Firmware update failed :(");
-                self.state = State::Aborted;
-                self.handle = None;
-            }
-            Input::Message(text) => {
-                self.message = text.to_string();
-            }
-            Input::Progress(sent, total) => {
-                self.message = format!("Sending firmware: {:.01}/{:.01} kB", sent as f32 / 1024.0, total as f32 / 1024.0);
-                self.sent_size = sent;
-                self.total_size = total;
-            }
         }
     }
-}
-
-#[derive(PartialEq, Default)]
-pub enum State {
-    #[default]
-    Ready,
-    InProgress,
-    Finished,
-    Aborted,
 }

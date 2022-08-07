@@ -1,4 +1,4 @@
-use std::{fs::File, collections::HashMap, path::Path, sync::Arc, io::Read};
+use std::{collections::HashMap, sync::Arc, io::{Cursor, Read}};
 use futures::{pin_mut, StreamExt};
 use bluer::{gatt::remote::Characteristic, Adapter, Device};
 use uuid::Uuid;
@@ -63,13 +63,12 @@ impl InfiniTime {
         }
     }
 
-    pub async fn firmware_upgrade<F>(&self, filepath: &Path, callback: F) -> Result<()>
+    pub async fn firmware_upgrade<F>(&self, dfu_content: &[u8], callback: F) -> Result<()>
         where F: Fn(FwUpdNotification) + Send + 'static
     {
         callback(FwUpdNotification::Message("Extracting firmware files..."));
 
-        let file = File::open(filepath)?;
-        let mut zip = zip::ZipArchive::new(file)?;
+        let mut zip = zip::ZipArchive::new(Cursor::new(dfu_content))?;
 
         // Find filenames
         let mut dfu_bin = None;

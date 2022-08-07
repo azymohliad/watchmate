@@ -14,11 +14,13 @@ pub enum Input {
     FirmwareReleasesRequest,
     FirmwareReleaseNotes(u32),
     FirmwareDownload(u32),
+    FirmwareUpdate(u32),
 }
 
 #[derive(Debug)]
 pub enum Output {
-    DfuOpenRequest,
+    FirmwareUpdateFromFile,
+    FirmwareUpdateFromUrl(String),
     Notification(String),
     SetView(super::View),
 }
@@ -291,7 +293,7 @@ impl Component for Model {
                                         gtk::Button {
                                             set_label: "Select File",
                                             connect_clicked[sender] => move |_| {
-                                                sender.output(Output::DfuOpenRequest);
+                                                sender.output(Output::FirmwareUpdateFromFile);
                                             },
                                         },
 
@@ -300,7 +302,7 @@ impl Component for Model {
                                         },
 
                                         gtk::Label {
-                                            set_label: "Update from Github release",
+                                            set_label: "Update from GitHub release",
                                             set_halign: gtk::Align::Start,
                                         },
 
@@ -320,7 +322,9 @@ impl Component for Model {
                                                 #[watch]
                                                 set_sensitive: model.firmware_tags.is_some() && !model.firmware_downloading,
                                                 set_label: "Update",
-                                                connect_clicked[sender] => move |_| {},
+                                                connect_clicked[sender, releases_dropdown] => move |_| {
+                                                    sender.input(Input::FirmwareUpdate(releases_dropdown.selected()));
+                                                },
                                                 #[wrap(Some)]
                                                 set_popover = &gtk::Popover {
                                                     gtk::Box {
@@ -480,11 +484,22 @@ impl Component for Model {
                             });
                         }
                         None => {
-                            Output::Notification(format!("DFU file not found"));
+                            sender.output(Output::Notification(format!("DFU file not found")));
                         }
                     }
                 }
-
+            }
+            Input::FirmwareUpdate(index) => {
+                if let Some(releases) = &self.firmware_releases {
+                    match releases[index as usize].get_dfu_asset() {
+                        Some(asset) => {
+                            sender.output(Output::FirmwareUpdateFromUrl(asset.url.clone()));
+                        }
+                        None => {
+                            sender.output(Output::Notification(format!("DFU file not found")));
+                        }
+                    }
+                }
             }
         }
     }

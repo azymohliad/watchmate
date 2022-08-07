@@ -14,7 +14,8 @@ enum Input {
     SetView(View),
     DeviceConnected(Arc<bluer::Device>),
     DeviceDisconnected(Arc<bluer::Device>),
-    FirmwareUpdate(PathBuf),
+    FirmwareUpdateFromFile(PathBuf),
+    FirmwareUpdateFromUrl(String),
     Notification(String),
 }
 
@@ -95,7 +96,7 @@ impl Component for Model {
                                 set_visible: model.active_view == View::FileChooser,
                                 connect_clicked[sender, file_chooser] => move |_| {
                                     if let Some(file) = file_chooser.file() {
-                                        sender.input(Input::FirmwareUpdate(file.path().unwrap()));
+                                        sender.input(Input::FirmwareUpdateFromFile(file.path().unwrap()));
                                     }
                                 },
                             },
@@ -132,7 +133,8 @@ impl Component for Model {
         let dashboard = dashboard::Model::builder()
             .launch(())
             .forward(&sender.input, |message| match message {
-                dashboard::Output::DfuOpenRequest => Input::SetView(View::FileChooser),
+                dashboard::Output::FirmwareUpdateFromFile => Input::SetView(View::FileChooser),
+                dashboard::Output::FirmwareUpdateFromUrl(url) => Input::FirmwareUpdateFromUrl(url),
                 dashboard::Output::Notification(text) => Input::Notification(text),
                 dashboard::Output::SetView(view) => Input::SetView(view),
             });
@@ -207,12 +209,15 @@ impl Component for Model {
                     self.infinitime = None;
                 }
                 self.dashboard.emit(dashboard::Input::Disconnected);
+                self.fwupd.emit(fwupd::Input::Disconnected);
             }
-            Input::FirmwareUpdate(filename) => {
-                if let Some(infinitime) = self.infinitime.clone() {
-                    self.fwupd.emit(fwupd::Input::Init(filename, infinitime));
-                    sender.input(Input::SetView(View::FirmwareUpdate));
-                }
+            Input::FirmwareUpdateFromFile(filepath) => {
+                self.fwupd.emit(fwupd::Input::FirmwareUpdateFromFile(filepath));
+                sender.input(Input::SetView(View::FirmwareUpdate));
+            }
+            Input::FirmwareUpdateFromUrl(url) => {
+                self.fwupd.emit(fwupd::Input::FirmwareUpdateFromUrl(url));
+                sender.input(Input::SetView(View::FirmwareUpdate));
             }
             Input::Notification(message) => {
                 self.notify(&message);
@@ -225,7 +230,8 @@ impl Component for Model {
             CommandOutput::DeviceReady(infinitime) => {
                 self.infinitime = Some(infinitime.clone());
                 self.active_view = View::Dashboard;
-                self.dashboard.emit(dashboard::Input::Connected(infinitime));
+                self.dashboard.emit(dashboard::Input::Connected(infinitime.clone()));
+                self.fwupd.emit(fwupd::Input::Connected(infinitime));
             }
         }
     }
