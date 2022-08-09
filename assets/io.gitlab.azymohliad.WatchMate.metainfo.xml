@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Andrii Zymohliad 2022 <azymohliad@proton.me> -->
+<component type="desktop-application">
+  <id>io.gitlab.azymohliad.WatchMate</id>
+  <metadata_license>CC0</metadata_license>
+  <project_license>GPL-3.0</project_license>
+  <name>WatchMate</name>
+  <summary>InfiniTime companion app</summary>
+
+  <description>
+    <p>
+      Sync your PineTime smart watch running InfiniTime firmware with your Linux desktop or mobile.
+      Visually optimized for GNOME.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>Serve current time to the watch</li>
+      <li>Read various data form the watch</li>
+      <li>Perform OTA firmware update from DFU files or GitHub releases</li>
+      <li>Automatically check for available firmware updates</li>
+    </ul>
+    <p>Roadmap:</p>
+    <ul>
+      <li>Media player control</li>
+      <li>Notifications</li>
+      <li>Secure pairing</li>
+      <li>Application settings</li>
+    </ul>
+  </description>
+
+  <categories>
+    <category>Utility</category>
+  </categories>
+
+  <launchable type="desktop-id">io.gitlab.azymohliad.WatchMate.desktop</launchable>
+
+  <screenshots>
+    <screenshot type="default">
+      <image>https://gitlab.com/azymohliad/watchmate/uploads/9fafad857ab2cb6fffa2b9ab47d9a187/watchmate_2022-08-08.png</image>
+      <caption>Collage</caption>
+    </screenshot>
+  </screenshots>
+
+  <url type="homepage">https://gitlab.com/azymohliad/watchmate</url>
+  <url type="bugtracker">https://gitlab.com/azymohliad/watchmate/issues</url>
+  <content_rating type="oars-1.0" />
+
+  <provides>
+    <binary>watchmate</binary>
+  </provides>
+
+  <releases>
+    <release version="0.1.0" date="2022-08-10">
+      <description>
+        <p>Initial release</p>
+      </description>
+    </release>
+  </releases>
+
+  <kudos>
+     <kudo>Relm4</kudo>
+  </kudos>
+
+  <developer_name>Andrii Zymohliad</developer_name>
+  <update_contact>azymohliad@proton.me</update_contact>
+</component>
