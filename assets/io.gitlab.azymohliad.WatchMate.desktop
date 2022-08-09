@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=WatchMate
+GenericName=Smart Watch Companion
+Comment=InfiniTime smart watch companion app
+Exec=watchmate
+Icon=io.gitlab.azymohliad.WatchMate
+Terminal=false
+Type=Application
+Categories=Utility;GNOME;GTK;
+Keywords=InfiniTime;PineTime;Smartwatch;Companion;Time;
