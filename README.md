@@ -1,6 +1,6 @@
 # WatchMate
 
-InfiniTime companion app for GNOME desktop and mobile.
+[InfiniTime](https://github.com/InfiniTimeOrg/InfiniTime/) companion app for GNOME desktop and mobile.
 
 ![watchmate_2022-08-08](/uploads/9fafad857ab2cb6fffa2b9ab47d9a187/watchmate_2022-08-08.png)
 
