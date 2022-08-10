@@ -436,7 +436,6 @@ impl Component for Model {
                             }
                             Err(error) => {
                                 eprintln!("Failed to fetch the list of firmware releases: {}", error);
-                                sender.output(Output::Notification(format!("Failed to fetch firmware releases")));
                             }
                         }
                     }).drop_on_shutdown()

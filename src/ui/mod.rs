@@ -104,7 +104,6 @@ impl Component for Model {
             .forward(&sender.input, |message| match message {
                 devices::Output::DeviceConnected(device) => Input::DeviceConnected(device),
                 devices::Output::DeviceDisconnected(device) => Input::DeviceDisconnected(device),
-                devices::Output::Notification(text) => Input::Notification(text),
                 devices::Output::SetView(view) => Input::SetView(view),
             });
 

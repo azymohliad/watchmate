@@ -24,7 +24,6 @@ pub enum Input {
 pub enum Output {
     DeviceConnected(Arc<bluer::Device>),
     DeviceDisconnected(Arc<bluer::Device>),
-    Notification(String),
     SetView(super::View),
 }
 
