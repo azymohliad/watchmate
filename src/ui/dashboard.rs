@@ -392,28 +392,23 @@ impl Component for Model {
         }
     }
 
-    fn init(_: Self::InitParams, root: &Self::Root, sender: &ComponentSender<Self>) -> ComponentParts<Self> {
+    fn init(_: Self::InitParams, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
         let model = Self::default();
         let widgets = view_output!();
         sender.input(Input::FirmwareReleasesRequest);
         ComponentParts { model, widgets }
     }
 
-    fn update(&mut self, msg: Self::Input, sender: &ComponentSender<Self>) {
+    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
         match msg {
             Input::Connected(infinitime) => {
                 self.infinitime = Some(infinitime.clone());
-                let sender_ = sender.clone();
-                sender.command(move |out, shutdown| {
-                    // TODO: Remove this extra clone once ComponentSender::command
-                    // is patched to accept FnOnce instead of Fn
-                    let infinitime = infinitime.clone();
-                    let sender_ = sender_.clone();
+                sender.clone().command(move |out, shutdown| {
                     shutdown.register(async move {
                         // Read inital data
                         if let Err(error) = Self::read_info(infinitime.clone(), out.clone()).await {
                             eprintln!("Failed to read data: {}", error);
-                            sender_.output(Output::Notification(format!("Failed to read data")));
+                            sender.output(Output::Notification(format!("Failed to read data")));
                         }
                         // Run data update session
                         infinitime.run_notification_session(move |notification| {
@@ -433,11 +428,7 @@ impl Component for Model {
                 self.infinitime = None;
             }
             Input::FirmwareReleasesRequest => {
-                let sender_ = sender.clone();
-                sender.command(move |out, shutdown| {
-                    // TODO: Remove this extra clone once ComponentSender::command
-                    // is patched to accept FnOnce instead of Fn
-                    let sender_ = sender_.clone();
+                sender.clone().command(move |out, shutdown| {
                     shutdown.register(async move {
                         match fw::list_releases().await {
                             Ok(releases) => {
@@ -445,7 +436,7 @@ impl Component for Model {
                             }
                             Err(error) => {
                                 eprintln!("Failed to fetch the list of firmware releases: {}", error);
-                                sender_.output(Output::Notification(format!("Failed to fetch firmware releases")));
+                                sender.output(Output::Notification(format!("Failed to fetch firmware releases")));
                             }
                         }
                     }).drop_on_shutdown()
@@ -461,15 +452,9 @@ impl Component for Model {
                     match releases[index as usize].get_dfu_asset() {
                         Some(asset) => {
                             self.firmware_downloading = true;
-                            let sender_ = sender.clone();
                             let url = asset.url.clone();
                             let filepath = fw::get_download_filepath(&asset.name).unwrap();
-                            sender.command(move |out, shutdown| {
-                                // TODO: Remove this extra clone once ComponentSender::command
-                                // is patched to accept FnOnce instead of Fn
-                                let sender_ = sender_.clone();
-                                let url = url.clone();
-                                let filepath = filepath.clone();
+                            sender.clone().command(move |out, shutdown| {
                                 shutdown.register(async move {
                                     match fw::download_dfu_file(url.as_str(), filepath.as_path()).await {
                                         Ok(()) => {
@@ -477,7 +462,7 @@ impl Component for Model {
                                         }
                                         Err(error) => {
                                             eprintln!("Failed to download of DFU file: {}", error);
-                                            sender_.output(Output::Notification(format!("Failed to fetch firmware releases")));
+                                            sender.output(Output::Notification(format!("Failed to fetch firmware releases")));
                                         }
                                     }
                                 }).drop_on_shutdown()
@@ -504,7 +489,7 @@ impl Component for Model {
         }
     }
 
-    fn update_cmd(&mut self, msg: Self::CommandOutput, sender: &ComponentSender<Self>) {
+    fn update_cmd(&mut self, msg: Self::CommandOutput, sender: ComponentSender<Self>) {
         match msg {
             CommandOutput::BatteryLevel(soc) => self.battery_level = Some(soc),
             CommandOutput::HeartRate(rate) => self.heart_rate = Some(rate),

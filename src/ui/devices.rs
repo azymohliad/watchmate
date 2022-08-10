@@ -1,8 +1,8 @@
 use std::sync::Arc;
 use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, ListBoxRowExt, WidgetExt};
 use relm4::{
-    adw, gtk, factory::{FactoryComponent, FactoryVecDeque, DynamicIndex},
-    ComponentParts, ComponentSender, Sender, WidgetPlus, Component, JoinHandle
+    adw, gtk, factory::{FactoryComponent, FactoryComponentSender, FactoryVecDeque, DynamicIndex},
+    ComponentParts, ComponentSender, WidgetPlus, Component, JoinHandle
 };
 
 use crate::bt;
@@ -33,7 +33,7 @@ pub enum CommandOutput {
 }
 
 pub struct Model {
-    devices: FactoryVecDeque<gtk::ListBox, DeviceInfo, Input>,
+    devices: FactoryVecDeque<DeviceInfo>,
     adapter: Arc<bluer::Adapter>,
     scan_handle: Option<JoinHandle<()>>,
 }
@@ -115,7 +115,7 @@ impl Component for Model {
         }
     }
 
-    fn init(adapter: Self::InitParams, root: &Self::Root, sender: &ComponentSender<Self>) -> ComponentParts<Self> {
+    fn init(adapter: Self::InitParams, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
         let model = Self {
             devices: FactoryVecDeque::new(gtk::ListBox::new(), &sender.input),
             adapter,
@@ -127,7 +127,6 @@ impl Component for Model {
 
         // Read known devices list
         let adapter = model.adapter.clone();
-        let sender = sender.clone();
         relm4::spawn(async move {
             let mut devices = Vec::new();
             for device in bt::InfiniTime::list_known_devices(&adapter).await.unwrap() {
@@ -139,14 +138,13 @@ impl Component for Model {
         ComponentParts { model, widgets }
     }
 
-    fn update(&mut self, msg: Self::Input, sender: &ComponentSender<Self>) {
+    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
         match msg {
             Input::ScanToggled => {
                 if self.scan_handle.is_some() {
                     self.scan_handle.take().unwrap().abort();
                 } else {
                     let adapter = self.adapter.clone();
-                    let sender = sender.clone();
                     let callback = move |event| {
                         match event {
                             bluer::AdapterEvent::DeviceAdded(address) => {
@@ -203,7 +201,6 @@ impl Component for Model {
             Input::DeviceAdded(address) => {
                 if let Ok(device) = self.adapter.device(address) {
                     let device = Arc::new(device);
-                    let sender = sender.clone();
                     relm4::spawn(async move {
                         if bt::InfiniTime::check_device(&device).await {
                             match DeviceInfo::new(device).await {
@@ -291,8 +288,9 @@ pub enum DeviceOutput {
 
 // Factory for device list
 #[relm4::factory(pub)]
-impl FactoryComponent<gtk::ListBox, Input> for DeviceInfo {
-    type Command = ();
+impl FactoryComponent for DeviceInfo {
+    type ParentWidget = gtk::ListBox;
+    type ParentMsg = Input;
     type CommandOutput = ();
     type InitParams = Self;
     type Input = DeviceInput;
@@ -340,8 +338,8 @@ impl FactoryComponent<gtk::ListBox, Input> for DeviceInfo {
                     add_css_class: "flat",
                     #[watch]
                     set_visible: self.state == DeviceState::Connected,
-                    connect_clicked[input] => move |_| {
-                        input.send(DeviceInput::Disconnect);
+                    connect_clicked[sender] => move |_| {
+                        sender.input(DeviceInput::Disconnect);
                     }
                 },
 
@@ -364,8 +362,7 @@ impl FactoryComponent<gtk::ListBox, Input> for DeviceInfo {
     fn init_model(
         model: Self,
         _index: &DynamicIndex,
-        _input: &Sender<Self::Input>,
-        _output: &Sender<Self::Output>,
+        _sender: FactoryComponentSender<Self>,
     ) -> Self {
         model
     }
@@ -375,8 +372,7 @@ impl FactoryComponent<gtk::ListBox, Input> for DeviceInfo {
         _index: &DynamicIndex,
         root: &Self::Root,
         _returned_widget: &gtk::ListBoxRow,
-        input: &Sender<Self::Input>,
-        _output: &Sender<Self::Output>,
+        sender: FactoryComponentSender<Self>,
     ) -> Self::Widgets {
         let widgets = view_output!();
         widgets
@@ -385,12 +381,8 @@ impl FactoryComponent<gtk::ListBox, Input> for DeviceInfo {
     fn update(
         &mut self,
         msg: Self::Input,
-        input: &Sender<Self::Input>,
-        output: &Sender<Self::Output>
-    ) -> Option<()> {
-        let input = input.clone();
-        let output = output.clone();
-
+        sender: FactoryComponentSender<Self>,
+    ) {
         match msg {
             DeviceInput::Connect => {
                 self.state = DeviceState::Transitioning;
@@ -398,11 +390,11 @@ impl FactoryComponent<gtk::ListBox, Input> for DeviceInfo {
                 relm4::spawn(async move {
                     match device.connect().await {
                         Ok(()) => {
-                            input.send(DeviceInput::StateUpdated(DeviceState::Connected));
-                            output.send(DeviceOutput::Connected(device));
+                            sender.input(DeviceInput::StateUpdated(DeviceState::Connected));
+                            sender.output(DeviceOutput::Connected(device));
                         }
                         Err(error) => {
-                            input.send(DeviceInput::StateUpdated(DeviceState::Disconnected));
+                            sender.input(DeviceInput::StateUpdated(DeviceState::Disconnected));
                             eprintln!("Connection failure: {}", error);
                         }
                     }
@@ -415,11 +407,11 @@ impl FactoryComponent<gtk::ListBox, Input> for DeviceInfo {
                 relm4::spawn(async move {
                     match device.disconnect().await {
                         Ok(()) => {
-                            input.send(DeviceInput::StateUpdated(DeviceState::Disconnected));
-                            output.send(DeviceOutput::Disconnected(device));
+                            sender.input(DeviceInput::StateUpdated(DeviceState::Disconnected));
+                            sender.output(DeviceOutput::Disconnected(device));
                         }
                         Err(error) => {
-                            input.send(DeviceInput::StateUpdated(DeviceState::Connected));
+                            sender.input(DeviceInput::StateUpdated(DeviceState::Connected));
                             eprintln!("Disconnection failure: {}", error);
                         }
                     }
@@ -430,7 +422,6 @@ impl FactoryComponent<gtk::ListBox, Input> for DeviceInfo {
                 self.state = state;
             }
         }
-        None
     }
 }
 

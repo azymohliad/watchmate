@@ -196,13 +196,13 @@ impl Component for Model {
         }
     }
 
-    fn init(_: Self::InitParams, root: &Self::Root, sender: &ComponentSender<Self>) -> ComponentParts<Self> {
+    fn init(_: Self::InitParams, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
         let model = Self::default();
         let widgets = view_output!();
         ComponentParts { model, widgets }
     }
 
-    fn update(&mut self, msg: Self::Input, sender: &ComponentSender<Self>) {
+    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
         match msg {
             Input::Connected(infinitime) => {
                 self.infinitime = Some(infinitime);
@@ -215,21 +215,21 @@ impl Component for Model {
                 self.status_message = format!("Reading firmware file");
                 self.state = State::InProgress;
                 self.dfu_source = Some(Source::File(filepath.clone()));
-                self.task_handle = Some(Self::read_dfu_file(filepath.clone(), sender.clone()));
+                self.task_handle = Some(Self::read_dfu_file(filepath.clone(), sender));
             }
             Input::FirmwareUpdateFromUrl(url) => {
                 let url = Arc::new(url);
                 self.status_message = format!("Downloading firmware");
                 self.state = State::InProgress;
                 self.dfu_source = Some(Source::Url(url.clone()));
-                self.task_handle = Some(Self::download_dfu(url.clone(), sender.clone()));
+                self.task_handle = Some(Self::download_dfu(url.clone(), sender));
             }
             Input::FirmwareContentReady(content) => {
                 if let Some(infinitime) = &self.infinitime {
                     let content = Arc::new(content);
                     self.dfu_source = None;
                     self.dfu_content = Some(content.clone());
-                    self.task_handle = Some(Self::flash(infinitime.clone(), content, sender.clone()));
+                    self.task_handle = Some(Self::flash(infinitime.clone(), content, sender));
                 }
             }
             Input::FirmwareUpdateFinished => {
@@ -255,15 +255,15 @@ impl Component for Model {
             Input::Retry => {
                 if let Some(content) = &self.dfu_content {
                     if let Some(infinitime) = &self.infinitime {
-                        self.task_handle = Some(Self::flash(infinitime.clone(), content.clone(), sender.clone()));
+                        self.task_handle = Some(Self::flash(infinitime.clone(), content.clone(), sender));
                     }
                 } else {
                     match &self.dfu_source {
                         Some(Source::File(filepath)) => {
-                            self.task_handle = Some(Self::read_dfu_file(filepath.clone(), sender.clone()));
+                            self.task_handle = Some(Self::read_dfu_file(filepath.clone(), sender));
                         }
                         Some(Source::Url(url)) => {
-                            self.task_handle = Some(Self::download_dfu(url.clone(), sender.clone()));
+                            self.task_handle = Some(Self::download_dfu(url.clone(), sender));
                         }
                         None => {}
                     }

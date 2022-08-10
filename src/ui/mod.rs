@@ -128,7 +128,7 @@ impl Component for Model {
         }
     }
 
-    fn init(adapter: Self::InitParams, root: &Self::Root, sender: &ComponentSender<Self>) -> ComponentParts<Self> {
+    fn init(adapter: Self::InitParams, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
         // Components
         let dashboard = dashboard::Model::builder()
             .launch(())
@@ -175,19 +175,14 @@ impl Component for Model {
     }
 
 
-    fn update(&mut self, msg: Self::Input, sender: &ComponentSender<Self>) {
+    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
         match msg {
             Input::SetView(view) => {
                 self.active_view = view;
             }
             Input::DeviceConnected(device) => {
                 self.is_connected = true;
-                let sender_ = sender.clone();
-                sender.command(move |out, shutdown| {
-                    // TODO: Remove this extra clone once ComponentSender::command
-                    // is patched to accept FnOnce instead of Fn
-                    let device = device.clone();
-                    let sender_ = sender_.clone();
+                sender.clone().command(move |out, shutdown| {
                     let task = async move {
                         match bt::InfiniTime::new(device).await {
                             Ok(infinitime) => {
@@ -195,7 +190,7 @@ impl Component for Model {
                             }
                             Err(error) => {
                                 eprintln!("Failed to connect to InfiniTime: {}", error);
-                                sender_.input(Input::Notification(format!("Failed to connect to the watch")));
+                                sender.input(Input::Notification(format!("Failed to connect to the watch")));
                             }
                         }
                     };
@@ -225,7 +220,7 @@ impl Component for Model {
         }
     }
 
-    fn update_cmd(&mut self, msg: Self::CommandOutput, _sender: &ComponentSender<Self>) {
+    fn update_cmd(&mut self, msg: Self::CommandOutput, _sender: ComponentSender<Self>) {
         match msg {
             CommandOutput::DeviceReady(infinitime) => {
                 self.infinitime = Some(infinitime.clone());
