@@ -8,7 +8,7 @@
 
 ### ArchLinux
 
-WatchMate is available on AUR as [watchmate-git](https://aur.archlinux.org/packages/watchmate-git), so you can install it by manually downloading PKGBUILD or with your AUR helper of choice, for example:
+WatchMate is available on AUR as [watchmate-git](https://aur.archlinux.org/packages/watchmate-git), so you can install it either [manually](https://wiki.archlinux.org/title/Arch_User_Repository#Installing_and_upgrading_packages) or with your [AUR helper](https://wiki.archlinux.org/title/AUR_helpers) of choice, for example:
 
 ```
 paru -S watchmate-git
