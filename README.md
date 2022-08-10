@@ -1,16 +1,34 @@
 # WatchMate
 
-[InfiniTime](https://github.com/InfiniTimeOrg/InfiniTime/) companion app for GNOME desktop and mobile.
+[InfiniTime](https://github.com/InfiniTimeOrg/InfiniTime/) smart watch companion app, visually optimized for GNOME mobile and desktop.
 
 ![watchmate_2022-08-08](/uploads/9fafad857ab2cb6fffa2b9ab47d9a187/watchmate_2022-08-08.png)
 
-## Requirements
+## Install
+
+### ArchLinux
+
+WatchMate is available on AUR as [watchmate-git](https://aur.archlinux.org/packages/watchmate-git), so you can install it either [manually](https://wiki.archlinux.org/title/Arch_User_Repository#Installing_and_upgrading_packages) or with your [AUR helper](https://wiki.archlinux.org/title/AUR_helpers) of choice, for example:
+
+```
+paru -S watchmate-git
+```
+
+### Flathub
+
+TODO
+
+## Build
+
+### Requirements
 
 - GNU/Linux OS
+- [Bluez](http://www.bluez.org/download/) (if you run mainstream GNU/Linux distro, you probably have it installed)
+- [GTK4](https://gtk-rs.org/gtk4-rs/stable/latest/book/installation_linux.html)
+- [Libadwaita](https://gtk-rs.org/gtk4-rs/stable/latest/book/libadwaita.html#linux)
 - [Rust](https://www.rust-lang.org/tools/install)
-- [GTK4](https://gtk-rs.org/gtk4-rs/git/book/installation_linux.html)
 
-## Running
+### Build and run
 
 To compile and run the project, execute the following command from repo directory:
 
@@ -34,9 +52,9 @@ cargo run --release
 - [ ] Notifications
 - [ ] Settings
 - [ ] Release checklist
-    - [ ] Icon
+    - [x] Icon
     - [ ] About dialog
-    - [ ] Metadata
+    - [x] AppStream metainfo
 - [ ] Packaging and distribution
     - [ ] Flatpak
-    - [ ] AUR
+    - [x] AUR
