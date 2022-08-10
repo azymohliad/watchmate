@@ -23,7 +23,7 @@ TODO
 ### Requirements
 
 - GNU/Linux OS
-- [Bluez](http://www.bluez.org/download/)
+- [Bluez](http://www.bluez.org/download/) (if you run mainstream GNU/Linux distro, you probably have it installed)
 - [GTK4](https://gtk-rs.org/gtk4-rs/stable/latest/book/installation_linux.html)
 - [Libadwaita](https://gtk-rs.org/gtk4-rs/stable/latest/book/libadwaita.html#linux)
 - [Rust](https://www.rust-lang.org/tools/install)
