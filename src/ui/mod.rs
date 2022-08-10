@@ -1,8 +1,10 @@
 use std::{sync::Arc, path::PathBuf};
-use gtk::prelude::{BoxExt, ButtonExt, GtkWindowExt, OrientableExt, WidgetExt, FileChooserExt, FileExt};
+use gtk::prelude::{BoxExt, GtkWindowExt};
 use relm4::{
     adw, gtk, Component, ComponentController, ComponentParts, ComponentSender, Controller, RelmApp
 };
+use relm4_components::open_dialog::*;
+
 use crate::bt;
 
 mod dashboard;
@@ -14,9 +16,11 @@ enum Input {
     SetView(View),
     DeviceConnected(Arc<bluer::Device>),
     DeviceDisconnected(Arc<bluer::Device>),
+    FirmwareUpdateFileChooser,
     FirmwareUpdateFromFile(PathBuf),
     FirmwareUpdateFromUrl(String),
     Notification(String),
+    Ignore,
 }
 
 #[derive(Debug)]
@@ -32,6 +36,7 @@ struct Model {
     dashboard: Controller<dashboard::Model>,
     devices: Controller<devices::Model>,
     fwupd: Controller<fwupd::Model>,
+    fwupd_file_chooser: Controller<OpenDialog>,
     // Other
     infinitime: Option<Arc<bt::InfiniTime>>,
     toast_overlay: adw::ToastOverlay,
@@ -69,50 +74,6 @@ impl Component for Model {
                     add_named[Some("devices_view")] = &gtk::Box {
                         append: model.devices.widget(),
                     },
-                    add_named[Some("file_view")] = &gtk::Box {
-                        set_hexpand: true,
-                        set_orientation: gtk::Orientation::Vertical,
-
-                        adw::HeaderBar {
-                            #[wrap(Some)]
-                            set_title_widget = &gtk::Label {
-                                set_label: "Choose DFU File",
-                            },
-
-                            pack_start = &gtk::Button {
-                                set_label: "Back",
-                                set_icon_name: "go-previous-symbolic",
-                                connect_clicked[sender] => move |_| {
-                                    sender.input(Input::SetView(View::Dashboard));
-                                },
-                            },
-
-                            pack_start = &gtk::Button {
-                                set_label: "Open",
-                                set_icon_name: "document-send-symbolic",
-                                // #[watch]
-                                // set_sensitive: file_chooser.file().is_some(),
-                                #[watch]
-                                set_visible: model.active_view == View::FileChooser,
-                                connect_clicked[sender, file_chooser] => move |_| {
-                                    if let Some(file) = file_chooser.file() {
-                                        sender.input(Input::FirmwareUpdateFromFile(file.path().unwrap()));
-                                    }
-                                },
-                            },
-                        },
-
-                        #[name(file_chooser)]
-                        gtk::FileChooserWidget {
-                            set_vexpand: true,
-                            set_hexpand: true,
-                            set_action: gtk::FileChooserAction::Open,
-                            set_filter = &gtk::FileFilter {
-                                add_pattern: "*.zip"
-                            },
-                        },
-
-                    },
                     add_named[Some("fwupd_view")] = &gtk::Box {
                         append: model.fwupd.widget(),
                     },
@@ -120,7 +81,6 @@ impl Component for Model {
                     set_visible_child_name: match model.active_view {
                         View::Dashboard => "dashboard_view",
                         View::Devices => "devices_view",
-                        View::FileChooser => "file_view",
                         View::FirmwareUpdate => "fwupd_view",
                     },
                 },
@@ -133,7 +93,7 @@ impl Component for Model {
         let dashboard = dashboard::Model::builder()
             .launch(())
             .forward(&sender.input, |message| match message {
-                dashboard::Output::FirmwareUpdateFromFile => Input::SetView(View::FileChooser),
+                dashboard::Output::FirmwareUpdateFromFile => Input::FirmwareUpdateFileChooser,
                 dashboard::Output::FirmwareUpdateFromUrl(url) => Input::FirmwareUpdateFromUrl(url),
                 dashboard::Output::Notification(text) => Input::Notification(text),
                 dashboard::Output::SetView(view) => Input::SetView(view),
@@ -154,6 +114,20 @@ impl Component for Model {
                 fwupd::Output::SetView(view) => Input::SetView(view),
             });
 
+        let file_filter = gtk::FileFilter::new();
+        file_filter.add_pattern("*.zip");
+        let fwupd_file_chooser = OpenDialog::builder()
+            .transient_for_native(root)
+            .launch(OpenDialogSettings {
+                create_folders: false,
+                filters: vec![file_filter],
+                ..Default::default()
+            })
+            .forward(&sender.input, |message| match message {
+                OpenDialogResponse::Accept(path) => Input::FirmwareUpdateFromFile(path),
+                OpenDialogResponse::Cancel => Input::Ignore,
+            });
+
         let toast_overlay = adw::ToastOverlay::new();
 
         let model = Model {
@@ -164,6 +138,7 @@ impl Component for Model {
             dashboard,
             devices,
             fwupd,
+            fwupd_file_chooser,
             // Other
             infinitime: None,
             toast_overlay: toast_overlay.clone(),
@@ -206,6 +181,9 @@ impl Component for Model {
                 self.dashboard.emit(dashboard::Input::Disconnected);
                 self.fwupd.emit(fwupd::Input::Disconnected);
             }
+            Input::FirmwareUpdateFileChooser => {
+                self.fwupd_file_chooser.emit(OpenDialogMsg::Open);
+            }
             Input::FirmwareUpdateFromFile(filepath) => {
                 self.fwupd.emit(fwupd::Input::FirmwareUpdateFromFile(filepath));
                 sender.input(Input::SetView(View::FirmwareUpdate));
@@ -217,6 +195,7 @@ impl Component for Model {
             Input::Notification(message) => {
                 self.notify(&message);
             }
+            Input::Ignore => {}
         }
     }
 
@@ -238,7 +217,6 @@ impl Component for Model {
 pub enum View {
     Dashboard,
     Devices,
-    FileChooser,
     FirmwareUpdate,
 }
 
