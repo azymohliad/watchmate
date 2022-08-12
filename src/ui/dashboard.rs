@@ -1,4 +1,5 @@
 use std::{sync::Arc, path::PathBuf};
+use futures::{pin_mut, StreamExt};
 use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, ListBoxRowExt, WidgetExt};
 use adw::prelude::{PreferencesRowExt, ExpanderRowExt};
 use relm4::{adw, gtk, ComponentParts, ComponentSender, Component, Sender, WidgetPlus};
@@ -56,6 +57,7 @@ impl FirmwareReleasesState {
     pub fn is_none(&self) -> bool {
         self == &FirmwareReleasesState::None
     }
+
     pub fn is_requested(&self) -> bool {
         self == &FirmwareReleasesState::Requested
     }
@@ -451,19 +453,27 @@ impl Component for Model {
         match msg {
             Input::Connected(infinitime) => {
                 self.infinitime = Some(infinitime.clone());
-                sender.clone().command(move |out, shutdown| {
+                let infinitime_ = infinitime.clone();
+                let sender_ = sender.clone();
+                sender.command(move |out, shutdown| {
                     shutdown.register(async move {
                         // Read inital data
-                        if let Err(error) = Self::read_info(infinitime.clone(), out.clone()).await {
+                        if let Err(error) = Self::read_info(infinitime_, out.clone()).await {
                             eprintln!("Failed to read data: {}", error);
-                            sender.output(Output::Notification(format!("Failed to read data")));
+                            sender_.output(Output::Notification(format!("Failed to read data")));
                         }
-                        // Run data update session
-                        infinitime.run_notification_session(move |notification| {
-                            match notification {
-                                bt::Notification::HeartRate(value) => out.send(CommandOutput::HeartRate(value)),
+                    }).drop_on_shutdown()
+                });
+                // Listed to data update notifications
+                let infinitime_ = infinitime.clone();
+                sender.command(move |out, shutdown| {
+                    shutdown.register(async move {
+                        if let Ok(hr_stream) = infinitime_.get_heart_rate_stream().await {
+                            pin_mut!(hr_stream);
+                            while let Some(hr) = hr_stream.next().await {
+                                out.send(CommandOutput::HeartRate(hr));
                             }
-                        }).await;
+                        }
                     }).drop_on_shutdown()
                 });
             }
