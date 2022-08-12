@@ -40,7 +40,7 @@ pub struct Model {
 #[relm4::component(pub)]
 impl Component for Model {
     type CommandOutput = CommandOutput;
-    type InitParams = Arc<bluer::Adapter>;
+    type Init = Arc<bluer::Adapter>;
     type Input = Input;
     type Output = Output;
     type Widgets = Widgets;
@@ -114,7 +114,7 @@ impl Component for Model {
         }
     }
 
-    fn init(adapter: Self::InitParams, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
+    fn init(adapter: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
         let model = Self {
             devices: FactoryVecDeque::new(gtk::ListBox::new(), &sender.input),
             adapter,
@@ -291,7 +291,7 @@ impl FactoryComponent for DeviceInfo {
     type ParentWidget = gtk::ListBox;
     type ParentMsg = Input;
     type CommandOutput = ();
-    type InitParams = Self;
+    type Init = Self;
     type Input = DeviceInput;
     type Output = DeviceOutput;
     type Widgets = DeviceInfoWidgets;

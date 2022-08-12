@@ -51,7 +51,7 @@ impl Model {
 #[relm4::component]
 impl Component for Model {
     type CommandOutput = CommandOutput;
-    type InitParams = Arc<bluer::Adapter>;
+    type Init = Arc<bluer::Adapter>;
     type Input = Input;
     type Output = ();
     type Widgets = Widgets;
@@ -88,7 +88,7 @@ impl Component for Model {
         }
     }
 
-    fn init(adapter: Self::InitParams, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
+    fn init(adapter: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
         // Components
         let dashboard = dashboard::Model::builder()
             .launch(())

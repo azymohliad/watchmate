@@ -102,7 +102,7 @@ impl Model {
 #[relm4::component(pub)]
 impl Component for Model {
     type CommandOutput = ();
-    type InitParams = ();
+    type Init = ();
     type Input = Input;
     type Output = Output;
     type Widgets = Widgets;
@@ -196,7 +196,7 @@ impl Component for Model {
         }
     }
 
-    fn init(_: Self::InitParams, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
+    fn init(_: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
         let model = Self::default();
         let widgets = view_output!();
         ComponentParts { model, widgets }
