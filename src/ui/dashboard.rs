@@ -476,6 +476,8 @@ impl Component for Model {
                         }
                     }).drop_on_shutdown()
                 });
+                // Listed to media player events
+                relm4::spawn(crate::media_player::run_media_player_control_session(infinitime.clone()));
             }
             Input::Disconnected => {
                 self.battery_level = None;
