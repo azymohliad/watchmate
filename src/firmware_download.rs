@@ -4,7 +4,7 @@ use anyhow::{anyhow, Result};
 use serde::Deserialize;
 use reqwest::IntoUrl;
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, PartialEq)]
 pub struct ReleaseInfo {
     pub name: String,
     #[serde(rename = "tag_name")]
@@ -14,7 +14,7 @@ pub struct ReleaseInfo {
     pub assets: Vec<Asset>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, PartialEq)]
 pub struct Asset {
     pub name: String,
     pub url: String,

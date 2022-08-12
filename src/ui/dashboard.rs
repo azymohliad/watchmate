@@ -32,8 +32,41 @@ pub enum CommandOutput {
     Alias(String),
     Address(String),
     FirmwareVersion(String),
-    FirmwareReleases(Vec<fw::ReleaseInfo>),
+    FirmwareReleases(Result<Vec<fw::ReleaseInfo>>),
     FirmwareDownloaded(PathBuf),
+}
+
+#[derive(Debug, Default, PartialEq)]
+pub enum FirmwareReleasesState {
+    #[default]
+    None,
+    Requested,
+    Some(Vec<fw::ReleaseInfo>),
+    Error,
+}
+
+impl FirmwareReleasesState {
+    pub fn as_option(&self) -> Option<&Vec<fw::ReleaseInfo>> {
+        match &self {
+            FirmwareReleasesState::Some(r) => Some(r),
+            _ => None,
+        }
+    }
+
+    pub fn is_none(&self) -> bool {
+        self == &FirmwareReleasesState::None
+    }
+    pub fn is_requested(&self) -> bool {
+        self == &FirmwareReleasesState::Requested
+    }
+
+    pub fn is_some(&self) -> bool {
+        self.as_option().is_some()
+    }
+
+    pub fn is_error(&self) -> bool {
+        self == &FirmwareReleasesState::Error
+    }
 }
 
 #[derive(Default)]
@@ -44,12 +77,12 @@ pub struct Model {
     heart_rate: Option<u8>,
     alias: Option<String>,
     address: Option<String>,
-    firmware_version: Option<String>,
+    fw_version: Option<String>,
     // - Firmware releases
-    firmware_update_available: bool,
-    firmware_releases: Option<Vec<fw::ReleaseInfo>>,
-    firmware_tags: Option<gtk::StringList>,
-    firmware_downloading: bool,
+    fw_update_available: bool,
+    fw_downloading: bool,
+    fw_releases: FirmwareReleasesState,
+    fw_tags: Option<gtk::StringList>,
     // Other
     infinitime: Option<Arc<bt::InfiniTime>>,
 }
@@ -64,14 +97,14 @@ impl Model {
         Ok(())
     }
 
-    fn check_firmware_latest(&mut self) {
-        let latest = self.firmware_releases.as_ref()
-            .map(|rs| rs.first()).flatten()
+    fn check_fw_update_available(&mut self) {
+        let latest = self.fw_releases.as_option()
+            .map(|l| l.first()).flatten()
             .map(|r| Version::from(&r.tag)).flatten();
-        let current = self.firmware_version.as_ref()
+        let current = self.fw_version.as_ref()
             .map(|v| Version::from(v)).flatten();
         if let (Some(latest), Some(current)) = (latest, current) {
-            self.firmware_update_available = latest > current;
+            self.fw_update_available = latest > current;
         }
     }
 }
@@ -255,14 +288,14 @@ impl Component for Model {
                             adw::ExpanderRow {
                                 set_title: "Firmware Version",
                                 #[watch]
-                                set_sensitive: model.firmware_version.is_some(),
+                                set_sensitive: model.fw_version.is_some(),
 
                                 add_action = &gtk::Box {
                                     set_spacing: 10,
 
                                     gtk::Label {
                                         #[watch]
-                                        set_label: match &model.firmware_version {
+                                        set_label: match &model.fw_version {
                                             Some(version) => version,
                                             None => "Loading...",
                                         },
@@ -271,7 +304,7 @@ impl Component for Model {
 
                                     gtk::Image {
                                         #[watch]
-                                        set_visible: model.firmware_update_available,
+                                        set_visible: model.fw_update_available,
                                         set_tooltip_text: Some("Firmware update available"),
                                         set_icon_name: Some("software-update-available-symbolic"),
                                     },
@@ -313,15 +346,17 @@ impl Component for Model {
                                             gtk::DropDown {
                                                 set_hexpand: true,
                                                 #[watch]
-                                                set_sensitive: model.firmware_tags.is_some(),
+                                                set_visible: model.fw_releases.is_some(),
                                                 #[watch]
-                                                set_model: model.firmware_tags.as_ref(),
+                                                set_model: model.fw_tags.as_ref(),
                                             },
 
                                             adw::SplitButton {
                                                 #[watch]
-                                                set_sensitive: model.firmware_tags.is_some() && !model.firmware_downloading,
-                                                set_label: "Update",
+                                                set_visible: model.fw_releases.is_some(),
+                                                #[watch]
+                                                set_sensitive: !model.fw_downloading,
+                                                set_label: "Flash",
                                                 connect_clicked[sender, releases_dropdown] => move |_| {
                                                     sender.input(Input::FirmwareUpdate(releases_dropdown.selected()));
                                                 },
@@ -348,7 +383,20 @@ impl Component for Model {
                                                 },
                                             },
 
-                                            if model.firmware_downloading {
+                                            gtk::Label {
+                                                set_hexpand: true,
+                                                #[watch]
+                                                set_visible: !model.fw_releases.is_some(),
+                                                #[watch]
+                                                set_label: match &model.fw_releases {
+                                                    FirmwareReleasesState::None => "Firmware releases are not loaded",
+                                                    FirmwareReleasesState::Requested => "Getting firmware releases...",
+                                                    FirmwareReleasesState::Error => "Failed to get firmware releases",
+                                                    _ => "",
+                                                },
+                                            },
+
+                                            if model.fw_downloading || model.fw_releases.is_requested() {
                                                 gtk::Spinner {
                                                     set_spinning: true,
                                                 }
@@ -424,33 +472,27 @@ impl Component for Model {
                 self.heart_rate = None;
                 self.alias = None;
                 self.address = None;
-                self.firmware_version = None;
+                self.fw_version = None;
                 self.infinitime = None;
             }
             Input::FirmwareReleasesRequest => {
+                self.fw_releases = FirmwareReleasesState::Requested;
                 sender.clone().command(move |out, shutdown| {
                     shutdown.register(async move {
-                        match fw::list_releases().await {
-                            Ok(releases) => {
-                                out.send(CommandOutput::FirmwareReleases(releases));
-                            }
-                            Err(error) => {
-                                eprintln!("Failed to fetch the list of firmware releases: {}", error);
-                            }
-                        }
+                        out.send(CommandOutput::FirmwareReleases(fw::list_releases().await));
                     }).drop_on_shutdown()
                 });
             }
             Input::FirmwareReleaseNotes(index) => {
-                if let Some(releases) = &self.firmware_releases {
+                if let FirmwareReleasesState::Some(releases) = &self.fw_releases {
                     gtk::show_uri(None as Option<&adw::ApplicationWindow>, &releases[index as usize].url, 0);
                 }
             }
             Input::FirmwareDownload(index) => {
-                if let Some(releases) = &self.firmware_releases {
+                if let FirmwareReleasesState::Some(releases) = &self.fw_releases {
                     match releases[index as usize].get_dfu_asset() {
                         Some(asset) => {
-                            self.firmware_downloading = true;
+                            self.fw_downloading = true;
                             let url = asset.url.clone();
                             let filepath = fw::get_download_filepath(&asset.name).unwrap();
                             sender.clone().command(move |out, shutdown| {
@@ -474,7 +516,7 @@ impl Component for Model {
                 }
             }
             Input::FirmwareUpdate(index) => {
-                if let Some(releases) = &self.firmware_releases {
+                if let FirmwareReleasesState::Some(releases) = &self.fw_releases {
                     match releases[index as usize].get_dfu_asset() {
                         Some(asset) => {
                             sender.output(Output::FirmwareUpdateFromUrl(asset.url.clone()));
@@ -495,17 +537,26 @@ impl Component for Model {
             CommandOutput::Alias(alias) => self.alias = Some(alias),
             CommandOutput::Address(address) => self.address = Some(address),
             CommandOutput::FirmwareVersion(version) => {
-                self.firmware_version = Some(version);
-                self.check_firmware_latest();
+                self.fw_version = Some(version);
+                self.check_fw_update_available();
             }
-            CommandOutput::FirmwareReleases(releases) => {
-                let tags = releases.iter().map(|r| r.tag.as_str()).collect::<Vec<&str>>();
-                self.firmware_tags = Some(gtk::StringList::new(&tags));
-                self.firmware_releases = Some(releases);
-                self.check_firmware_latest();
+            CommandOutput::FirmwareReleases(response) => {
+                match response {
+                    Ok(releases) => {
+                        let tags = releases.iter().map(|r| r.tag.as_str()).collect::<Vec<&str>>();
+                        self.fw_tags = Some(gtk::StringList::new(&tags));
+                        self.fw_releases = FirmwareReleasesState::Some(releases);
+                        self.check_fw_update_available();
+                    }
+                    Err(_) => {
+                        self.fw_tags = None;
+                        self.fw_releases = FirmwareReleasesState::Error;
+                        self.fw_update_available = false;
+                    }
+                }
             }
             CommandOutput::FirmwareDownloaded(_filepath) => {
-                self.firmware_downloading = false;
+                self.fw_downloading = false;
                 sender.output(Output::Notification(format!("Firmware downloaded")));
             }
         }
