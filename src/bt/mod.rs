@@ -7,7 +7,7 @@ mod infinitime;
 mod uuids;
 pub mod gatt_server;
 
-pub use infinitime::{InfiniTime, FwUpdNotification};
+pub use infinitime::{InfiniTime, FwUpdNotification, MediaPlayerEvent};
 
 pub async fn init_adapter() -> Result<Adapter> {
     let session = Session::new().await?;

@@ -12,6 +12,32 @@ pub enum FwUpdNotification {
 }
 
 #[derive(Debug)]
+pub enum MediaPlayerEvent {
+    AppOpenned,
+    Play,
+    Pause,
+    Next,
+    Previous,
+    VolumeUp,
+    VolumeDown,
+}
+
+impl MediaPlayerEvent {
+    fn from_raw(v: u8) -> Option<Self> {
+        match v {
+            0xe0 => Some(MediaPlayerEvent::AppOpenned),
+            0x00 => Some(MediaPlayerEvent::Play),
+            0x01 => Some(MediaPlayerEvent::Pause),
+            0x03 => Some(MediaPlayerEvent::Next),
+            0x04 => Some(MediaPlayerEvent::Previous),
+            0x05 => Some(MediaPlayerEvent::VolumeUp),
+            0x06 => Some(MediaPlayerEvent::VolumeDown),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct InfiniTime {
     device: Arc<Device>,
     // BLE Characteristics
@@ -20,6 +46,11 @@ pub struct InfiniTime {
     chr_heart_rate: Characteristic,
     chr_fwupd_control_point: Characteristic,
     chr_fwupd_packet: Characteristic,
+    chr_mp_events: Characteristic,
+    chr_mp_status: Characteristic,
+    chr_mp_artist: Characteristic,
+    chr_mp_track: Characteristic,
+    chr_mp_album: Characteristic,
 }
 
 impl InfiniTime {
@@ -32,6 +63,11 @@ impl InfiniTime {
             chr_heart_rate: characteristics.take(&uuids::CHR_HEART_RATE)?,
             chr_fwupd_control_point: characteristics.take(&uuids::CHR_FWUPD_CONTROL_POINT)?,
             chr_fwupd_packet: characteristics.take(&uuids::CHR_FWUPD_PACKET)?,
+            chr_mp_events: characteristics.take(&uuids::CHR_MP_EVENTS)?,
+            chr_mp_status: characteristics.take(&uuids::CHR_MP_STATUS)?,
+            chr_mp_artist: characteristics.take(&uuids::CHR_MP_ARTIST)?,
+            chr_mp_track: characteristics.take(&uuids::CHR_MP_TRACK)?,
+            chr_mp_album: characteristics.take(&uuids::CHR_MP_ALBUM)?,
         })
     }
 
@@ -53,10 +89,30 @@ impl InfiniTime {
         Ok(self.chr_heart_rate.read().await?[1])
     }
 
+    pub async fn write_media_player_artist(&self, artist: &str) -> Result<()> {
+        Ok(self.chr_mp_artist.write(artist.as_ref()).await?)
+    }
+
+    pub async fn write_media_player_album(&self, album: &str) -> Result<()> {
+        Ok(self.chr_mp_album.write(album.as_ref()).await?)
+    }
+
+    pub async fn write_media_player_track(&self, track: &str) -> Result<()> {
+        Ok(self.chr_mp_track.write(track.as_ref()).await?)
+    }
+
+    pub async fn write_media_player_status(&self, playing: bool) -> Result<()> {
+        Ok(self.chr_mp_status.write(&[u8::from(playing)]).await?)
+    }
 
     pub async fn get_heart_rate_stream(&self) -> Result<impl Stream<Item = u8>> {
         let stream = self.chr_heart_rate.notify().await?;
         Ok(stream.filter_map(|v| async move { v.get(1).cloned() }))
+    }
+
+    pub async fn get_media_player_events_stream(&self) -> Result<impl Stream<Item = MediaPlayerEvent>> {
+        let stream = self.chr_mp_events.notify().await?;
+        Ok(stream.filter_map(|v| async move { MediaPlayerEvent::from_raw(v[0]) }))
     }
 
     pub async fn firmware_upgrade<F>(&self, dfu_content: &[u8], callback: F) -> Result<()>
