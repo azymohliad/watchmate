@@ -36,8 +36,12 @@
 
   <screenshots>
     <screenshot type="default">
-      <image>https://gitlab.com/azymohliad/watchmate/uploads/9fafad857ab2cb6fffa2b9ab47d9a187/watchmate_2022-08-08.png</image>
+      <image>https://gitlab.com/azymohliad/watchmate/uploads/64cfd9bfaef1085f26d9effbb5a89d2b/collage_2022-08-13.png</image>
       <caption>Collage</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://gitlab.com/azymohliad/watchmate/uploads/64cfd9bfaef1085f26d9effbb5a89d2b/collage_2022-08-13.png</image>
+      <caption>Dashboard</caption>
     </screenshot>
   </screenshots>
 
@@ -56,10 +60,6 @@
       </description>
     </release>
   </releases>
-
-  <kudos>
-     <kudo>Relm4</kudo>
-  </kudos>
 
   <developer_name>Andrii Zymohliad</developer_name>
   <update_contact>azymohliad@proton.me</update_contact>
