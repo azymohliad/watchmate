@@ -2,7 +2,7 @@
 
 [InfiniTime](https://github.com/InfiniTimeOrg/InfiniTime/) smart watch companion app, visually optimized for GNOME mobile and desktop.
 
-![watchmate_2022-08-08](/uploads/9fafad857ab2cb6fffa2b9ab47d9a187/watchmate_2022-08-08.png)
+![collage_2022-08-13](/uploads/7c447fd1538be3b7364362d9eb09da03/collage_2022-08-13_readme.png)
 
 ## Install
 
@@ -51,10 +51,19 @@ cargo run --release
 - [ ] Secure pairing
 - [ ] Notifications
 - [ ] Settings
-- [ ] Release checklist
-    - [x] Icon
-    - [ ] About dialog
-    - [x] AppStream metainfo
+- [ ] About dialog
 - [ ] Packaging and distribution
     - [ ] Flatpak
     - [x] AUR
+
+
+## Tech stack and thanks
+
+WatchMate stands on the shoulders of the following giants:
+
+- [Rust](https://www.rust-lang.org/) programming language.
+- [Relm4](https://relm4.org/), [GTK4](https://gtk.org/) ([rs](https://gtk-rs.org/)) and [Libadwaita](https://gnome.pages.gitlab.gnome.org/libadwaita/) ([rs](https://world.pages.gitlab.gnome.org/Rust/libadwaita-rs/)) for GUI.
+- [BlueR](https://world.pages.gitlab.gnome.org/Rust/libadwaita-rs/) (an official [BlueZ](http://www.bluez.org/) Bindings for Rust) for the bluetooth stack.
+- Awesome parts of Rust ecosystem, like [tokio](https://tokio.rs/), [serde](https://serde.rs/), [reqwest](https://github.com/seanmonstar/reqwest), [zbus](https://gitlab.freedesktop.org/dbus/zbus/), [anyhow](https://github.com/dtolnay/anyhow) and others (see [Cargo.toml](Cargo.toml) for the full list). 
+
+I'm really enjoying using all these technologies, and since joy is vitally important for hobby-projects like WatchMate, it wouldn't be possible without them. I'm deeply grateful to all people behind these techs.
