@@ -35,6 +35,7 @@ pub enum CommandOutput {
     FirmwareVersion(String),
     FirmwareReleases(Result<Vec<fw::ReleaseInfo>>),
     FirmwareDownloaded(PathBuf),
+    Notification(String),
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -454,13 +455,12 @@ impl Component for Model {
             Input::Connected(infinitime) => {
                 self.infinitime = Some(infinitime.clone());
                 let infinitime_ = infinitime.clone();
-                let sender_ = sender.clone();
                 sender.command(move |out, shutdown| {
                     shutdown.register(async move {
                         // Read inital data
                         if let Err(error) = Self::read_info(infinitime_, out.clone()).await {
                             eprintln!("Failed to read data: {}", error);
-                            sender_.output(Output::Notification(format!("Failed to read data")));
+                            out.send(CommandOutput::Notification(format!("Failed to read data")));
                         }
                     }).drop_on_shutdown()
                 });
@@ -489,10 +489,8 @@ impl Component for Model {
             }
             Input::FirmwareReleasesRequest => {
                 self.fw_releases = FirmwareReleasesState::Requested;
-                sender.clone().command(move |out, shutdown| {
-                    shutdown.register(async move {
-                        out.send(CommandOutput::FirmwareReleases(fw::list_releases().await));
-                    }).drop_on_shutdown()
+                sender.oneshot_command(async move {
+                    CommandOutput::FirmwareReleases(fw::list_releases().await)
                 });
             }
             Input::FirmwareReleaseNotes(index) => {
@@ -507,18 +505,16 @@ impl Component for Model {
                             self.fw_downloading = true;
                             let url = asset.url.clone();
                             let filepath = fw::get_download_filepath(&asset.name).unwrap();
-                            sender.clone().command(move |out, shutdown| {
-                                shutdown.register(async move {
-                                    match fw::download_dfu_file(url.as_str(), filepath.as_path()).await {
-                                        Ok(()) => {
-                                            out.send(CommandOutput::FirmwareDownloaded(filepath));
-                                        }
-                                        Err(error) => {
-                                            eprintln!("Failed to download of DFU file: {}", error);
-                                            sender.output(Output::Notification(format!("Failed to fetch firmware releases")));
-                                        }
+                            sender.oneshot_command(async move {
+                                match fw::download_dfu_file(url.as_str(), filepath.as_path()).await {
+                                    Ok(()) => {
+                                        CommandOutput::FirmwareDownloaded(filepath)
                                     }
-                                }).drop_on_shutdown()
+                                    Err(error) => {
+                                        eprintln!("Failed to download of DFU file: {}", error);
+                                        CommandOutput::Notification(format!("Failed to fetch firmware releases"))
+                                    }
+                                }
                             });
                         }
                         None => {
@@ -544,10 +540,18 @@ impl Component for Model {
 
     fn update_cmd(&mut self, msg: Self::CommandOutput, sender: ComponentSender<Self>) {
         match msg {
-            CommandOutput::BatteryLevel(soc) => self.battery_level = Some(soc),
-            CommandOutput::HeartRate(rate) => self.heart_rate = Some(rate),
-            CommandOutput::Alias(alias) => self.alias = Some(alias),
-            CommandOutput::Address(address) => self.address = Some(address),
+            CommandOutput::BatteryLevel(soc) => {
+                self.battery_level = Some(soc);
+            }
+            CommandOutput::HeartRate(rate) => {
+                self.heart_rate = Some(rate);
+            }
+            CommandOutput::Alias(alias) => {
+                self.alias = Some(alias);
+            }
+            CommandOutput::Address(address) => {
+                self.address = Some(address);
+            }
             CommandOutput::FirmwareVersion(version) => {
                 self.fw_version = Some(version);
                 self.check_fw_update_available();
@@ -570,6 +574,9 @@ impl Component for Model {
             CommandOutput::FirmwareDownloaded(_filepath) => {
                 self.fw_downloading = false;
                 sender.output(Output::Notification(format!("Firmware downloaded")));
+            }
+            CommandOutput::Notification(text) => {
+                sender.output(Output::Notification(text));
             }
         }
     }

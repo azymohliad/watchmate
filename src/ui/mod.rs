@@ -16,16 +16,12 @@ enum Input {
     SetView(View),
     DeviceConnected(Arc<bluer::Device>),
     DeviceDisconnected(Arc<bluer::Device>),
+    DeviceReady(Arc<bt::InfiniTime>),
     FirmwareUpdateFileChooser,
     FirmwareUpdateFromFile(PathBuf),
     FirmwareUpdateFromUrl(String),
     Notification(String),
     Ignore,
-}
-
-#[derive(Debug)]
-enum CommandOutput {
-    DeviceReady(Arc<bt::InfiniTime>),
 }
 
 struct Model {
@@ -50,7 +46,7 @@ impl Model {
 
 #[relm4::component]
 impl Component for Model {
-    type CommandOutput = CommandOutput;
+    type CommandOutput = ();
     type Init = Arc<bluer::Adapter>;
     type Input = Input;
     type Output = ();
@@ -156,20 +152,17 @@ impl Component for Model {
             }
             Input::DeviceConnected(device) => {
                 self.is_connected = true;
-                sender.clone().command(move |out, shutdown| {
-                    let task = async move {
-                        match bt::InfiniTime::new(device).await {
-                            Ok(infinitime) => {
-                                out.send(CommandOutput::DeviceReady(Arc::new(infinitime)));
-                            }
-                            Err(error) => {
-                                eprintln!("Failed to connect to InfiniTime: {}", error);
-                                sender.input(Input::Notification(format!("Failed to connect to the watch")));
-                            }
+                relm4::spawn(async move {
+                    match bt::InfiniTime::new(device).await {
+                        Ok(infinitime) => {
+                            sender.input(Input::DeviceReady(Arc::new(infinitime)));
                         }
-                    };
-                    shutdown.register(task).drop_on_shutdown()
-                })
+                        Err(error) => {
+                            eprintln!("Failed to connect to InfiniTime: {}", error);
+                            sender.input(Input::Notification(format!("Failed to connect to the watch")));
+                        }
+                    }
+                });
             }
             Input::DeviceDisconnected(device) => {
                 if self.infinitime.as_ref().map_or(false, |i| i.device().address() == device.address()) {
@@ -179,6 +172,12 @@ impl Component for Model {
                 }
                 self.dashboard.emit(dashboard::Input::Disconnected);
                 self.fwupd.emit(fwupd::Input::Disconnected);
+            }
+            Input::DeviceReady(infinitime) => {
+                self.infinitime = Some(infinitime.clone());
+                self.active_view = View::Dashboard;
+                self.dashboard.emit(dashboard::Input::Connected(infinitime.clone()));
+                self.fwupd.emit(fwupd::Input::Connected(infinitime));
             }
             Input::FirmwareUpdateFileChooser => {
                 self.fwupd_file_chooser.emit(OpenDialogMsg::Open);
@@ -195,17 +194,6 @@ impl Component for Model {
                 self.notify(&message);
             }
             Input::Ignore => {}
-        }
-    }
-
-    fn update_cmd(&mut self, msg: Self::CommandOutput, _sender: ComponentSender<Self>) {
-        match msg {
-            CommandOutput::DeviceReady(infinitime) => {
-                self.infinitime = Some(infinitime.clone());
-                self.active_view = View::Dashboard;
-                self.dashboard.emit(dashboard::Input::Connected(infinitime.clone()));
-                self.fwupd.emit(fwupd::Input::Connected(infinitime));
-            }
         }
     }
 }
