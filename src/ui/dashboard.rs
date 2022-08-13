@@ -2,11 +2,12 @@ use std::{sync::Arc, path::PathBuf};
 use futures::{pin_mut, StreamExt};
 use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, ListBoxRowExt, WidgetExt};
 use adw::prelude::{PreferencesRowExt, ExpanderRowExt};
-use relm4::{adw, gtk, ComponentParts, ComponentSender, Component, Sender, WidgetPlus};
+use relm4::{adw, gtk, ComponentParts, ComponentSender, Component, Sender, WidgetPlus, JoinHandle};
 use anyhow::Result;
 use version_compare::Version;
+use mpris2_zbus::media_player::MediaPlayer;
 
-use crate::{bt, firmware_download as fw};
+use crate::{bt, firmware_download as fw,  media_player as mp};
 
 #[derive(Debug)]
 pub enum Input {
@@ -16,6 +17,9 @@ pub enum Input {
     FirmwareReleaseNotes(u32),
     FirmwareDownload(u32),
     FirmwareUpdate(u32),
+    MediaPlayersRequest,
+    MediaPlayerSelected(u32),
+    MediaPlayerSessionEnded,
 }
 
 #[derive(Debug)]
@@ -35,6 +39,7 @@ pub enum CommandOutput {
     FirmwareVersion(String),
     FirmwareReleases(Result<Vec<fw::ReleaseInfo>>),
     FirmwareDownloaded(PathBuf),
+    MediaPlayers(Option<Vec<MediaPlayer>>),
     Notification(String),
 }
 
@@ -86,6 +91,10 @@ pub struct Model {
     fw_downloading: bool,
     fw_releases: FirmwareReleasesState,
     fw_tags: Option<gtk::StringList>,
+    // - Media Players
+    media_players: Option<Vec<Arc<MediaPlayer>>>,
+    mp_names: Option<gtk::StringList>,
+    mp_task_handle: Option<JoinHandle<()>>,
     // Other
     infinitime: Option<Arc<bt::InfiniTime>>,
 }
@@ -145,278 +154,330 @@ impl Component for Model {
                 set_vexpand: true,
 
                 if model.infinitime.is_some() {
-                    gtk::Box {
-                        set_orientation: gtk::Orientation::Vertical,
-                        set_margin_all: 12,
-                        set_spacing: 10,
+                    gtk::ScrolledWindow {
+                        set_hscrollbar_policy: gtk::PolicyType::Never,
+                        set_vexpand: true,
 
-                        gtk::ListBox {
-                            set_valign: gtk::Align::Start,
-                            add_css_class: "boxed-list",
+                        gtk::Box {
+                            set_orientation: gtk::Orientation::Vertical,
+                            set_margin_all: 12,
+                            set_spacing: 10,
 
-                            gtk::ListBoxRow {
-                                set_selectable: false,
-                                #[watch]
-                                set_sensitive: model.battery_level.is_some(),
+                            gtk::ListBox {
+                                set_valign: gtk::Align::Start,
+                                add_css_class: "boxed-list",
 
-                                gtk::Box {
-                                    set_orientation: gtk::Orientation::Horizontal,
-                                    set_margin_all: 12,
-                                    set_spacing: 10,
-
-                                    gtk::Label {
-                                        set_label: "Battery",
-                                    },
-
-                                    gtk::LevelBar {
-                                        set_min_value: 0.0,
-                                        set_max_value: 100.0,
-                                        #[watch]
-                                        set_value: model.battery_level.unwrap_or(0) as f64,
-                                        #[watch]
-                                        set_visible: model.battery_level.is_some(),
-                                        set_hexpand: true,
-                                        set_valign: gtk::Align::Center,
-                                    },
-
-                                    gtk::Label {
-                                        #[watch]
-                                        set_label: match model.battery_level {
-                                            Some(soc) => format!("{}%", soc),
-                                            None => String::from("Loading..."),
-                                        }.as_str(),
-                                        add_css_class: "dim-label",
-                                    },
-                                },
-                            },
-
-                            gtk::ListBoxRow {
-                                set_selectable: false,
-                                #[watch]
-                                set_sensitive: model.heart_rate.is_some(),
-
-                                gtk::Box {
-                                    set_orientation: gtk::Orientation::Horizontal,
-                                    set_margin_all: 12,
-                                    set_spacing: 10,
-
-                                    gtk::Label {
-                                        set_label: "Heart Rate",
-                                        set_hexpand: true,
-                                        set_halign: gtk::Align::Start,
-                                    },
-
-                                    gtk::Label {
-                                        #[watch]
-                                        set_label: match model.heart_rate {
-                                            Some(rate) => format!("{} BPM", rate),
-                                            None => String::from("Loading..."),
-                                        }.as_str(),
-                                        add_css_class: "dim-label",
-                                        set_hexpand: true,
-                                        set_halign: gtk::Align::End,
-                                    },
-                                },
-                            },
-                        },
-
-                        gtk::Label {
-                            set_label: "System Info",
-                            set_halign: gtk::Align::Start,
-                            set_margin_top: 20,
-                        },
-
-                        gtk::ListBox {
-                            set_valign: gtk::Align::Start,
-                            add_css_class: "boxed-list",
-
-                            gtk::ListBoxRow {
-                                set_selectable: false,
-                                #[watch]
-                                set_sensitive: model.alias.is_some(),
-
-                                gtk::Box {
-                                    set_orientation: gtk::Orientation::Horizontal,
-                                    set_margin_all: 12,
-                                    set_spacing: 10,
-
-                                    gtk::Label {
-                                        set_label: "Name",
-                                        set_hexpand: true,
-                                        set_halign: gtk::Align::Start,
-                                    },
-
-                                    gtk::Label {
-                                        #[watch]
-                                        set_label: match &model.alias {
-                                            Some(alias) => alias,
-                                            None => "Loading...",
-                                        },
-                                        add_css_class: "dim-label",
-                                        set_hexpand: true,
-                                        set_halign: gtk::Align::End,
-                                    },
-                                },
-                            },
-
-                            gtk::ListBoxRow {
-                                set_selectable: false,
-                                #[watch]
-                                set_sensitive: model.address.is_some(),
-
-                                gtk::Box {
-                                    set_orientation: gtk::Orientation::Horizontal,
-                                    set_margin_all: 12,
-                                    set_spacing: 10,
-
-                                    gtk::Label {
-                                        set_label: "Address",
-                                        set_hexpand: true,
-                                        set_halign: gtk::Align::Start,
-                                    },
-
-                                    gtk::Label {
-                                        #[watch]
-                                        set_label: match &model.address {
-                                            Some(address) => address,
-                                            None => "Loading...",
-                                        },
-                                        add_css_class: "dim-label",
-                                        set_hexpand: true,
-                                        set_halign: gtk::Align::End,
-                                    },
-                                },
-                            },
-
-                            adw::ExpanderRow {
-                                set_title: "Firmware Version",
-                                #[watch]
-                                set_sensitive: model.fw_version.is_some(),
-
-                                add_action = &gtk::Box {
-                                    set_spacing: 10,
-
-                                    gtk::Label {
-                                        #[watch]
-                                        set_label: match &model.fw_version {
-                                            Some(version) => version,
-                                            None => "Loading...",
-                                        },
-                                        add_css_class: "dim-label",
-                                    },
-
-                                    gtk::Image {
-                                        #[watch]
-                                        set_visible: model.fw_update_available,
-                                        set_tooltip_text: Some("Firmware update available"),
-                                        set_icon_name: Some("software-update-available-symbolic"),
-                                    },
-                                },
-
-                                add_row = &gtk::ListBoxRow {
+                                gtk::ListBoxRow {
                                     set_selectable: false,
+                                    #[watch]
+                                    set_sensitive: model.battery_level.is_some(),
 
                                     gtk::Box {
-                                        set_orientation: gtk::Orientation::Vertical,
+                                        set_orientation: gtk::Orientation::Horizontal,
                                         set_margin_all: 12,
                                         set_spacing: 10,
 
                                         gtk::Label {
-                                            set_label: "Update from file",
-                                            set_halign: gtk::Align::Start,
+                                            set_label: "Battery",
                                         },
 
-                                        gtk::Button {
-                                            set_label: "Select File",
-                                            connect_clicked[sender] => move |_| {
-                                                sender.output(Output::FirmwareUpdateFromFile);
-                                            },
-                                        },
-
-                                        gtk::Separator {
-                                            set_orientation: gtk::Orientation::Horizontal,
+                                        gtk::LevelBar {
+                                            set_min_value: 0.0,
+                                            set_max_value: 100.0,
+                                            #[watch]
+                                            set_value: model.battery_level.unwrap_or(0) as f64,
+                                            #[watch]
+                                            set_visible: model.battery_level.is_some(),
+                                            set_hexpand: true,
+                                            set_valign: gtk::Align::Center,
                                         },
 
                                         gtk::Label {
-                                            set_label: "Update from GitHub release",
+                                            #[watch]
+                                            set_label: match model.battery_level {
+                                                Some(soc) => format!("{}%", soc),
+                                                None => String::from("Loading..."),
+                                            }.as_str(),
+                                            add_css_class: "dim-label",
+                                        },
+                                    },
+                                },
+
+                                gtk::ListBoxRow {
+                                    set_selectable: false,
+                                    #[watch]
+                                    set_sensitive: model.heart_rate.is_some(),
+
+                                    gtk::Box {
+                                        set_orientation: gtk::Orientation::Horizontal,
+                                        set_margin_all: 12,
+                                        set_spacing: 10,
+
+                                        gtk::Label {
+                                            set_label: "Heart Rate",
+                                            set_hexpand: true,
                                             set_halign: gtk::Align::Start,
                                         },
 
-                                        gtk::Box {
-                                            set_spacing: 10,
-
-                                            #[name(releases_dropdown)]
-                                            gtk::DropDown {
-                                                set_hexpand: true,
-                                                #[watch]
-                                                set_visible: model.fw_releases.is_some(),
-                                                #[watch]
-                                                set_model: model.fw_tags.as_ref(),
-                                            },
-
-                                            adw::SplitButton {
-                                                #[watch]
-                                                set_visible: model.fw_releases.is_some(),
-                                                #[watch]
-                                                set_sensitive: !model.fw_downloading,
-                                                set_label: "Flash",
-                                                connect_clicked[sender, releases_dropdown] => move |_| {
-                                                    sender.input(Input::FirmwareUpdate(releases_dropdown.selected()));
-                                                },
-                                                #[wrap(Some)]
-                                                set_popover = &gtk::Popover {
-                                                    gtk::Box {
-                                                        set_spacing: 10,
-                                                        set_orientation: gtk::Orientation::Vertical,
-
-                                                        gtk::Button {
-                                                            set_label: "Download Only",
-                                                            connect_clicked[sender, releases_dropdown] => move |_| {
-                                                                sender.input(Input::FirmwareDownload(releases_dropdown.selected()));
-                                                            },
-                                                        },
-
-                                                        gtk::Button {
-                                                            set_label: "Release Notes",
-                                                            connect_clicked[sender, releases_dropdown] => move |_| {
-                                                                sender.input(Input::FirmwareReleaseNotes(releases_dropdown.selected()));
-                                                            },
-                                                        },
-                                                    },
-                                                },
-                                            },
-
-                                            gtk::Label {
-                                                set_hexpand: true,
-                                                #[watch]
-                                                set_visible: !model.fw_releases.is_some(),
-                                                #[watch]
-                                                set_label: match &model.fw_releases {
-                                                    FirmwareReleasesState::None => "Firmware releases are not loaded",
-                                                    FirmwareReleasesState::Requested => "Getting firmware releases...",
-                                                    FirmwareReleasesState::Error => "Failed to get firmware releases",
-                                                    _ => "",
-                                                },
-                                            },
-
-                                            if model.fw_downloading || model.fw_releases.is_requested() {
-                                                gtk::Spinner {
-                                                    set_spinning: true,
-                                                }
-                                            } else {
-                                                gtk::Button {
-                                                    set_tooltip_text: Some("Refresh releases list"),
-                                                    set_icon_name: "view-refresh-symbolic",
-                                                    connect_clicked[sender] => move |_| {
-                                                        sender.input(Input::FirmwareReleasesRequest);
-                                                    },
-                                                }
-                                            }
+                                        gtk::Label {
+                                            #[watch]
+                                            set_label: match model.heart_rate {
+                                                Some(rate) => format!("{} BPM", rate),
+                                                None => String::from("Loading..."),
+                                            }.as_str(),
+                                            add_css_class: "dim-label",
+                                            set_hexpand: true,
+                                            set_halign: gtk::Align::End,
                                         },
                                     },
                                 },
                             },
-                        },
+
+                            gtk::Label {
+                                set_label: "Media Player Control",
+                                set_halign: gtk::Align::Start,
+                                set_margin_top: 20,
+                            },
+
+                            gtk::ListBox {
+                                set_valign: gtk::Align::Start,
+                                add_css_class: "boxed-list",
+
+                                gtk::ListBoxRow {
+                                    set_selectable: false,
+                                    #[watch]
+                                    set_sensitive: model.alias.is_some(),
+
+                                    gtk::Box {
+                                        set_orientation: gtk::Orientation::Horizontal,
+                                        set_margin_all: 12,
+                                        set_spacing: 10,
+
+                                        if model.media_players.is_some() {
+                                            gtk::DropDown {
+                                                set_hexpand: true,
+                                                #[watch]
+                                                set_model: model.mp_names.as_ref(),
+                                                connect_selected_notify[sender] => move |widget| {
+                                                    sender.input(Input::MediaPlayerSelected(widget.selected()));
+                                                }
+                                            }
+                                        } else {
+                                            gtk::Label {
+                                                set_hexpand: true,
+                                                set_label: "No media players detected",
+                                            }
+                                        },
+
+                                        gtk::Button {
+                                            set_tooltip_text: Some("Refresh releases list"),
+                                            set_icon_name: "view-refresh-symbolic",
+                                            connect_clicked[sender] => move |_| {
+                                                sender.input(Input::MediaPlayersRequest);
+                                            },
+                                        }
+                                    },
+                                },
+                            },
+
+                            gtk::Label {
+                                set_label: "System Info",
+                                set_halign: gtk::Align::Start,
+                                set_margin_top: 20,
+                            },
+
+                            gtk::ListBox {
+                                set_valign: gtk::Align::Start,
+                                add_css_class: "boxed-list",
+
+                                gtk::ListBoxRow {
+                                    set_selectable: false,
+                                    #[watch]
+                                    set_sensitive: model.alias.is_some(),
+
+                                    gtk::Box {
+                                        set_orientation: gtk::Orientation::Horizontal,
+                                        set_margin_all: 12,
+                                        set_spacing: 10,
+
+                                        gtk::Label {
+                                            set_label: "Name",
+                                            set_hexpand: true,
+                                            set_halign: gtk::Align::Start,
+                                        },
+
+                                        gtk::Label {
+                                            #[watch]
+                                            set_label: match &model.alias {
+                                                Some(alias) => alias,
+                                                None => "Loading...",
+                                            },
+                                            add_css_class: "dim-label",
+                                            set_hexpand: true,
+                                            set_halign: gtk::Align::End,
+                                        },
+                                    },
+                                },
+
+                                gtk::ListBoxRow {
+                                    set_selectable: false,
+                                    #[watch]
+                                    set_sensitive: model.address.is_some(),
+
+                                    gtk::Box {
+                                        set_orientation: gtk::Orientation::Horizontal,
+                                        set_margin_all: 12,
+                                        set_spacing: 10,
+
+                                        gtk::Label {
+                                            set_label: "Address",
+                                            set_hexpand: true,
+                                            set_halign: gtk::Align::Start,
+                                        },
+
+                                        gtk::Label {
+                                            #[watch]
+                                            set_label: match &model.address {
+                                                Some(address) => address,
+                                                None => "Loading...",
+                                            },
+                                            add_css_class: "dim-label",
+                                            set_hexpand: true,
+                                            set_halign: gtk::Align::End,
+                                        },
+                                    },
+                                },
+
+                                adw::ExpanderRow {
+                                    set_title: "Firmware Version",
+                                    #[watch]
+                                    set_sensitive: model.fw_version.is_some(),
+
+                                    add_action = &gtk::Box {
+                                        set_spacing: 10,
+
+                                        gtk::Label {
+                                            #[watch]
+                                            set_label: match &model.fw_version {
+                                                Some(version) => version,
+                                                None => "Loading...",
+                                            },
+                                            add_css_class: "dim-label",
+                                        },
+
+                                        gtk::Image {
+                                            #[watch]
+                                            set_visible: model.fw_update_available,
+                                            set_tooltip_text: Some("Firmware update available"),
+                                            set_icon_name: Some("software-update-available-symbolic"),
+                                        },
+                                    },
+
+                                    add_row = &gtk::ListBoxRow {
+                                        set_selectable: false,
+
+                                        gtk::Box {
+                                            set_orientation: gtk::Orientation::Vertical,
+                                            set_margin_all: 12,
+                                            set_spacing: 10,
+
+                                            gtk::Label {
+                                                set_label: "Update from file",
+                                                set_halign: gtk::Align::Start,
+                                            },
+
+                                            gtk::Button {
+                                                set_label: "Select File",
+                                                connect_clicked[sender] => move |_| {
+                                                    sender.output(Output::FirmwareUpdateFromFile);
+                                                },
+                                            },
+
+                                            gtk::Separator {
+                                                set_orientation: gtk::Orientation::Horizontal,
+                                            },
+
+                                            gtk::Label {
+                                                set_label: "Update from GitHub release",
+                                                set_halign: gtk::Align::Start,
+                                            },
+
+                                            gtk::Box {
+                                                set_spacing: 10,
+
+                                                #[name(releases_dropdown)]
+                                                gtk::DropDown {
+                                                    set_hexpand: true,
+                                                    #[watch]
+                                                    set_visible: model.fw_releases.is_some(),
+                                                    #[watch]
+                                                    set_model: model.fw_tags.as_ref(),
+                                                },
+
+                                                adw::SplitButton {
+                                                    #[watch]
+                                                    set_visible: model.fw_releases.is_some(),
+                                                    #[watch]
+                                                    set_sensitive: !model.fw_downloading,
+                                                    set_label: "Flash",
+                                                    connect_clicked[sender, releases_dropdown] => move |_| {
+                                                        sender.input(Input::FirmwareUpdate(releases_dropdown.selected()));
+                                                    },
+                                                    #[wrap(Some)]
+                                                    set_popover = &gtk::Popover {
+                                                        gtk::Box {
+                                                            set_spacing: 10,
+                                                            set_orientation: gtk::Orientation::Vertical,
+
+                                                            gtk::Button {
+                                                                set_label: "Download Only",
+                                                                connect_clicked[sender, releases_dropdown] => move |_| {
+                                                                    sender.input(Input::FirmwareDownload(releases_dropdown.selected()));
+                                                                },
+                                                            },
+
+                                                            gtk::Button {
+                                                                set_label: "Release Notes",
+                                                                connect_clicked[sender, releases_dropdown] => move |_| {
+                                                                    sender.input(Input::FirmwareReleaseNotes(releases_dropdown.selected()));
+                                                                },
+                                                            },
+                                                        },
+                                                    },
+                                                },
+
+                                                gtk::Label {
+                                                    set_hexpand: true,
+                                                    #[watch]
+                                                    set_visible: !model.fw_releases.is_some(),
+                                                    #[watch]
+                                                    set_label: match &model.fw_releases {
+                                                        FirmwareReleasesState::None => "Firmware releases are not loaded",
+                                                        FirmwareReleasesState::Requested => "Getting firmware releases...",
+                                                        FirmwareReleasesState::Error => "Failed to get firmware releases",
+                                                        _ => "",
+                                                    },
+                                                },
+
+                                                if model.fw_downloading || model.fw_releases.is_requested() {
+                                                    gtk::Spinner {
+                                                        set_spinning: true,
+                                                    }
+                                                } else {
+                                                    gtk::Button {
+                                                        set_tooltip_text: Some("Refresh releases list"),
+                                                        set_icon_name: "view-refresh-symbolic",
+                                                        connect_clicked[sender] => move |_| {
+                                                            sender.input(Input::FirmwareReleasesRequest);
+                                                        },
+                                                    }
+                                                }
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        }
                     }
                 } else {
                     gtk::Box {
@@ -447,6 +508,7 @@ impl Component for Model {
         let model = Self::default();
         let widgets = view_output!();
         sender.input(Input::FirmwareReleasesRequest);
+        sender.input(Input::MediaPlayersRequest);
         ComponentParts { model, widgets }
     }
 
@@ -476,8 +538,6 @@ impl Component for Model {
                         }
                     }).drop_on_shutdown()
                 });
-                // Listed to media player events
-                relm4::spawn(crate::media_player::run_media_player_control_session(infinitime.clone()));
             }
             Input::Disconnected => {
                 self.battery_level = None;
@@ -535,6 +595,51 @@ impl Component for Model {
                     }
                 }
             }
+            Input::MediaPlayersRequest => {
+                // Stop current media player control sesssion
+                self.mp_task_handle.take().map(|h| h.abort());
+
+                sender.oneshot_command(async move {
+                    // TODO: Save and reuse D-Bus connection
+                    match zbus::Connection::session().await {
+                        Ok(connection) => match mp::get_players(&connection).await {
+                            Ok(players) => if players.len() > 0 {
+                                return CommandOutput::MediaPlayers(Some(players));
+                            }
+                            Err(error) => {
+                                eprintln!("Failed to obtain MPRIS players list: {error}");
+                            }
+                        }
+                        Err(error) => {
+                            eprintln!("Failed to establish D-Bus session connection: {error}")
+                        }
+                    }
+                    CommandOutput::MediaPlayers(None)
+                })
+            }
+            Input::MediaPlayerSelected(index) => {
+                if let (Some(players), Some(infinitime)) = (&self.media_players, &self.infinitime) {
+                    // Stop current media player control sesssion
+                    self.mp_task_handle.take().map(|h| h.abort());
+                    // Start new media player control sesssion
+                    let player = players[index as usize].clone();
+                    let infinitime = infinitime.clone();
+                    let task_handle = relm4::spawn(async move {
+                        match mp::run_session(&player, &infinitime).await {
+                            Ok(()) => eprintln!("Media player control session ended unexpectedly"),
+                            Err(error) => eprintln!("Media player control session error: {error}"),
+                        }
+                        sender.input(Input::MediaPlayerSessionEnded)
+                    });
+                    self.mp_task_handle = Some(task_handle);
+                }
+            }
+            Input::MediaPlayerSessionEnded => {
+                self.media_players = None;
+                self.mp_names = None;
+                self.mp_task_handle = None;
+                sender.input(Input::MediaPlayersRequest);
+            }
         }
     }
 
@@ -574,6 +679,24 @@ impl Component for Model {
             CommandOutput::FirmwareDownloaded(_filepath) => {
                 self.fw_downloading = false;
                 sender.output(Output::Notification(format!("Firmware downloaded")));
+            }
+            CommandOutput::MediaPlayers(players) => {
+                if let Some(players) = players {
+                    let names = gtk::StringList::new(&[]);
+                    for player in &players {
+                        if let Ok(Some(name)) = player.cached_identity() {
+                            names.append(&name);
+                        } else {
+                            eprintln!("Failed to obtain cached player identity");
+                            return;
+                        }
+                    }
+                    self.mp_names = Some(names);
+                    self.media_players = Some(players.into_iter().map(Arc::new).collect());
+                } else {
+                    self.mp_names = None;
+                    self.media_players = None;
+                }
             }
             CommandOutput::Notification(text) => {
                 sender.output(Output::Notification(text));
