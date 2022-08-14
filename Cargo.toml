@@ -19,5 +19,5 @@ anyhow = "1.0"
 chrono = "0.4"
 zip = "0.6.2"
 version-compare = "0.1.0"
-mpris2-zbus = { git = "https://github.com/pop-os/mpris2-zbus" }
+mpris2-zbus = { git = "https://github.com/azymohliad/mpris2-zbus" }
 zbus = "*"
