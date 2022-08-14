@@ -111,10 +111,10 @@ impl Model {
 
     fn check_fw_update_available(&mut self) {
         let latest = self.fw_releases.as_option()
-            .map(|l| l.first()).flatten()
-            .map(|r| Version::from(&r.tag)).flatten();
+            .and_then(|l| l.first())
+            .and_then(|r| Version::from(&r.tag));
         let current = self.fw_version.as_ref()
-            .map(|v| Version::from(v)).flatten();
+            .and_then(|v| Version::from(v));
         if let (Some(latest), Some(current)) = (latest, current) {
             self.fw_update_available = latest > current;
         }

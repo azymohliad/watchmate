@@ -18,18 +18,23 @@ pub async fn get_players(connection: &Connection) -> Result<Vec<MediaPlayer>> {
 }
 
 pub async fn update_track_metadata(metadata: &Metadata, infinitime: &bt::InfiniTime) -> Result<()> {
-    match metadata.artists().as_ref().map(|s| s.first()).flatten() {
-        Some(artist) => infinitime.write_mp_artist(artist).await?,
-        None => infinitime.write_mp_artist("Unknown Artist").await?,
-    }
-    match metadata.album() {
-        Some(album) => infinitime.write_mp_album(&album).await?,
-        None => infinitime.write_mp_album("Unknown Album").await?,
-    }
-    match metadata.title() {
-        Some(track) => infinitime.write_mp_track(&track).await?,
-        None => infinitime.write_mp_track("Unknown Track").await?,
-    }
+    dbg!(metadata);
+
+    let artists = metadata.artists();
+    let artist = artists.as_ref()
+        .and_then(|s| s.first())
+        .map(String::as_str)
+        .unwrap_or("Unknown Artist");
+    infinitime.write_mp_artist(artist).await?;
+
+    let album = metadata.album();
+    let album = album.as_ref().map(String::as_str).unwrap_or("Unknown Album");
+    infinitime.write_mp_album(album).await?;
+
+    let title = metadata.title();
+    let track = title.as_ref().map(String::as_str).unwrap_or("Unknown Track");
+    infinitime.write_mp_track(&track).await?;
+
     let length = metadata.length().unwrap_or_default().as_seconds_f32() as u32;
     infinitime.write_mp_duration(length).await?;
     Ok(())
