@@ -8,10 +8,8 @@
   <summary>InfiniTime companion app</summary>
 
   <description>
-    <p>
-      Sync your PineTime smart watch running InfiniTime firmware with your Linux desktop or mobile.
-      Visually optimized for GNOME.
-    </p>
+    <p>Sync your PineTime smart watch with your Linux desktop or mobile.</p>
+    <p>Made for InfiniTime firmware. Visually optimized for GNOME mobile and desktop.</p>
     <p>Features:</p>
     <ul>
       <li>Serve current time to the watch</li>

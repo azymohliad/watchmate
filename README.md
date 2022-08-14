@@ -1,6 +1,8 @@
 # WatchMate
 
-[InfiniTime](https://github.com/InfiniTimeOrg/InfiniTime/) smart watch companion app, visually optimized for GNOME mobile and desktop.
+[PineTime](https://www.pine64.org/pinetime/) smart watch companion app.
+
+Made for [InfiniTime](https://github.com/InfiniTimeOrg/InfiniTime/) firmware. Visually optimized for GNOME mobile and desktop.
 
 ![collage_2022-08-14_readme](/uploads/8dbf136bec813c09d44fac6d0b22b54c/collage_2022-08-14_readme.png)
 
