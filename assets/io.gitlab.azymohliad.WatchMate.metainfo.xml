@@ -18,10 +18,10 @@
       <li>Read various data form the watch</li>
       <li>Perform OTA firmware update from DFU files or GitHub releases</li>
       <li>Automatically check for available firmware updates</li>
+      <li>Media player control</li>
     </ul>
     <p>Roadmap:</p>
     <ul>
-      <li>Media player control</li>
       <li>Notifications</li>
       <li>Secure pairing</li>
       <li>Application settings</li>
@@ -54,6 +54,16 @@
   </provides>
 
   <releases>
+    <release version="0.2.0" date="2022-08-14">
+      <description>
+        <ul>
+          <li>Replaced file chooser widget with the dialog</li>
+          <li>Removed unwanted toast notifications</li>
+          <li>Improved the UI for firmware releases list</li>
+          <li>Implemented media player integration</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.0" date="2022-08-10">
       <description>
         <p>Initial release</p>
