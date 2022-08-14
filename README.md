@@ -2,7 +2,7 @@
 
 [InfiniTime](https://github.com/InfiniTimeOrg/InfiniTime/) smart watch companion app, visually optimized for GNOME mobile and desktop.
 
-![collage_2022-08-13](/uploads/7c447fd1538be3b7364362d9eb09da03/collage_2022-08-13_readme.png)
+![collage_2022-08-14_readme](/uploads/8dbf136bec813c09d44fac6d0b22b54c/collage_2022-08-14_readme.png)
 
 ## Install
 
@@ -78,7 +78,7 @@ flatpak-builder --install build-dir flatpak/io.gitlab.azymohliad.WatchMate.yml
 - [x] OTA firmware update
     - [x] Firmware update from manually selected file
     - [x] Automatic firmware downloading from [InfiniTime releases](https://github.com/InfiniTimeOrg/InfiniTime/releases)
-- [ ] Media-player control
+- [x] Media-player control
 - [ ] Secure pairing
 - [ ] Notifications
 - [ ] Settings
