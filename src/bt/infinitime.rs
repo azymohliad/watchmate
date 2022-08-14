@@ -1,14 +1,9 @@
-use std::{collections::HashMap, sync::Arc, io::{Cursor, Read}};
-use futures::{pin_mut, StreamExt};
+use std::{sync::Arc, io::{Cursor, Read}};
+use futures::{pin_mut, Stream, StreamExt};
 use bluer::{gatt::remote::Characteristic, Adapter, Device};
-use uuid::Uuid;
 use anyhow::{anyhow, ensure, Result};
 
 use super::uuids;
-
-pub enum Notification {
-    HeartRate(u8),
-}
 
 #[derive(Debug)]
 pub enum FwUpdNotification {
@@ -17,15 +12,73 @@ pub enum FwUpdNotification {
 }
 
 #[derive(Debug)]
+pub enum MediaPlayerEvent {
+    AppOpenned,
+    Play,
+    Pause,
+    Next,
+    Previous,
+    VolumeUp,
+    VolumeDown,
+}
+
+impl MediaPlayerEvent {
+    fn from_raw(v: u8) -> Option<Self> {
+        match v {
+            0xe0 => Some(MediaPlayerEvent::AppOpenned),
+            0x00 => Some(MediaPlayerEvent::Play),
+            0x01 => Some(MediaPlayerEvent::Pause),
+            0x03 => Some(MediaPlayerEvent::Next),
+            0x04 => Some(MediaPlayerEvent::Previous),
+            0x05 => Some(MediaPlayerEvent::VolumeUp),
+            0x06 => Some(MediaPlayerEvent::VolumeDown),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct InfiniTime {
     device: Arc<Device>,
-    characteristics: HashMap<Uuid, Characteristic>,
+    // BLE Characteristics
+    chr_battery_level: Characteristic,
+    chr_firmware_revision: Characteristic,
+    chr_heart_rate: Characteristic,
+    chr_fwupd_control_point: Characteristic,
+    chr_fwupd_packet: Characteristic,
+    chr_mp_events: Characteristic,
+    chr_mp_status: Characteristic,
+    chr_mp_artist: Characteristic,
+    chr_mp_track: Characteristic,
+    chr_mp_album: Characteristic,
+    chr_mp_position: Characteristic,
+    chr_mp_duration: Characteristic,
+    chr_mp_speed: Characteristic,
+    chr_mp_repeat: Characteristic,
+    chr_mp_shuffle: Characteristic,
 }
 
 impl InfiniTime {
     pub async fn new(device: Arc<Device>) -> Result<Self> {
-        let characteristics = super::read_characteristics_map(&device).await?;
-        Ok(Self { device, characteristics })
+        let mut characteristics = super::CharacteristicsMap::read(&device).await?;
+        Ok(Self {
+            device,
+            chr_battery_level: characteristics.take(&uuids::CHR_BATTERY_LEVEL)?,
+            chr_firmware_revision: characteristics.take(&uuids::CHR_FIRMWARE_REVISION)?,
+            chr_heart_rate: characteristics.take(&uuids::CHR_HEART_RATE)?,
+            chr_fwupd_control_point: characteristics.take(&uuids::CHR_FWUPD_CONTROL_POINT)?,
+            chr_fwupd_packet: characteristics.take(&uuids::CHR_FWUPD_PACKET)?,
+            chr_mp_events: characteristics.take(&uuids::CHR_MP_EVENTS)?,
+            chr_mp_status: characteristics.take(&uuids::CHR_MP_STATUS)?,
+            chr_mp_artist: characteristics.take(&uuids::CHR_MP_ARTIST)?,
+            chr_mp_track: characteristics.take(&uuids::CHR_MP_TRACK)?,
+            chr_mp_album: characteristics.take(&uuids::CHR_MP_ALBUM)?,
+            chr_mp_position: characteristics.take(&uuids::CHR_MP_POSITION)?,
+            chr_mp_duration: characteristics.take(&uuids::CHR_MP_DURATION)?,
+            chr_mp_speed: characteristics.take(&uuids::CHR_MP_SPEED)?,
+            chr_mp_repeat: characteristics.take(&uuids::CHR_MP_REPEAT)?,
+            chr_mp_shuffle: characteristics.take(&uuids::CHR_MP_SHUFFLE)?,
+        })
     }
 
     pub fn device(&self) -> &bluer::Device {
@@ -33,34 +86,64 @@ impl InfiniTime {
     }
 
     pub async fn read_battery_level(&self) -> Result<u8> {
-        Ok(self.read_characteristic(&uuids::CHR_BATTERY_LEVEL).await?[0])
+        Ok(self.chr_battery_level.read().await?[0])
     }
 
     pub async fn read_firmware_version(&self) -> Result<String> {
-        Ok(String::from_utf8(self.read_characteristic(&uuids::CHR_FIRMWARE_REVISION).await?)?)
+        Ok(String::from_utf8(self.chr_firmware_revision.read().await?)?)
     }
 
     pub async fn read_heart_rate(&self) -> Result<u8> {
         // TODO: Parse properly according to 3.106 Heart Rate Measurement
         // from https://www.bluetooth.org/docman/handlers/DownloadDoc.ashx?doc_id=539729
-        Ok(self.read_characteristic(&uuids::CHR_HEART_RATE).await?[1])
+        Ok(self.chr_heart_rate.read().await?[1])
     }
 
-    pub async fn run_notification_session<F>(&self, callback: F)
-        where F: Fn(Notification) + Send + 'static
-    {
-        let heart_rate_chr = self.characteristics.get(&uuids::CHR_HEART_RATE).unwrap();
-        let heart_rate_stream = heart_rate_chr.notify().await.unwrap();
-        pin_mut!(heart_rate_stream);
+    pub async fn write_mp_artist(&self, artist: &str) -> Result<()> {
+        Ok(self.chr_mp_artist.write(artist.as_ref()).await?)
+    }
 
-        loop {
-            tokio::select! {
-                Some(value) = heart_rate_stream.next() => {
-                    callback(Notification::HeartRate(value[1]));
-                }
-                else => break,
-            }
-        }
+    pub async fn write_mp_album(&self, album: &str) -> Result<()> {
+        Ok(self.chr_mp_album.write(album.as_ref()).await?)
+    }
+
+    pub async fn write_mp_track(&self, track: &str) -> Result<()> {
+        Ok(self.chr_mp_track.write(track.as_ref()).await?)
+    }
+
+    pub async fn write_mp_playback_status(&self, playing: bool) -> Result<()> {
+        Ok(self.chr_mp_status.write(&[u8::from(playing)]).await?)
+    }
+
+    pub async fn write_mp_position(&self, position: u32) -> Result<()> {
+        Ok(self.chr_mp_position.write(&position.to_be_bytes()).await?)
+    }
+
+    pub async fn write_mp_duration(&self, duration: u32) -> Result<()> {
+        Ok(self.chr_mp_duration.write(&duration.to_be_bytes()).await?)
+    }
+
+    pub async fn write_mp_playback_speed(&self, speed: f32) -> Result<()> {
+        let percentage = (speed * 100.0) as u32;
+        Ok(self.chr_mp_speed.write(&percentage.to_be_bytes()).await?)
+    }
+
+    pub async fn write_mp_repeat(&self, repeat: bool) -> Result<()> {
+        Ok(self.chr_mp_repeat.write(&[u8::from(repeat)]).await?)
+    }
+
+    pub async fn write_mp_shuffle(&self, shuffle: bool) -> Result<()> {
+        Ok(self.chr_mp_shuffle.write(&[u8::from(shuffle)]).await?)
+    }
+
+    pub async fn get_heart_rate_stream(&self) -> Result<impl Stream<Item = u8>> {
+        let stream = self.chr_heart_rate.notify().await?;
+        Ok(stream.filter_map(|v| async move { v.get(1).cloned() }))
+    }
+
+    pub async fn get_media_player_events_stream(&self) -> Result<impl Stream<Item = MediaPlayerEvent>> {
+        let stream = self.chr_mp_events.notify().await?;
+        Ok(stream.filter_map(|v| async move { MediaPlayerEvent::from_raw(v[0]) }))
     }
 
     pub async fn firmware_upgrade<F>(&self, dfu_content: &[u8], callback: F) -> Result<()>
@@ -100,55 +183,51 @@ impl InfiniTime {
 
 
         // Obtain characteristics
-        let ctl_char = self.characteristics.get(&uuids::CHR_FWUPD_CONTROL_POINT)
-            .ok_or(anyhow!("Firmware update control point characteristic is not found"))?;
-        let pkt_char = self.characteristics.get(&uuids::CHR_FWUPD_PACKET)
-            .ok_or(anyhow!("Firmware update packet characteristic is not found"))?;
-        let ctl_stream = ctl_char.notify().await?;
-        pin_mut!(ctl_stream);
+        let control_point_stream = self.chr_fwupd_control_point.notify().await?;
+        pin_mut!(control_point_stream);
 
         // Step 1
         callback(FwUpdNotification::Message("Initiating firmware upgrade..."));
-        ctl_char.write(&[0x01, 0x04]).await?;
+        self.chr_fwupd_control_point.write(&[0x01, 0x04]).await?;
 
         // Step 2
         let mut size_packet = vec![0; 8];
         let firmware_size = firmware_buffer.len() as u32;
         size_packet.extend_from_slice(&firmware_size.to_le_bytes());
-        pkt_char.write(&size_packet).await?;
+        self.chr_fwupd_packet.write(&size_packet).await?;
 
-        let receipt = ctl_stream.next().await
+        let receipt = control_point_stream.next().await
             .ok_or(anyhow!("Control point notification stream ended"))?;
         ensure!(receipt == &[0x10, 0x01, 0x01]);
 
         // Step 3
         callback(FwUpdNotification::Message("Sending DFU init packet..."));
-        ctl_char.write(&[0x02, 0x00]).await?;
+        self.chr_fwupd_control_point.write(&[0x02, 0x00]).await?;
 
         // Step 4
-        pkt_char.write(&init_packet).await?;
-        ctl_char.write(&[0x02, 0x01]).await?;
+        self.chr_fwupd_packet.write(&init_packet).await?;
+        self.chr_fwupd_control_point.write(&[0x02, 0x01]).await?;
 
-        let receipt = ctl_stream.next().await
+        let receipt = control_point_stream.next().await
             .ok_or(anyhow!("Control point notification stream ended"))?;
         ensure!(receipt == &[0x10, 0x02, 0x01]);
 
         // Step 5
         callback(FwUpdNotification::Message("Configuring receipt interval..."));
         let receipt_interval = 100;
-        ctl_char.write(&[0x08, receipt_interval]).await?;
+        self.chr_fwupd_control_point.write(&[0x08, receipt_interval]).await?;
 
         // Step 6
-        ctl_char.write(&[0x03]).await?;
+        self.chr_fwupd_control_point.write(&[0x03]).await?;
 
         // Step 7
         callback(FwUpdNotification::Message("Sending firmware..."));
         let mut bytes_sent = 0;
         for (idx, packet) in firmware_buffer.chunks(20).enumerate() {
-            pkt_char.write(&packet).await?;
+            self.chr_fwupd_packet.write(&packet).await?;
             bytes_sent += packet.len() as u32;
             if (idx + 1) % receipt_interval as usize == 0 {
-                let receipt = ctl_stream.next().await
+                let receipt = control_point_stream.next().await
                     .ok_or(anyhow!("Control point notification stream ended"))?;
                 let bytes_received = u32::from_le_bytes(receipt[1..5].try_into()?);
                 ensure!(bytes_sent == bytes_received);
@@ -158,18 +237,17 @@ impl InfiniTime {
 
         // Step 8
         callback(FwUpdNotification::Message("Waiting for firmware receipt..."));
-        let receipt = ctl_stream.next().await
+        let receipt = control_point_stream.next().await
             .ok_or(anyhow!("Control point notification stream ended"))?;
         ensure!(receipt == &[0x10, 0x03, 0x01]);
-        ctl_char.write(&[0x04]).await?;
-
+        self.chr_fwupd_control_point.write(&[0x04]).await?;
 
         // Step 9
         callback(FwUpdNotification::Message("Waiting for firmware validation..."));
-        let receipt = ctl_stream.next().await
+        let receipt = control_point_stream.next().await
             .ok_or(anyhow!("Control point notification stream ended"))?;
         ensure!(receipt == &[0x10, 0x04, 0x01]);
-        ctl_char.write(&[0x05]).await?;
+        self.chr_fwupd_control_point.write(&[0x05]).await?;
 
         callback(FwUpdNotification::Message("Done!"));
 
@@ -192,12 +270,5 @@ impl InfiniTime {
             }
         }
         Ok(result)
-    }
-
-    async fn read_characteristic(&self, uuid: &Uuid) -> Result<Vec<u8>> {
-        match self.characteristics.get(uuid) {
-            Some(c) => Ok(c.read().await?),
-            None => Err(anyhow!("Characteristic {} not found", uuid.to_string())),
-        }
     }
 }
