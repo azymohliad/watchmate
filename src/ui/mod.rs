@@ -54,8 +54,8 @@ impl Component for Model {
 
     view! {
         adw::ApplicationWindow {
-            set_default_width: 320,
-            set_default_height: 568,
+            set_default_width: 800,
+            set_default_height: 680,
 
             #[local]
             toast_overlay -> adw::ToastOverlay {
