@@ -18,8 +18,6 @@ pub async fn get_players(connection: &Connection) -> Result<Vec<MediaPlayer>> {
 }
 
 pub async fn update_track_metadata(metadata: &Metadata, infinitime: &bt::InfiniTime) -> Result<()> {
-    dbg!(metadata);
-
     let artists = metadata.artists();
     let artist = artists.as_ref()
         .and_then(|s| s.first())
