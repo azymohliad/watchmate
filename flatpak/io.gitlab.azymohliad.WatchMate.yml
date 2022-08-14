@@ -12,13 +12,18 @@ finish-args:
   - --socket=wayland
   - --socket=fallback-x11
   - --system-talk-name=org.bluez
-  - --talk-name=org.mpris
+  - --talk-name=org.mpris.MediaPlayer2.*
+  - --filesystem=xdg-download
 modules:
   - name: watchmate
     sources:
       - type: dir
         path: ..
     buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin
+      build-args:
+        - --share=network
     build-commands:
       - cargo build --release --locked
       - install -Dm 755 target/release/watchmate -t /app/bin
@@ -26,7 +31,3 @@ modules:
       - install -Dm 644 assets/${FLATPAK_ID}.metainfo.xml -t /app/share/metainfo
       - install -Dm 644 assets/icons/${FLATPAK_ID}.svg -t /app/share/icons/hicolor/scalable/apps
       - install -Dm 644 assets/icons/${FLATPAK_ID}-symbolic.svg -t /app/share/icons/hicolor/symbolic/app
-    build-options:
-      append-path: /usr/lib/sdk/rust-stable/bin
-      build-args:
-        - --share=network
