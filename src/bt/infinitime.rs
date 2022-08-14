@@ -51,6 +51,11 @@ pub struct InfiniTime {
     chr_mp_artist: Characteristic,
     chr_mp_track: Characteristic,
     chr_mp_album: Characteristic,
+    chr_mp_position: Characteristic,
+    chr_mp_duration: Characteristic,
+    chr_mp_speed: Characteristic,
+    chr_mp_repeat: Characteristic,
+    chr_mp_shuffle: Characteristic,
 }
 
 impl InfiniTime {
@@ -68,6 +73,11 @@ impl InfiniTime {
             chr_mp_artist: characteristics.take(&uuids::CHR_MP_ARTIST)?,
             chr_mp_track: characteristics.take(&uuids::CHR_MP_TRACK)?,
             chr_mp_album: characteristics.take(&uuids::CHR_MP_ALBUM)?,
+            chr_mp_position: characteristics.take(&uuids::CHR_MP_POSITION)?,
+            chr_mp_duration: characteristics.take(&uuids::CHR_MP_DURATION)?,
+            chr_mp_speed: characteristics.take(&uuids::CHR_MP_SPEED)?,
+            chr_mp_repeat: characteristics.take(&uuids::CHR_MP_REPEAT)?,
+            chr_mp_shuffle: characteristics.take(&uuids::CHR_MP_SHUFFLE)?,
         })
     }
 
@@ -89,20 +99,41 @@ impl InfiniTime {
         Ok(self.chr_heart_rate.read().await?[1])
     }
 
-    pub async fn write_media_player_artist(&self, artist: &str) -> Result<()> {
+    pub async fn write_mp_artist(&self, artist: &str) -> Result<()> {
         Ok(self.chr_mp_artist.write(artist.as_ref()).await?)
     }
 
-    pub async fn write_media_player_album(&self, album: &str) -> Result<()> {
+    pub async fn write_mp_album(&self, album: &str) -> Result<()> {
         Ok(self.chr_mp_album.write(album.as_ref()).await?)
     }
 
-    pub async fn write_media_player_track(&self, track: &str) -> Result<()> {
+    pub async fn write_mp_track(&self, track: &str) -> Result<()> {
         Ok(self.chr_mp_track.write(track.as_ref()).await?)
     }
 
-    pub async fn write_media_player_status(&self, playing: bool) -> Result<()> {
+    pub async fn write_mp_playback_status(&self, playing: bool) -> Result<()> {
         Ok(self.chr_mp_status.write(&[u8::from(playing)]).await?)
+    }
+
+    pub async fn write_mp_position(&self, position: u32) -> Result<()> {
+        Ok(self.chr_mp_position.write(&position.to_be_bytes()).await?)
+    }
+
+    pub async fn write_mp_duration(&self, duration: u32) -> Result<()> {
+        Ok(self.chr_mp_duration.write(&duration.to_be_bytes()).await?)
+    }
+
+    pub async fn write_mp_playback_speed(&self, speed: f32) -> Result<()> {
+        let percentage = (speed * 100.0) as u32;
+        Ok(self.chr_mp_speed.write(&percentage.to_be_bytes()).await?)
+    }
+
+    pub async fn write_mp_repeat(&self, repeat: bool) -> Result<()> {
+        Ok(self.chr_mp_repeat.write(&[u8::from(repeat)]).await?)
+    }
+
+    pub async fn write_mp_shuffle(&self, shuffle: bool) -> Result<()> {
+        Ok(self.chr_mp_shuffle.write(&[u8::from(shuffle)]).await?)
     }
 
     pub async fn get_heart_rate_stream(&self) -> Result<impl Stream<Item = u8>> {
