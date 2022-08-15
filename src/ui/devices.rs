@@ -74,7 +74,6 @@ impl Component for Model {
                     set_margin_all: 12,
                     set_spacing: 10,
 
-
                     gtk::ScrolledWindow {
                         set_hscrollbar_policy: gtk::PolicyType::Never,
                         set_vexpand: true,
@@ -104,6 +103,7 @@ impl Component for Model {
                             "Start Scanning"
                         },
                         set_valign: gtk::Align::End,
+                        set_halign: gtk::Align::Center,
                         connect_clicked[sender] => move |_| {
                             sender.input(Input::ScanToggled);
                         },

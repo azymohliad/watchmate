@@ -149,15 +149,15 @@ impl Component for Model {
                 },
             },
 
-            adw::Clamp {
-                set_maximum_size: 400,
+            gtk::ScrolledWindow {
+                set_hscrollbar_policy: gtk::PolicyType::Never,
                 set_vexpand: true,
 
-                if model.infinitime.is_some() {
-                    gtk::ScrolledWindow {
-                        set_hscrollbar_policy: gtk::PolicyType::Never,
-                        set_vexpand: true,
+                adw::Clamp {
+                    set_maximum_size: 400,
+                    set_vexpand: true,
 
+                    if model.infinitime.is_some() {
                         gtk::Box {
                             set_orientation: gtk::Orientation::Vertical,
                             set_margin_all: 12,
@@ -478,26 +478,26 @@ impl Component for Model {
                                 },
                             },
                         }
-                    }
-                } else {
-                    gtk::Box {
-                        set_orientation: gtk::Orientation::Vertical,
-                        set_margin_all: 12,
-                        set_spacing: 10,
-                        set_valign: gtk::Align::Center,
+                    } else {
+                        gtk::Box {
+                            set_orientation: gtk::Orientation::Vertical,
+                            set_margin_all: 12,
+                            set_spacing: 10,
+                            set_valign: gtk::Align::Center,
 
-                        gtk::Label {
-                            set_label: "InfiniTime watch is not connected",
-                        },
-
-                        gtk::Button {
-                            set_label: "Devices",
-                            set_halign: gtk::Align::Center,
-
-                            connect_clicked[sender] => move |_| {
-                                sender.output(Output::SetView(super::View::Devices));
+                            gtk::Label {
+                                set_label: "InfiniTime watch is not connected",
                             },
-                        },
+
+                            gtk::Button {
+                                set_label: "Devices",
+                                set_halign: gtk::Align::Center,
+
+                                connect_clicked[sender] => move |_| {
+                                    sender.output(Output::SetView(super::View::Devices));
+                                },
+                            },
+                        }
                     }
                 }
             },
