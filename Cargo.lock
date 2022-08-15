@@ -1281,7 +1281,7 @@ dependencies = [
 [[package]]
 name = "mpris2-zbus"
 version = "0.1.0"
-source = "git+https://github.com/azymohliad/mpris2-zbus#a625f709f1af8e51336eb766f0606f972ea0c1ed"
+source = "git+https://github.com/pop-os/mpris2-zbus#4e853c5a62a8a89ce58af11daddb62427523bc07"
 dependencies = [
  "serde",
  "thiserror",
