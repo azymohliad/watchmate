@@ -1,4 +1,5 @@
 use std::{sync::Arc, path::PathBuf};
+use bluer::gatt::local::ApplicationHandle;
 use gtk::prelude::{BoxExt, GtkWindowExt};
 use relm4::{
     adw, gtk, Component, ComponentController, ComponentParts, ComponentSender, Controller, RelmApp
@@ -24,6 +25,11 @@ enum Input {
     Ignore,
 }
 
+#[derive(Debug)]
+enum CommandOutput {
+    GattServerResult(bluer::Result<ApplicationHandle>),
+}
+
 struct Model {
     // UI state
     active_view: View,
@@ -35,6 +41,7 @@ struct Model {
     fwupd_file_chooser: Controller<OpenDialog>,
     // Other
     infinitime: Option<Arc<bt::InfiniTime>>,
+    gatt_server: Option<ApplicationHandle>,
     toast_overlay: adw::ToastOverlay,
 }
 
@@ -46,7 +53,7 @@ impl Model {
 
 #[relm4::component]
 impl Component for Model {
-    type CommandOutput = ();
+    type CommandOutput = CommandOutput;
     type Init = Arc<bluer::Adapter>;
     type Input = Input;
     type Output = ();
@@ -96,7 +103,7 @@ impl Component for Model {
             });
 
         let devices = devices::Model::builder()
-            .launch(adapter)
+            .launch(adapter.clone())
             .forward(&sender.input, |message| match message {
                 devices::Output::DeviceConnected(device) => Input::DeviceConnected(device),
                 devices::Output::DeviceDisconnected(device) => Input::DeviceDisconnected(device),
@@ -136,10 +143,15 @@ impl Component for Model {
             fwupd_file_chooser,
             // Other
             infinitime: None,
+            gatt_server: None,
             toast_overlay: toast_overlay.clone(),
         };
 
         let widgets = view_output!();
+
+        sender.oneshot_command(async move {
+            CommandOutput::GattServerResult(bt::gatt_server::start(&adapter).await)
+        });
 
         ComponentParts { model, widgets }
     }
@@ -194,6 +206,18 @@ impl Component for Model {
                 self.notify(&message);
             }
             Input::Ignore => {}
+        }
+    }
+
+    fn update_cmd(&mut self, msg: Self::CommandOutput, _sender: ComponentSender<Self>) {
+        match msg {
+            CommandOutput::GattServerResult(Ok(handle)) => {
+                self.gatt_server = Some(handle);
+            }
+            CommandOutput::GattServerResult(Err(error)) => {
+                eprintln!("Failed to start GATT server: {error}");
+                self.notify("Failed to start GATT server");
+            }
         }
     }
 }
