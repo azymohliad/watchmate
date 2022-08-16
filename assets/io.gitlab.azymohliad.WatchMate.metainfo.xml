@@ -45,6 +45,16 @@
     <binary>watchmate</binary>
   </provides>
 
+  <requires>
+    <display_length compare="ge">360</display_length>
+  </requires>
+
+  <recommends>
+    <control>keyboard</control>
+    <control>pointing</control>
+    <control>touch</control>
+  </recommends>
+
   <releases>
     <release version="0.2.0" date="2022-08-14">
       <description>
