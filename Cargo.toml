@@ -21,3 +21,8 @@ zip = "0.6.2"
 version-compare = "0.1.0"
 mpris2-zbus = { git = "https://github.com/pop-os/mpris2-zbus" }
 zbus = "*"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
