@@ -382,22 +382,6 @@ impl Component for Model {
                                             set_spacing: 10,
 
                                             gtk::Label {
-                                                set_label: "Update from file",
-                                                set_halign: gtk::Align::Start,
-                                            },
-
-                                            gtk::Button {
-                                                set_label: "Select File",
-                                                connect_clicked[sender] => move |_| {
-                                                    sender.output(Output::FirmwareUpdateFromFile);
-                                                },
-                                            },
-
-                                            gtk::Separator {
-                                                set_orientation: gtk::Orientation::Horizontal,
-                                            },
-
-                                            gtk::Label {
                                                 set_label: "Update from GitHub release",
                                                 set_halign: gtk::Align::Start,
                                             },
@@ -472,6 +456,22 @@ impl Component for Model {
                                                         },
                                                     }
                                                 }
+                                            },
+
+                                            gtk::Separator {
+                                                set_orientation: gtk::Orientation::Horizontal,
+                                            },
+
+                                            gtk::Label {
+                                                set_label: "Update from file",
+                                                set_halign: gtk::Align::Start,
+                                            },
+
+                                            gtk::Button {
+                                                set_label: "Select File",
+                                                connect_clicked[sender] => move |_| {
+                                                    sender.output(Output::FirmwareUpdateFromFile);
+                                                },
                                             },
                                         },
                                     },
