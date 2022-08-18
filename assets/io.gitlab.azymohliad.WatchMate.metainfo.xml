@@ -5,16 +5,16 @@
   <metadata_license>CC0</metadata_license>
   <project_license>GPL-3.0</project_license>
   <name>WatchMate</name>
-  <summary>InfiniTime companion app</summary>
+  <summary>Sync and integrate with PineTime smart watch</summary>
 
   <description>
-    <p>Sync your PineTime smart watch with your Linux desktop or mobile.</p>
-    <p>Made for InfiniTime firmware. Visually optimized for GNOME mobile and desktop.</p>
+    <p>Companion app for PineTime smart watch running InfiniTime firmware.</p>
+    <p>Visually optimized for GNOME, adaptive for Linux phone and desktop.</p>
     <p>Features:</p>
     <ul>
       <li>Serve current time to the watch</li>
       <li>Read various data form the watch</li>
-      <li>Perform OTA firmware update from DFU files or GitHub releases</li>
+      <li>Perform OTA firmware update</li>
       <li>Automatically check for available firmware updates</li>
       <li>Media player control</li>
     </ul>
@@ -56,13 +56,13 @@
   </recommends>
 
   <releases>
-    <release version="0.2.0" date="2022-08-14">
+    <release version="0.2.0" date="2022-08-18">
       <description>
         <ul>
           <li>Replaced file chooser widget with the dialog</li>
           <li>Removed unwanted toast notifications</li>
-          <li>Improved the UI for firmware releases list</li>
           <li>Implemented media player integration</li>
+          <li>Various UI improvements</li>
         </ul>
       </description>
     </release>
