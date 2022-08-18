@@ -7,7 +7,9 @@ mod firmware_download;
 mod media_player;
 
 fn main() {
-    let runtime = Runtime::new().unwrap();
-    let adapter = Arc::new(runtime.block_on(bt::init_adapter()).unwrap());
-    ui::run(adapter);
+    let runtime = Runtime::new().expect("Failed to initialize tokio runtime");
+    match runtime.block_on(bt::init_adapter()) {
+        Ok(adapter) => ui::run(Arc::new(adapter)),
+        Err(_) => eprintln!("Failed to initialize bluetooth adapter"),
+    }
 }
