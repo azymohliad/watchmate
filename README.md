@@ -28,7 +28,11 @@ paru -S watchmate-git
 
 ### Flathub
 
-TODO
+WatchMate is on [Flathub](https://flathub.org/apps/details/io.gitlab.azymohliad.WatchMate). To install it from command line execute the following command:
+
+```
+flatpak install flathub io.gitlab.azymohliad.WatchMate
+```
 
 ## Build
 
@@ -95,8 +99,8 @@ flatpak-builder --install build-dir flatpak/io.gitlab.azymohliad.WatchMate.yml
 - [ ] Notifications
 - [ ] Settings
 - [ ] About dialog
-- [ ] Packaging and distribution
-    - [ ] Flathub
+- [x] Packaging and distribution
+    - [x] Flathub
     - [x] AUR
 
 
