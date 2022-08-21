@@ -61,6 +61,7 @@ pub struct InfiniTime {
 impl InfiniTime {
     pub async fn new(device: Arc<Device>) -> Result<Self> {
         let mut characteristics = super::CharacteristicsMap::read(&device).await?;
+        dbg!(characteristics);
         Ok(Self {
             device,
             chr_battery_level: characteristics.take(&uuids::CHR_BATTERY_LEVEL)?,
