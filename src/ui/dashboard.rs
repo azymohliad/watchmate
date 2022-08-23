@@ -521,7 +521,7 @@ impl Component for Model {
                     shutdown.register(async move {
                         // Read inital data
                         if let Err(error) = Self::read_info(infinitime_, out.clone()).await {
-                            eprintln!("Failed to read data: {}", error);
+                            log::error!("Failed to read data: {}", error);
                             out.send(CommandOutput::Notification(format!("Failed to read data")));
                         }
                     }).drop_on_shutdown()
@@ -571,7 +571,7 @@ impl Component for Model {
                                         CommandOutput::FirmwareDownloaded(filepath)
                                     }
                                     Err(error) => {
-                                        eprintln!("Failed to download of DFU file: {}", error);
+                                        log::error!("Failed to download of DFU file: {}", error);
                                         CommandOutput::Notification(format!("Failed to fetch firmware releases"))
                                     }
                                 }
@@ -607,11 +607,11 @@ impl Component for Model {
                                 return CommandOutput::MediaPlayers(Some(players));
                             }
                             Err(error) => {
-                                eprintln!("Failed to obtain MPRIS players list: {error}");
+                                log::error!("Failed to obtain MPRIS players list: {error}");
                             }
                         }
                         Err(error) => {
-                            eprintln!("Failed to establish D-Bus session connection: {error}")
+                            log::error!("Failed to establish D-Bus session connection: {error}")
                         }
                     }
                     CommandOutput::MediaPlayers(None)
@@ -626,8 +626,8 @@ impl Component for Model {
                     let infinitime = infinitime.clone();
                     let task_handle = relm4::spawn(async move {
                         match mp::run_session(&player, &infinitime).await {
-                            Ok(()) => eprintln!("Media player control session ended unexpectedly"),
-                            Err(error) => eprintln!("Media player control session error: {error}"),
+                            Ok(()) => log::warn!("Media player control session ended unexpectedly"),
+                            Err(error) => log::error!("Media player control session error: {error}"),
                         }
                         sender.input(Input::MediaPlayerSessionEnded)
                     });
@@ -687,7 +687,7 @@ impl Component for Model {
                         if let Ok(Some(name)) = player.cached_identity() {
                             names.append(&name);
                         } else {
-                            eprintln!("Failed to obtain cached player identity");
+                            log::error!("Failed to obtain cached player identity");
                             return;
                         }
                     }

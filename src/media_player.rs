@@ -88,7 +88,7 @@ pub async fn run_session(media_player: &MediaPlayer, infinitime: &bt::InfiniTime
     pin_mut!(control_event_stream);
 
     // Process events
-    println!("Media Player Control session started for: {}", media_player.identity().await?);
+    log::info!("Media Player Control session started for: {}", media_player.identity().await?);
     loop {
         tokio::select! {
             Some(event) = control_event_stream.next() => {

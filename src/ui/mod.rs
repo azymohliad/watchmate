@@ -170,8 +170,8 @@ impl Component for Model {
                             sender.input(Input::DeviceReady(Arc::new(infinitime)));
                         }
                         Err(error) => {
-                            eprintln!("Failed to connect to InfiniTime: {}", error);
-                            sender.input(Input::Notification(format!("Failed to connect to the watch")));
+                            log::error!("Device is rejected: {}", error);
+                            sender.input(Input::Notification(format!("Device is rejected by the app")));
                         }
                     }
                 });
@@ -215,7 +215,7 @@ impl Component for Model {
                 self.gatt_server = Some(handle);
             }
             CommandOutput::GattServerResult(Err(error)) => {
-                eprintln!("Failed to start GATT server: {error}");
+                log::error!("Failed to start GATT server: {error}");
                 self.notify("Failed to start GATT server");
             }
         }

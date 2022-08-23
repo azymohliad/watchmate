@@ -30,7 +30,7 @@ fn current_time_service() -> Service {
                 read: true,
                 fun: Box::new(move |req| {
                     async move {
-                        println!("{:?}", &req);
+                        log::debug!("{:?}", &req);
                         let now = Local::now();
                         let year = (now.year() as u16).to_le_bytes();
                         Ok(vec![

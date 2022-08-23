@@ -29,7 +29,7 @@ pub async fn scan(adapter: Arc<Adapter>, callback: impl Fn(AdapterEvent)) {
             }
         },
         Err(error) => {
-            eprintln!("Scanning failure: {}", error);
+            log::error!("Scanning failure: {}", error);
         }
     }
 }

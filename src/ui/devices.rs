@@ -176,19 +176,19 @@ impl Component for Model {
                     if let Ok(device) = self.adapter.device(address) {
                         let device = Arc::new(device);
                         sender.output(Output::DeviceConnected(device));
-                        println!("InfiniTime ({}) is already connected", address.to_string());
+                        log::info!("InfiniTime ({}) is already connected", address.to_string());
                     }
                 } else {
                     if devices_guard.is_empty() {
                         // If no suitable devices are known - start scanning automatically
                         sender.input(Input::ScanToggled);
-                        println!("No InfiniTime devices are known. Scanning...");
+                        log::info!("No InfiniTime devices are known. Scanning...");
                     } else if devices_guard.len() == 1 {
                         // If only one suitable device is known - try to connect to it automatically
                         sender.input(Input::DeviceSelected(0));
-                        println!("Trying to connect to InfiniTime ({})", devices_guard[0].address.to_string());
+                        log::info!("Trying to connect to InfiniTime ({})", devices_guard[0].address.to_string());
                     } else {
-                        println!("Multiple InfiniTime devices are known. Waiting for the user to select");
+                        log::info!("Multiple InfiniTime devices are known. Waiting for the user to select");
                     }
                 }
             }
@@ -204,7 +204,7 @@ impl Component for Model {
                         if bt::InfiniTime::check_device(&device).await {
                             match DeviceInfo::new(device).await {
                                 Ok(info) => sender.input(Input::DeviceInfoReady(info)),
-                                Err(error) => eprintln!("Failed to read device info: {}", error),
+                                Err(error) => log::error!("Failed to read device info: {}", error),
                             }
                         }
                     });
@@ -394,7 +394,7 @@ impl FactoryComponent for DeviceInfo {
                         }
                         Err(error) => {
                             sender.input(DeviceInput::StateUpdated(DeviceState::Disconnected));
-                            eprintln!("Connection failure: {}", error);
+                            log::error!("Connection failure: {}", error);
                         }
                     }
                 });
@@ -411,7 +411,7 @@ impl FactoryComponent for DeviceInfo {
                         }
                         Err(error) => {
                             sender.input(DeviceInput::StateUpdated(DeviceState::Connected));
-                            eprintln!("Disconnection failure: {}", error);
+                            log::error!("Disconnection failure: {}", error);
                         }
                     }
                 });

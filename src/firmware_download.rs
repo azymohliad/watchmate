@@ -48,7 +48,7 @@ pub async fn list_releases() -> Result<Vec<ReleaseInfo>> {
         Ok(releases)
     } else {
         let text = response.text().await?;
-        eprintln!("Request failed: {}\n{}", status, text);
+        log::error!("Request failed: {}\n{}", status, text);
         Err(anyhow!("Request failed: {}", status))
     }
 }
@@ -68,7 +68,7 @@ pub async fn download_dfu_content(url: impl IntoUrl) -> Result<Vec<u8>>
         Ok(content.to_vec())
     } else {
         let text = response.text().await?;
-        eprintln!("Request failed: {}\n{}", status, text);
+        log::error!("Request failed: {}\n{}", status, text);
         Err(anyhow!("Request failed: {}", status))
     }
 }
