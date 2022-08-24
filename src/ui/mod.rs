@@ -11,6 +11,7 @@ use crate::bt;
 mod dashboard;
 mod devices;
 mod fwupd;
+mod media_player;
 
 #[derive(Debug)]
 enum Input {

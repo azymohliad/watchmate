@@ -2,12 +2,13 @@ use std::{sync::Arc, path::PathBuf};
 use futures::{pin_mut, StreamExt};
 use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, ListBoxRowExt, WidgetExt};
 use adw::prelude::{PreferencesRowExt, ExpanderRowExt};
-use relm4::{adw, gtk, ComponentParts, ComponentSender, Component, Sender, WidgetPlus, JoinHandle};
+use relm4::{adw, gtk, ComponentController, ComponentParts, ComponentSender, Component, Controller, Sender, WidgetPlus};
 use anyhow::Result;
 use version_compare::Version;
-use mpris2_zbus::media_player::MediaPlayer;
 
-use crate::{bt, firmware_download as fw,  media_player as mp};
+use crate::{bt, firmware_download as fw};
+use super::media_player;
+
 
 #[derive(Debug)]
 pub enum Input {
@@ -17,9 +18,6 @@ pub enum Input {
     FirmwareReleaseNotes(u32),
     FirmwareDownload(u32),
     FirmwareUpdate(u32),
-    MediaPlayersRequest,
-    MediaPlayerSelected(u32),
-    MediaPlayerSessionEnded,
 }
 
 #[derive(Debug)]
@@ -39,7 +37,6 @@ pub enum CommandOutput {
     FirmwareVersion(String),
     FirmwareReleases(Result<Vec<fw::ReleaseInfo>>),
     FirmwareDownloaded(PathBuf),
-    MediaPlayers(Option<Vec<MediaPlayer>>),
     Notification(String),
 }
 
@@ -77,7 +74,6 @@ impl FirmwareReleasesState {
     }
 }
 
-#[derive(Default)]
 pub struct Model {
     // UI state
     // - InfiniTime data
@@ -92,9 +88,8 @@ pub struct Model {
     fw_releases: FirmwareReleasesState,
     fw_tags: Option<gtk::StringList>,
     // - Media Players
-    media_players: Option<Vec<Arc<MediaPlayer>>>,
-    mp_names: Option<gtk::StringList>,
-    mp_task_handle: Option<JoinHandle<()>>,
+    // Components
+    media_player_controller: Controller<media_player::Model>,
     // Other
     infinitime: Option<Arc<bt::InfiniTime>>,
 }
@@ -247,36 +242,7 @@ impl Component for Model {
                                     set_selectable: false,
                                     #[watch]
                                     set_sensitive: model.alias.is_some(),
-
-                                    gtk::Box {
-                                        set_orientation: gtk::Orientation::Horizontal,
-                                        set_margin_all: 12,
-                                        set_spacing: 10,
-
-                                        if model.media_players.is_some() {
-                                            gtk::DropDown {
-                                                set_hexpand: true,
-                                                #[watch]
-                                                set_model: model.mp_names.as_ref(),
-                                                connect_selected_notify[sender] => move |widget| {
-                                                    sender.input(Input::MediaPlayerSelected(widget.selected()));
-                                                }
-                                            }
-                                        } else {
-                                            gtk::Label {
-                                                set_hexpand: true,
-                                                set_label: "No media players detected",
-                                            }
-                                        },
-
-                                        gtk::Button {
-                                            set_tooltip_text: Some("Refresh releases list"),
-                                            set_icon_name: "view-refresh-symbolic",
-                                            connect_clicked[sender] => move |_| {
-                                                sender.input(Input::MediaPlayersRequest);
-                                            },
-                                        }
-                                    },
+                                    set_child: Some(model.media_player_controller.widget()),
                                 },
                             },
 
@@ -505,10 +471,27 @@ impl Component for Model {
     }
 
     fn init(_: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
-        let model = Self::default();
+
+        let media_player_controller = media_player::Model::builder()
+            .launch(())
+            .detach();
+
+        let model = Model {
+            battery_level: None,
+            heart_rate: None,
+            alias: None,
+            address: None,
+            fw_version: None,
+            fw_update_available: false,
+            fw_downloading: false,
+            fw_releases: FirmwareReleasesState::default(),
+            fw_tags: None,
+            media_player_controller,
+            infinitime: None,
+        };
+
         let widgets = view_output!();
         sender.input(Input::FirmwareReleasesRequest);
-        sender.input(Input::MediaPlayersRequest);
         ComponentParts { model, widgets }
     }
 
@@ -538,6 +521,10 @@ impl Component for Model {
                         }
                     }).drop_on_shutdown()
                 });
+                // Propagate to components
+                self.media_player_controller.emit(
+                    media_player::Input::DeviceConnection(Some(infinitime.clone()))
+                );
             }
             Input::Disconnected => {
                 self.battery_level = None;
@@ -546,6 +533,9 @@ impl Component for Model {
                 self.address = None;
                 self.fw_version = None;
                 self.infinitime = None;
+
+                // Propagate to components
+                self.media_player_controller.emit(media_player::Input::DeviceConnection(None));
             }
             Input::FirmwareReleasesRequest => {
                 self.fw_releases = FirmwareReleasesState::Requested;
@@ -595,51 +585,6 @@ impl Component for Model {
                     }
                 }
             }
-            Input::MediaPlayersRequest => {
-                // Stop current media player control sesssion
-                self.mp_task_handle.take().map(|h| h.abort());
-
-                sender.oneshot_command(async move {
-                    // TODO: Save and reuse D-Bus connection
-                    match zbus::Connection::session().await {
-                        Ok(connection) => match mp::get_players(&connection).await {
-                            Ok(players) => if players.len() > 0 {
-                                return CommandOutput::MediaPlayers(Some(players));
-                            }
-                            Err(error) => {
-                                log::error!("Failed to obtain MPRIS players list: {error}");
-                            }
-                        }
-                        Err(error) => {
-                            log::error!("Failed to establish D-Bus session connection: {error}")
-                        }
-                    }
-                    CommandOutput::MediaPlayers(None)
-                })
-            }
-            Input::MediaPlayerSelected(index) => {
-                if let (Some(players), Some(infinitime)) = (&self.media_players, &self.infinitime) {
-                    // Stop current media player control sesssion
-                    self.mp_task_handle.take().map(|h| h.abort());
-                    // Start new media player control sesssion
-                    let player = players[index as usize].clone();
-                    let infinitime = infinitime.clone();
-                    let task_handle = relm4::spawn(async move {
-                        match mp::run_session(&player, &infinitime).await {
-                            Ok(()) => log::warn!("Media player control session ended unexpectedly"),
-                            Err(error) => log::error!("Media player control session error: {error}"),
-                        }
-                        sender.input(Input::MediaPlayerSessionEnded)
-                    });
-                    self.mp_task_handle = Some(task_handle);
-                }
-            }
-            Input::MediaPlayerSessionEnded => {
-                self.media_players = None;
-                self.mp_names = None;
-                self.mp_task_handle = None;
-                sender.input(Input::MediaPlayersRequest);
-            }
         }
     }
 
@@ -679,24 +624,6 @@ impl Component for Model {
             CommandOutput::FirmwareDownloaded(_filepath) => {
                 self.fw_downloading = false;
                 sender.output(Output::Notification(format!("Firmware downloaded")));
-            }
-            CommandOutput::MediaPlayers(players) => {
-                if let Some(players) = players {
-                    let names = gtk::StringList::new(&[]);
-                    for player in &players {
-                        if let Ok(Some(name)) = player.cached_identity() {
-                            names.append(&name);
-                        } else {
-                            log::error!("Failed to obtain cached player identity");
-                            return;
-                        }
-                    }
-                    self.mp_names = Some(names);
-                    self.media_players = Some(players.into_iter().map(Arc::new).collect());
-                } else {
-                    self.mp_names = None;
-                    self.media_players = None;
-                }
             }
             CommandOutput::Notification(text) => {
                 sender.output(Output::Notification(text));
