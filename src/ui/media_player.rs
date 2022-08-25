@@ -9,7 +9,7 @@ use crate::{bt, media_player as mp};
 
 #[derive(Debug)]
 pub enum Input {
-    DeviceConnection(Option<Arc<bt::InfiniTime>>),
+    Device(Option<Arc<bt::InfiniTime>>),
     PlayerControlSessionStart,
     PlayerControlSessionEnded,
     PlayerUpdateSessionStart,
@@ -107,7 +107,7 @@ impl Component for Model {
 
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
         match msg {
-            Input::DeviceConnection(infinitime) => {
+            Input::Device(infinitime) => {
                 self.infinitime = infinitime;
                 if self.infinitime.is_some() {
                     sender.input(Input::PlayerControlSessionStart);

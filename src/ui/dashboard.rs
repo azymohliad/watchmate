@@ -523,7 +523,7 @@ impl Component for Model {
                 });
                 // Propagate to components
                 self.media_player_controller.emit(
-                    media_player::Input::DeviceConnection(Some(infinitime.clone()))
+                    media_player::Input::Device(Some(infinitime.clone()))
                 );
             }
             Input::Disconnected => {
@@ -535,7 +535,7 @@ impl Component for Model {
                 self.infinitime = None;
 
                 // Propagate to components
-                self.media_player_controller.emit(media_player::Input::DeviceConnection(None));
+                self.media_player_controller.emit(media_player::Input::Device(None));
             }
             Input::FirmwareReleasesRequest => {
                 self.fw_releases = FirmwareReleasesState::Requested;
