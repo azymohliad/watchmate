@@ -3,7 +3,7 @@
 ## Unreleased
 
 - Replaced println with a proper logging
-- Implemented immediate media players selection updates
+- Active media players list now updates automatically and immediately
 
 
 ## v0.2.0 - 2022-08-18
