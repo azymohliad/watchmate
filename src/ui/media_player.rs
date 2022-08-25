@@ -1,16 +1,21 @@
 use std::sync::Arc;
-use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, WidgetExt};
+use futures::StreamExt;
+use gtk::prelude::{BoxExt, OrientableExt, WidgetExt};
 use relm4::{gtk, ComponentParts, ComponentSender, Component, WidgetPlus, JoinHandle};
 use mpris2_zbus::media_player::MediaPlayer;
+use zbus::names::OwnedBusName;
 
 use crate::{bt, media_player as mp};
 
 #[derive(Debug)]
 pub enum Input {
     DeviceConnection(Option<Arc<bt::InfiniTime>>),
-    PlayersListRequest,
-    ControlSessionStart,
-    ControlSessionEnded,
+    PlayerControlSessionStart,
+    PlayerControlSessionEnded,
+    PlayerUpdateSessionStart,
+    PlayerUpdateSessionEnded,
+    PlayerAdded(MediaPlayer),
+    PlayerRemoved(OwnedBusName),
 }
 
 #[derive(Debug)]
@@ -19,18 +24,35 @@ pub enum Output {
 
 #[derive(Debug)]
 pub enum CommandOutput {
-    PlayersListResponse(Option<Vec<MediaPlayer>>),
+    None,
+    DBusConnection(zbus::Connection),
 }
 
 #[derive(Default)]
 pub struct Model {
-    player_handles: Option<Vec<Arc<MediaPlayer>>>,
-    player_names: Option<gtk::StringList>,
-    control_task: Option<JoinHandle<()>>,
+    player_handles: Vec<Arc<MediaPlayer>>,
+    player_names: gtk::StringList,
     infinitime: Option<Arc<bt::InfiniTime>>,
+    control_task: Option<JoinHandle<()>>,
+    update_task: Option<JoinHandle<()>>,
+    dbus_session: Option<Arc<zbus::Connection>>,
     dropdown: gtk::DropDown,
 }
 
+
+impl Model {
+    fn stop_control_task(&mut self) {
+        if self.control_task.take().map(|h| h.abort()).is_some() {
+            log::info!("Media Player Control session stopped");
+        }
+    }
+
+    fn stop_update_task(&mut self) {
+        if self.update_task.take().map(|h| h.abort()).is_some() {
+            log::info!("Media Player List Update session stopped");
+        }
+    }
+}
 
 #[relm4::component(pub)]
 impl Component for Model {
@@ -46,29 +68,21 @@ impl Component for Model {
             set_margin_all: 12,
             set_spacing: 10,
 
-            if model.player_handles.is_some() {
-                #[local]
-                dropdown -> gtk::DropDown {
-                    set_hexpand: true,
-                    #[watch]
-                    set_model: model.player_names.as_ref(),
-                    connect_selected_notify[sender] => move |_| {
-                        sender.input(Input::ControlSessionStart);
-                    }
-                }
-            } else {
+            if model.player_handles.is_empty() {
                 gtk::Label {
                     set_hexpand: true,
                     set_label: "No media players detected",
                 }
-            },
-
-            gtk::Button {
-                set_tooltip_text: Some("Refresh releases list"),
-                set_icon_name: "view-refresh-symbolic",
-                connect_clicked[sender] => move |_| {
-                    sender.input(Input::PlayersListRequest);
-                },
+            } else {
+                #[local]
+                dropdown -> gtk::DropDown {
+                    set_hexpand: true,
+                    #[watch]
+                    set_model: Some(&model.player_names),
+                    connect_selected_notify[sender] => move |_| {
+                        sender.input(Input::PlayerControlSessionStart);
+                    }
+                }
             }
         }
     }
@@ -77,7 +91,17 @@ impl Component for Model {
         let dropdown = gtk::DropDown::default();
         let model = Self { dropdown: dropdown.clone(), ..Default::default() };
         let widgets = view_output!();
-        sender.input(Input::PlayersListRequest);
+        sender.oneshot_command(async move {
+            match zbus::Connection::session().await {
+                Ok(connection) => {
+                    CommandOutput::DBusConnection(connection)
+                }
+                Err(error) => {
+                    log::error!("Failed to establish D-Bus session connection: {error}");
+                    CommandOutput::None
+                }
+            }
+        });
         ComponentParts { model, widgets }
     }
 
@@ -86,79 +110,95 @@ impl Component for Model {
             Input::DeviceConnection(infinitime) => {
                 self.infinitime = infinitime;
                 if self.infinitime.is_some() {
-                    sender.input(Input::ControlSessionStart);
+                    sender.input(Input::PlayerControlSessionStart);
                 }
             }
-            Input::PlayersListRequest => {
-                // Stop current media player control sesssion
-                self.control_task.take().map(|h| h.abort());
-
-                sender.oneshot_command(async move {
-                    // TODO: Save and reuse D-Bus connection
-                    match zbus::Connection::session().await {
-                        Ok(connection) => match mp::get_players(&connection).await {
-                            Ok(players) => if players.len() > 0 {
-                                return CommandOutput::PlayersListResponse(Some(players));
-                            }
-                            Err(error) => {
-                                log::error!("Failed to obtain MPRIS players list: {error}");
-                            }
-                        }
-                        Err(error) => {
-                            log::error!("Failed to establish D-Bus session connection: {error}")
-                        }
-                    }
-                    CommandOutput::PlayersListResponse(None)
-                })
-            }
-            Input::ControlSessionStart => {
-                if let (Some(players), Some(infinitime)) = (&self.player_handles, &self.infinitime) {
-                    let index = self.dropdown.selected();
-                    if index != gtk::INVALID_LIST_POSITION {
+            Input::PlayerControlSessionStart => {
+                if let Some(infinitime) = self.infinitime.clone() {
+                    let index = self.dropdown.selected() as usize;
+                    if index < self.player_handles.len() {
                         // Stop current media player control sesssion
-                        self.control_task.take().map(|h| h.abort());
+                        self.stop_control_task();
                         // Start new media player control sesssion
-                        let player = players[index as usize].clone();
-                        let infinitime = infinitime.clone();
+                        let player = self.player_handles[index].clone();
                         let task_handle = relm4::spawn(async move {
-                            match mp::run_session(&player, &infinitime).await {
+                            match mp::run_control_session(&player, &infinitime).await {
                                 Ok(()) => log::warn!("Media player control session ended unexpectedly"),
                                 Err(error) => log::error!("Media player control session error: {error}"),
                             }
-                            sender.input(Input::ControlSessionEnded)
+                            sender.input(Input::PlayerControlSessionEnded);
                         });
                         self.control_task = Some(task_handle);
                     }
                 }
             }
-            Input::ControlSessionEnded => {
-                self.player_handles = None;
-                self.player_names = None;
+            Input::PlayerControlSessionEnded => {
+                self.player_handles.clear();
+                self.player_names = gtk::StringList::new(&[]);
                 self.control_task = None;
-                sender.input(Input::PlayersListRequest);
+            }
+            Input::PlayerUpdateSessionStart => {
+                if let Some(dbus_session) = self.dbus_session.clone() {
+                    self.stop_update_task();
+                    let task_handle = relm4::spawn(async move {
+                        match mp::get_players_update_stream(&dbus_session).await {
+                            Ok(stream) => stream.for_each(|event| {
+                                let dbus_session_ = dbus_session.clone();
+                                let sender_ = sender.clone();
+                                async move {
+                                    match event {
+                                        mp::PlayersListEvent::PlayerAdded(bus) => {
+                                            if let Ok(player) = MediaPlayer::new(&dbus_session_, bus).await {
+                                                let _ = player.identity().await; // Cache player name
+                                                sender_.input(Input::PlayerAdded(player));
+                                            }
+                                        }
+                                        mp::PlayersListEvent::PlayerRemoved(bus) => {
+                                            sender_.input(Input::PlayerRemoved(bus));
+                                        }
+                                    }
+                                }
+                            }).await,
+                            Err(error) => log::error!("Failed to start player list update session: {error}"),
+                        }
+                        sender.input(Input::PlayerUpdateSessionEnded);
+                    });
+                    self.update_task = Some(task_handle);
+                }
+            }
+            Input::PlayerUpdateSessionEnded => {
+                log::info!("Restarting player list update session");
+                sender.input(Input::PlayerUpdateSessionStart);
+            }
+            Input::PlayerAdded(player) => {
+                if let Ok(Some(name)) = player.cached_identity() {
+                    self.player_names.append(&name);
+                    self.player_handles.push(Arc::new(player));
+                    log::info!("Player started: {name}");
+                } else {
+                    log::error!("Failed to obtain cached player identity");
+                }
+            }
+            Input::PlayerRemoved(bus) => {
+                if let Some(index) = self.player_handles.iter().position(|p| p.destination() == &bus) {
+                    let name = self.player_names.string(index as u32).unwrap();
+                    self.player_names.remove(index as u32);
+                    self.player_handles.remove(index);
+                    log::info!("Player stopped: {name}");
+                    if self.player_handles.is_empty() {
+                        self.stop_control_task();
+                    }
+                }
             }
         }
     }
 
-    fn update_cmd(&mut self, msg: Self::CommandOutput, _sender: ComponentSender<Self>) {
+    fn update_cmd(&mut self, msg: Self::CommandOutput, sender: ComponentSender<Self>) {
         match msg {
-            CommandOutput::PlayersListResponse(players) => {
-                if let Some(players) = players {
-                    let names = gtk::StringList::new(&[]);
-                    for player in &players {
-                        if let Ok(Some(name)) = player.cached_identity() {
-                            names.append(&name);
-                        } else {
-                            log::error!("Failed to obtain cached player identity");
-                            return;
-                        }
-                    }
-                    self.player_names = Some(names);
-                    self.player_handles = Some(players.into_iter().map(Arc::new).collect());
-                } else {
-                    self.player_names = None;
-                    self.player_handles = None;
-                }
+            CommandOutput::None => {}
+            CommandOutput::DBusConnection(connection) => {
+                self.dbus_session = Some(Arc::new(connection));
+                sender.input(Input::PlayerUpdateSessionStart);
             }
         }
     }
