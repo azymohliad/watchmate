@@ -1,20 +1,49 @@
 use crate::bt;
 use std::str::FromStr;
-use futures::{pin_mut, StreamExt};
+use futures::{pin_mut, stream, Stream, StreamExt};
 use anyhow::Result;
-use zbus::Connection;
+use zbus::{fdo::DBusProxy, Connection, names::OwnedBusName};
 use mpris2_zbus::{media_player::MediaPlayer, player::{Player, PlaybackStatus, LoopStatus}, metadata::Metadata};
 
 const VOLUME_STEP: f64 = 0.1;
 
+#[derive(Debug)]
+pub enum PlayersListEvent {
+    PlayerAdded(OwnedBusName),
+    PlayerRemoved(OwnedBusName),
+}
 
-pub async fn get_players(connection: &Connection) -> Result<Vec<MediaPlayer>> {
-    let players = MediaPlayer::new_all(connection).await?;
-    // Cache identities
-    for player in &players {
-        player.identity().await?;
-    }
-    Ok(players)
+pub async fn get_players_update_stream(connection: &Connection) -> Result<impl Stream<Item = PlayersListEvent>> {
+    let known_players = MediaPlayer::available_players(&connection).await?;
+    let known_players_events = stream::iter(known_players)
+        .map(PlayersListEvent::PlayerAdded);
+    
+    let new_events = DBusProxy::new(connection).await?
+        .receive_name_owner_changed().await?
+        // .filter_map(|msg| future::ready(msg.args().ok()))
+        // .filter(|args| future::ready(args.name.starts_with("org.mpris.MediaPlayer2")))
+        // .filter_map(|args| future::ready(
+        //     match (args.old_owner.as_ref(), args.new_owner.as_ref()) {
+        //         (Some(_), None) => Some(PlayersListEvent::PlayerRemoved(args.name.into())),
+        //         (None, Some(_)) => Some(PlayersListEvent::PlayerAdded(args.name.into())),
+        //         _ => None,
+        //     })
+        // );
+        .filter_map(|msg| async move {
+            msg.args().ok().and_then(|args| {
+                if args.name.starts_with("org.mpris.MediaPlayer2") {
+                    match (args.old_owner.as_ref(), args.new_owner.as_ref()) {
+                        (Some(_), None) => Some(PlayersListEvent::PlayerRemoved(args.name.into())),
+                        (None, Some(_)) => Some(PlayersListEvent::PlayerAdded(args.name.into())),
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            })
+        });
+    
+    Ok(known_players_events.chain(new_events))    
 }
 
 pub async fn update_track_metadata(metadata: &Metadata, infinitime: &bt::InfiniTime) -> Result<()> {
@@ -65,17 +94,8 @@ pub async fn update_player_info(player: &Player, infinitime: &bt::InfiniTime) ->
     Ok(())
 }
 
-pub async fn run_session(media_player: &MediaPlayer, infinitime: &bt::InfiniTime) -> Result<()> {
+pub async fn run_control_session(media_player: &MediaPlayer, infinitime: &bt::InfiniTime) -> Result<()> {
     let player = media_player.player().await?;
-
-    // Query player capabilities
-    let can_go_next = player.can_go_next().await?;
-    let can_go_previous = player.can_go_previous().await?;
-    let can_pause = player.can_pause().await?;
-    let can_play = player.can_play().await?;
-
-    // Send initial player info to the watch
-    update_player_info(&player, infinitime).await?;
 
     // Obtain even streams
     let mut playback_status_stream = player.receive_playback_status_changed().await;
@@ -84,8 +104,21 @@ pub async fn run_session(media_player: &MediaPlayer, infinitime: &bt::InfiniTime
     let mut position_stream = player.receive_position_changed().await;
     let mut rate_stream = player.receive_rate_changed().await;
     let mut metadata_stream = player.receive_metadata_changed().await;
+    let mut can_go_next_stream = player.receive_can_go_next_changed().await;
+    let mut can_go_previous_stream = player.receive_can_go_previous_changed().await;
+    let mut can_pause_stream = player.receive_can_pause_changed().await;
+    let mut can_play_stream = player.receive_can_play_changed().await;
     let control_event_stream = infinitime.get_media_player_events_stream().await?;
     pin_mut!(control_event_stream);
+
+    // Query player capabilities
+    let mut can_go_next = player.can_go_next().await?;
+    let mut can_go_previous = player.can_go_previous().await?;
+    let mut can_pause = player.can_pause().await?;
+    let mut can_play = player.can_play().await?;
+
+    // Send initial player info to the watch
+    update_player_info(&player, infinitime).await?;
 
     // Process events
     log::info!("Media Player Control session started for: {}", media_player.identity().await?);
@@ -141,6 +174,18 @@ pub async fn run_session(media_player: &MediaPlayer, infinitime: &bt::InfiniTime
             Some(property) = metadata_stream.next() => {
                 let metadata = Metadata::from(property.get().await?);
                 update_track_metadata(&metadata, infinitime).await?;
+            }
+            Some(property) = can_go_next_stream.next() => {
+                can_go_next = property.get().await?;
+            }
+            Some(property) = can_go_previous_stream.next() => {
+                can_go_previous = property.get().await?;
+            }
+            Some(property) = can_pause_stream.next() => {
+                can_pause = property.get().await?;
+            }
+            Some(property) = can_play_stream.next() => {
+                can_play = property.get().await?;
             }
             else => break,
         }
