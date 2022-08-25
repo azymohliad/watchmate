@@ -9,6 +9,7 @@ finish-args:
   - --allow=bluetooth
   - --share=ipc
   - --share=network
+  - --device=dri
   - --socket=wayland
   - --socket=fallback-x11
   - --system-talk-name=org.bluez
