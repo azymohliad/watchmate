@@ -1,3 +1,4 @@
+use super::uuids;
 use futures::FutureExt;
 use bluer::{
     gatt::local::{
@@ -6,9 +7,8 @@ use bluer::{
     Adapter, Result,
 };
 use chrono::{Local, Datelike, Timelike};
-use super::uuids;
 
-pub async fn start(adapter: &Adapter) -> Result<ApplicationHandle> {
+pub async fn start_gatt_services(adapter: &Adapter) -> Result<ApplicationHandle> {
     let app = Application {
         services: vec![
             current_time_service()

@@ -1,3 +1,4 @@
+use crate::inft::bt;
 use std::sync::Arc;
 use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, ListBoxRowExt, WidgetExt};
 use relm4::{
@@ -5,7 +6,6 @@ use relm4::{
     ComponentParts, ComponentSender, WidgetPlus, Component, JoinHandle
 };
 
-use crate::bt;
 
 
 #[derive(Debug)]

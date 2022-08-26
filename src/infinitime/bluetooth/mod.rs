@@ -3,11 +3,12 @@ use futures::{pin_mut, StreamExt};
 use bluer::{Adapter, AdapterEvent, Device, Result, Session, gatt::remote::Characteristic};
 use uuid::Uuid;
 
-mod infinitime;
+mod device;
 mod uuids;
-pub mod gatt_server;
+mod services;
 
-pub use infinitime::{InfiniTime, FwUpdNotification, MediaPlayerEvent};
+pub use device::{InfiniTime, FwUpdNotification, MediaPlayerEvent};
+pub use services::start_gatt_services;
 
 pub async fn init_adapter() -> Result<Adapter> {
     let session = Session::new().await?;

@@ -1,9 +1,8 @@
+use super::uuids;
 use std::{sync::Arc, io::{Cursor, Read}};
 use futures::{pin_mut, Stream, StreamExt};
-use bluer::{gatt::remote::Characteristic, Adapter, Device};
 use anyhow::{anyhow, ensure, Result};
-
-use super::uuids;
+use bluer::{gatt::remote::Characteristic, Adapter, Device};
 
 #[derive(Debug)]
 pub enum FwUpdNotification {
@@ -81,7 +80,7 @@ impl InfiniTime {
         })
     }
 
-    pub fn device(&self) -> &bluer::Device {
+    pub fn device(&self) -> &Device {
         &self.device
     }
 

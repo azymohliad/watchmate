@@ -1,8 +1,8 @@
+use crate::inft::{bt, gh};
 use std::{sync::Arc, path::PathBuf};
 use tokio::{fs::File, io::AsyncReadExt};
 use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, WidgetExt};
 use relm4::{adw, gtk, ComponentParts, ComponentSender, Component, WidgetPlus, JoinHandle};
-use crate::{bt, firmware_download as fw};
 
 #[derive(Debug)]
 pub enum Input {
@@ -56,7 +56,7 @@ pub struct Model {
 impl Model {
     fn download_dfu(url: Arc<String>, sender: ComponentSender<Self>) -> JoinHandle<()> {
         relm4::spawn(async move {
-            match fw::download_dfu_content(url.as_str()).await {
+            match gh::download_dfu_content(url.as_str()).await {
                 Ok(content) => sender.input(Input::FirmwareContentReady(content)),
                 Err(_) => sender.input(Input::FirmwareUpdateFailed("Failed to download DFU file")),
             }

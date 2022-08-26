@@ -1,10 +1,10 @@
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 
-mod bt;
 mod ui;
-mod firmware_download;
-mod media_player;
+mod infinitime;
+
+use infinitime as inft;
 
 fn main() {
     env_logger::Builder::new()
@@ -14,7 +14,7 @@ fn main() {
         .init();
 
     let runtime = Runtime::new().expect("Failed to initialize tokio runtime");
-    match runtime.block_on(bt::init_adapter()) {
+    match runtime.block_on(inft::bt::init_adapter()) {
         Ok(adapter) => ui::run(Arc::new(adapter)),
         Err(_) => log::error!("Failed to initialize bluetooth adapter"),
     }

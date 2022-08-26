@@ -1,3 +1,4 @@
+use crate::inft::{bt, fdo::mpris};
 use std::sync::Arc;
 use futures::StreamExt;
 use gtk::prelude::{BoxExt, OrientableExt, WidgetExt};
@@ -5,7 +6,6 @@ use relm4::{gtk, ComponentParts, ComponentSender, Component, WidgetPlus, JoinHan
 use mpris2_zbus::media_player::MediaPlayer;
 use zbus::names::OwnedBusName;
 
-use crate::{bt, media_player as mp};
 
 #[derive(Debug)]
 pub enum Input {
@@ -122,7 +122,7 @@ impl Component for Model {
                         // Start new media player control sesssion
                         let player = self.player_handles[index].clone();
                         let task_handle = relm4::spawn(async move {
-                            match mp::run_control_session(&player, &infinitime).await {
+                            match mpris::run_control_session(&player, &infinitime).await {
                                 Ok(()) => log::warn!("Media player control session ended unexpectedly"),
                                 Err(error) => log::error!("Media player control session error: {error}"),
                             }
@@ -141,19 +141,19 @@ impl Component for Model {
                 if let Some(dbus_session) = self.dbus_session.clone() {
                     self.stop_update_task();
                     let task_handle = relm4::spawn(async move {
-                        match mp::get_players_update_stream(&dbus_session).await {
+                        match mpris::get_players_update_stream(&dbus_session).await {
                             Ok(stream) => stream.for_each(|event| {
                                 let dbus_session_ = dbus_session.clone();
                                 let sender_ = sender.clone();
                                 async move {
                                     match event {
-                                        mp::PlayersListEvent::PlayerAdded(bus) => {
+                                        mpris::PlayersListEvent::PlayerAdded(bus) => {
                                             if let Ok(player) = MediaPlayer::new(&dbus_session_, bus).await {
                                                 let _ = player.identity().await; // Cache player name
                                                 sender_.input(Input::PlayerAdded(player));
                                             }
                                         }
-                                        mp::PlayersListEvent::PlayerRemoved(bus) => {
+                                        mpris::PlayersListEvent::PlayerRemoved(bus) => {
                                             sender_.input(Input::PlayerRemoved(bus));
                                         }
                                     }

@@ -1,3 +1,5 @@
+use crate::inft::{bt, gh};
+use super::media_player;
 use std::{sync::Arc, path::PathBuf};
 use futures::{pin_mut, StreamExt};
 use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, ListBoxRowExt, WidgetExt};
@@ -6,8 +8,6 @@ use relm4::{adw, gtk, ComponentController, ComponentParts, ComponentSender, Comp
 use anyhow::Result;
 use version_compare::Version;
 
-use crate::{bt, firmware_download as fw};
-use super::media_player;
 
 
 #[derive(Debug)]
@@ -35,7 +35,7 @@ pub enum CommandOutput {
     Alias(String),
     Address(String),
     FirmwareVersion(String),
-    FirmwareReleases(Result<Vec<fw::ReleaseInfo>>),
+    FirmwareReleases(Result<Vec<gh::ReleaseInfo>>),
     FirmwareDownloaded(PathBuf),
     Notification(String),
 }
@@ -45,19 +45,19 @@ pub enum FirmwareReleasesState {
     #[default]
     None,
     Requested,
-    Some(Vec<fw::ReleaseInfo>),
+    Some(Vec<gh::ReleaseInfo>),
     Error,
 }
 
 impl FirmwareReleasesState {
-    pub fn as_option(&self) -> Option<&Vec<fw::ReleaseInfo>> {
+    pub fn as_option(&self) -> Option<&Vec<gh::ReleaseInfo>> {
         match &self {
             FirmwareReleasesState::Some(r) => Some(r),
             _ => None,
         }
     }
 
-    pub fn is_none(&self) -> bool {
+    pub fn _is_none(&self) -> bool {
         self == &FirmwareReleasesState::None
     }
 
@@ -69,7 +69,7 @@ impl FirmwareReleasesState {
         self.as_option().is_some()
     }
 
-    pub fn is_error(&self) -> bool {
+    pub fn _is_error(&self) -> bool {
         self == &FirmwareReleasesState::Error
     }
 }
@@ -540,7 +540,7 @@ impl Component for Model {
             Input::FirmwareReleasesRequest => {
                 self.fw_releases = FirmwareReleasesState::Requested;
                 sender.oneshot_command(async move {
-                    CommandOutput::FirmwareReleases(fw::list_releases().await)
+                    CommandOutput::FirmwareReleases(gh::list_releases().await)
                 });
             }
             Input::FirmwareReleaseNotes(index) => {
@@ -554,9 +554,9 @@ impl Component for Model {
                         Some(asset) => {
                             self.fw_downloading = true;
                             let url = asset.url.clone();
-                            let filepath = fw::get_download_filepath(&asset.name).unwrap();
+                            let filepath = gh::get_download_filepath(&asset.name).unwrap();
                             sender.oneshot_command(async move {
-                                match fw::download_dfu_file(url.as_str(), filepath.as_path()).await {
+                                match gh::download_dfu_file(url.as_str(), filepath.as_path()).await {
                                     Ok(()) => {
                                         CommandOutput::FirmwareDownloaded(filepath)
                                     }

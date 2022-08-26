@@ -6,7 +6,7 @@ use relm4::{
 };
 use relm4_components::open_dialog::*;
 
-use crate::bt;
+use crate::inft::bt;
 
 mod dashboard;
 mod devices;
@@ -28,7 +28,7 @@ enum Input {
 
 #[derive(Debug)]
 enum CommandOutput {
-    GattServerResult(bluer::Result<ApplicationHandle>),
+    GattServicesResult(bluer::Result<ApplicationHandle>),
 }
 
 struct Model {
@@ -151,7 +151,7 @@ impl Component for Model {
         let widgets = view_output!();
 
         sender.oneshot_command(async move {
-            CommandOutput::GattServerResult(bt::gatt_server::start(&adapter).await)
+            CommandOutput::GattServicesResult(bt::start_gatt_services(&adapter).await)
         });
 
         ComponentParts { model, widgets }
@@ -212,10 +212,10 @@ impl Component for Model {
 
     fn update_cmd(&mut self, msg: Self::CommandOutput, _sender: ComponentSender<Self>) {
         match msg {
-            CommandOutput::GattServerResult(Ok(handle)) => {
+            CommandOutput::GattServicesResult(Ok(handle)) => {
                 self.gatt_server = Some(handle);
             }
-            CommandOutput::GattServerResult(Err(error)) => {
+            CommandOutput::GattServicesResult(Err(error)) => {
                 log::error!("Failed to start GATT server: {error}");
                 self.notify("Failed to start GATT server");
             }
