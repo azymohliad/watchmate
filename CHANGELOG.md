@@ -4,6 +4,8 @@
 
 - Replaced println with a proper logging
 - Active media players list now updates automatically and immediately
+- Added file save dialog for firmware download
+- Removed xdg-download filesystem permission for Flatpak
 
 
 ## v0.2.0 - 2022-08-18
