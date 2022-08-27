@@ -213,6 +213,7 @@ impl Component for Model {
             Input::FirmwareUpdateFromFile(filepath) => {
                 let filepath = Arc::new(filepath);
                 self.status_message = format!("Reading firmware file");
+                self.progress = 0.0;
                 self.state = State::InProgress;
                 self.dfu_source = Some(Source::File(filepath.clone()));
                 self.task_handle = Some(Self::read_dfu_file(filepath.clone(), sender));
@@ -220,6 +221,7 @@ impl Component for Model {
             Input::FirmwareUpdateFromUrl(url) => {
                 let url = Arc::new(url);
                 self.status_message = format!("Downloading firmware");
+                self.progress = 0.0;
                 self.state = State::InProgress;
                 self.dfu_source = Some(Source::Url(url.clone()));
                 self.task_handle = Some(Self::download_dfu(url.clone(), sender));

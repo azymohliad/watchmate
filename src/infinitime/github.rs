@@ -73,21 +73,25 @@ pub async fn download_dfu_content(url: impl IntoUrl) -> Result<Vec<u8>>
     }
 }
 
-pub async fn download_dfu_file(url: impl IntoUrl, filepath: impl AsRef<Path>) -> Result<()> {
-    let content = download_dfu_content(url).await?;
+pub async fn save_dfu_file(content: &[u8], filepath: impl AsRef<Path>) -> Result<()> {
     let mut file = File::create(&filepath).await?;
     file.write_all(&content).await?;
     Ok(())
 }
 
+pub async fn _download_dfu_file(url: impl IntoUrl, filepath: impl AsRef<Path>) -> Result<()> {
+    let content = download_dfu_content(url).await?;
+    save_dfu_file(&content, filepath).await?;
+    Ok(())
+}
 
-pub fn get_download_dir() -> Result<PathBuf> {
+pub fn _get_download_dir() -> Result<PathBuf> {
     match env::var("XDG_DOWNLOAD_DIR") {
         Ok(value) => Ok(PathBuf::from(value)),
         Err(_) => Ok(Path::new(&env::var("HOME")?).join("Downloads")),
     }
 }
 
-pub fn get_download_filepath(filename: impl AsRef<Path>) -> Result<PathBuf> {
-    Ok(get_download_dir()?.join(&filename))
+pub fn _get_download_filepath(filename: impl AsRef<Path>) -> Result<PathBuf> {
+    Ok(_get_download_dir()?.join(&filename))
 }

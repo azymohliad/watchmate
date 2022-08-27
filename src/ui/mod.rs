@@ -1,16 +1,15 @@
+use crate::inft::bt;
 use std::{sync::Arc, path::PathBuf};
 use bluer::gatt::local::ApplicationHandle;
 use gtk::prelude::{BoxExt, GtkWindowExt};
 use relm4::{
     adw, gtk, Component, ComponentController, ComponentParts, ComponentSender, Controller, RelmApp
 };
-use relm4_components::open_dialog::*;
-
-use crate::inft::bt;
 
 mod dashboard;
 mod devices;
-mod fwupd;
+mod firmware_update;
+mod firmware_panel;
 mod media_player;
 
 #[derive(Debug)]
@@ -19,11 +18,9 @@ enum Input {
     DeviceConnected(Arc<bluer::Device>),
     DeviceDisconnected(Arc<bluer::Device>),
     DeviceReady(Arc<bt::InfiniTime>),
-    FirmwareUpdateFileChooser,
     FirmwareUpdateFromFile(PathBuf),
     FirmwareUpdateFromUrl(String),
-    Notification(String),
-    Ignore,
+    Notification(&'static str),
 }
 
 #[derive(Debug)]
@@ -38,8 +35,7 @@ struct Model {
     // Components
     dashboard: Controller<dashboard::Model>,
     devices: Controller<devices::Model>,
-    fwupd: Controller<fwupd::Model>,
-    fwupd_file_chooser: Controller<OpenDialog>,
+    fwupd: Controller<firmware_update::Model>,
     // Other
     infinitime: Option<Arc<bt::InfiniTime>>,
     gatt_server: Option<ApplicationHandle>,
@@ -95,9 +91,9 @@ impl Component for Model {
     fn init(adapter: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
         // Components
         let dashboard = dashboard::Model::builder()
-            .launch(())
+            .launch(root.clone())
             .forward(&sender.input, |message| match message {
-                dashboard::Output::FirmwareUpdateFromFile => Input::FirmwareUpdateFileChooser,
+                dashboard::Output::FirmwareUpdateFromFile(file) => Input::FirmwareUpdateFromFile(file),
                 dashboard::Output::FirmwareUpdateFromUrl(url) => Input::FirmwareUpdateFromUrl(url),
                 dashboard::Output::Notification(text) => Input::Notification(text),
                 dashboard::Output::SetView(view) => Input::SetView(view),
@@ -111,24 +107,10 @@ impl Component for Model {
                 devices::Output::SetView(view) => Input::SetView(view),
             });
 
-        let fwupd = fwupd::Model::builder()
+        let fwupd = firmware_update::Model::builder()
             .launch(())
             .forward(&sender.input, |message| match message {
-                fwupd::Output::SetView(view) => Input::SetView(view),
-            });
-
-        let file_filter = gtk::FileFilter::new();
-        file_filter.add_pattern("*.zip");
-        let fwupd_file_chooser = OpenDialog::builder()
-            .transient_for_native(root)
-            .launch(OpenDialogSettings {
-                create_folders: false,
-                filters: vec![file_filter],
-                ..Default::default()
-            })
-            .forward(&sender.input, |message| match message {
-                OpenDialogResponse::Accept(path) => Input::FirmwareUpdateFromFile(path),
-                OpenDialogResponse::Cancel => Input::Ignore,
+                firmware_update::Output::SetView(view) => Input::SetView(view),
             });
 
         let toast_overlay = adw::ToastOverlay::new();
@@ -141,7 +123,6 @@ impl Component for Model {
             dashboard,
             devices,
             fwupd,
-            fwupd_file_chooser,
             // Other
             infinitime: None,
             gatt_server: None,
@@ -172,7 +153,7 @@ impl Component for Model {
                         }
                         Err(error) => {
                             log::error!("Device is rejected: {}", error);
-                            sender.input(Input::Notification(format!("Device is rejected by the app")));
+                            sender.input(Input::Notification("Device is rejected by the app"));
                         }
                     }
                 });
@@ -184,29 +165,25 @@ impl Component for Model {
                     self.infinitime = None;
                 }
                 self.dashboard.emit(dashboard::Input::Disconnected);
-                self.fwupd.emit(fwupd::Input::Disconnected);
+                self.fwupd.emit(firmware_update::Input::Disconnected);
             }
             Input::DeviceReady(infinitime) => {
                 self.infinitime = Some(infinitime.clone());
                 self.active_view = View::Dashboard;
                 self.dashboard.emit(dashboard::Input::Connected(infinitime.clone()));
-                self.fwupd.emit(fwupd::Input::Connected(infinitime));
-            }
-            Input::FirmwareUpdateFileChooser => {
-                self.fwupd_file_chooser.emit(OpenDialogMsg::Open);
+                self.fwupd.emit(firmware_update::Input::Connected(infinitime));
             }
             Input::FirmwareUpdateFromFile(filepath) => {
-                self.fwupd.emit(fwupd::Input::FirmwareUpdateFromFile(filepath));
+                self.fwupd.emit(firmware_update::Input::FirmwareUpdateFromFile(filepath));
                 sender.input(Input::SetView(View::FirmwareUpdate));
             }
             Input::FirmwareUpdateFromUrl(url) => {
-                self.fwupd.emit(fwupd::Input::FirmwareUpdateFromUrl(url));
+                self.fwupd.emit(firmware_update::Input::FirmwareUpdateFromUrl(url));
                 sender.input(Input::SetView(View::FirmwareUpdate));
             }
             Input::Notification(message) => {
-                self.notify(&message);
+                self.notify(message);
             }
-            Input::Ignore => {}
         }
     }
 

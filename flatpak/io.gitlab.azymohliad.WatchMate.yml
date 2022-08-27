@@ -14,7 +14,6 @@ finish-args:
   - --socket=fallback-x11
   - --system-talk-name=org.bluez
   - --talk-name=org.mpris.MediaPlayer2.*
-  - --filesystem=xdg-download
 modules:
   - name: watchmate
     buildsystem: simple
