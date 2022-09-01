@@ -1,11 +1,13 @@
 # Changelog
 
-## Unreleased
+## v0.3.0 - 2022-09-01
 
 - Replaced println with a proper logging
-- Active media players list now updates automatically and immediately
+- Media players list now updates automatically and immediately
 - Added file save dialog for firmware download
 - Removed xdg-download filesystem permission for Flatpak
+- Enabled GPU acceleration for Flatpak
+- Fixed crash on startup if bluetooth adapter is disabled or missing
 
 
 ## v0.2.0 - 2022-08-18

@@ -56,6 +56,18 @@
   </recommends>
 
   <releases>
+    <release version="0.3.0" date="2022-09-01">
+      <description>
+        <ul>
+          <li>Replaced println with a proper logging</li>
+          <li>Media players list now updates automatically and immediately</li>
+          <li>Added file save dialog for firmware download</li>
+          <li>Removed xdg-download filesystem permission for Flatpak</li>
+          <li>Enabled GPU acceleration for Flatpak</li>
+          <li>Fixed crash on startup if bluetooth adapter is disabled or missing</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.2.0" date="2022-08-18">
       <description>
         <ul>
