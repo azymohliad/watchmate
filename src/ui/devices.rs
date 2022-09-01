@@ -1,5 +1,6 @@
 use crate::inft::bt;
 use std::sync::Arc;
+use bluer::gatt::local::ApplicationHandle;
 use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, ListBoxRowExt, WidgetExt};
 use relm4::{
     adw, gtk, factory::{FactoryComponent, FactoryComponentSender, FactoryVecDeque, DynamicIndex},
@@ -10,8 +11,8 @@ use relm4::{
 
 #[derive(Debug)]
 pub enum Input {
+    AdapterInit,
     ScanToggled,
-    KnownDevicesReady(Vec<DeviceInfo>),
     DeviceInfoReady(DeviceInfo),
     DeviceAdded(bluer::Address),
     DeviceRemoved(bluer::Address),
@@ -24,23 +25,28 @@ pub enum Input {
 pub enum Output {
     DeviceConnected(Arc<bluer::Device>),
     DeviceDisconnected(Arc<bluer::Device>),
+    Notification(&'static str),
     SetView(super::View),
 }
 
 #[derive(Debug)]
 pub enum CommandOutput {
+    AdapterInitResult(bluer::Result<bluer::Adapter>),
+    GattServicesResult(bluer::Result<ApplicationHandle>),
+    KnownDevices(Vec<DeviceInfo>),
 }
 
 pub struct Model {
     devices: FactoryVecDeque<DeviceInfo>,
-    adapter: Arc<bluer::Adapter>,
+    adapter: Option<Arc<bluer::Adapter>>,
+    gatt_server: Option<ApplicationHandle>,
     scan_handle: Option<JoinHandle<()>>,
 }
 
 #[relm4::component(pub)]
 impl Component for Model {
     type CommandOutput = CommandOutput;
-    type Init = Arc<bluer::Adapter>;
+    type Init = ();
     type Input = Input;
     type Output = Output;
     type Widgets = Widgets;
@@ -68,127 +74,114 @@ impl Component for Model {
             adw::Clamp {
                 set_maximum_size: 400,
                 set_vexpand: true,
+                
+                if model.adapter.is_some() {
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_margin_all: 12,
+                        set_spacing: 10,
 
-                gtk::Box {
-                    set_orientation: gtk::Orientation::Vertical,
-                    set_margin_all: 12,
-                    set_spacing: 10,
+                        gtk::ScrolledWindow {
+                            set_hscrollbar_policy: gtk::PolicyType::Never,
+                            set_vexpand: true,
 
-                    gtk::ScrolledWindow {
-                        set_hscrollbar_policy: gtk::PolicyType::Never,
-                        set_vexpand: true,
+                            #[local_ref]
+                            factory_widget -> gtk::ListBox {
+                                // set_margin_all: 5,
+                                set_valign: gtk::Align::Start,
+                                add_css_class: "boxed-list",
+                                connect_row_activated[sender] => move |_, row| {
+                                    sender.input(Input::DeviceSelected(row.index()))
+                                }
+                            },
+                        },
 
-                        #[local_ref]
-                        factory_widget -> gtk::ListBox {
-                            // set_margin_all: 5,
-                            set_valign: gtk::Align::Start,
-                            add_css_class: "boxed-list",
-                            connect_row_activated[sender] => move |_, row| {
-                                sender.input(Input::DeviceSelected(row.index()))
+                        gtk::Spinner {
+                            #[watch]
+                            set_visible: model.scan_handle.is_some(),
+                            set_spinning: true,
+                        },
+
+                        gtk::Button {
+                            #[watch]
+                            set_label: if model.scan_handle.is_some() {
+                                "Stop Scanning"
+                            } else {
+                                "Start Scanning"
+                            },
+                            set_valign: gtk::Align::End,
+                            set_halign: gtk::Align::Center,
+                            connect_clicked[sender] => move |_| {
+                                sender.input(Input::ScanToggled);
+                            },
+                        },
+                    }
+                } else {
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_margin_all: 12,
+                        set_spacing: 10,
+                        set_valign: gtk::Align::Center,
+
+                        gtk::Label {
+                            set_label: "Bluetooth adapter not found!",
+                        },
+
+                        gtk::Button {
+                            set_label: "Retry",
+                            set_halign: gtk::Align::Center,
+                            connect_clicked[sender] => move |_| {
+                                sender.input(Input::AdapterInit)
                             }
                         },
-                    },
-
-                    gtk::Spinner {
-                        #[watch]
-                        set_visible: model.scan_handle.is_some(),
-                        set_spinning: true,
-                    },
-
-                    gtk::Button {
-                        #[watch]
-                        set_label: if model.scan_handle.is_some() {
-                            "Stop Scanning"
-                        } else {
-                            "Start Scanning"
-                        },
-                        set_valign: gtk::Align::End,
-                        set_halign: gtk::Align::Center,
-                        connect_clicked[sender] => move |_| {
-                            sender.input(Input::ScanToggled);
-                        },
-                    },
+                    }
                 }
             }
-
         }
     }
 
-    fn init(adapter: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
+    fn init(_: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
         let model = Self {
             devices: FactoryVecDeque::new(gtk::ListBox::new(), &sender.input),
-            adapter,
+            adapter: None,
+            gatt_server: None,
             scan_handle: None,
         };
 
         let factory_widget = model.devices.widget();
         let widgets = view_output!();
 
-        // Read known devices list
-        let adapter = model.adapter.clone();
-        relm4::spawn(async move {
-            let mut devices = Vec::new();
-            for device in bt::InfiniTime::list_known_devices(&adapter).await.unwrap() {
-                devices.push(DeviceInfo::new(Arc::new(device)).await.unwrap())
-            }
-            sender.input(Input::KnownDevicesReady(devices));
-        });
+        sender.input(Input::AdapterInit);
 
         ComponentParts { model, widgets }
     }
 
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
         match msg {
+            Input::AdapterInit => {
+                sender.oneshot_command(async move {
+                    CommandOutput::AdapterInitResult(bt::init_adapter().await)
+                });
+            }
+
             Input::ScanToggled => {
                 if self.scan_handle.is_some() {
                     self.scan_handle.take().unwrap().abort();
                 } else {
-                    let adapter = self.adapter.clone();
-                    let callback = move |event| {
-                        match event {
-                            bluer::AdapterEvent::DeviceAdded(address) => {
-                                sender.input(Input::DeviceAdded(address));
+                    if let Some(adapter) = self.adapter.clone() {
+                        let callback = move |event| {
+                            match event {
+                                bluer::AdapterEvent::DeviceAdded(address) => {
+                                    sender.input(Input::DeviceAdded(address));
+                                }
+                                bluer::AdapterEvent::DeviceRemoved(address) => {
+                                    sender.input(Input::DeviceRemoved(address));
+                                }
+                                _ => (),
                             }
-                            bluer::AdapterEvent::DeviceRemoved(address) => {
-                                sender.input(Input::DeviceRemoved(address));
-                            }
-                            _ => (),
-                        }
-                    };
-                    self.devices.guard().clear();
-                    self.scan_handle = Some(relm4::spawn(bt::scan(adapter, callback)));
-                }
-            }
-
-            Input::KnownDevicesReady(devices) => {
-                let connected = devices.iter()
-                    .find(|d| d.state == DeviceState::Connected)
-                    .map(|d| d.address);
-
-                let mut devices_guard = self.devices.guard();
-                for device in devices {
-                    devices_guard.push_back(device);
-                }
-
-                // Automatic device selection logic
-                if let Some(address) = connected {
-                    // If suitable device is already connected - just report it as connected
-                    if let Ok(device) = self.adapter.device(address) {
-                        let device = Arc::new(device);
-                        sender.output(Output::DeviceConnected(device));
-                        log::info!("InfiniTime ({}) is already connected", address.to_string());
-                    }
-                } else {
-                    if devices_guard.is_empty() {
-                        // If no suitable devices are known - start scanning automatically
-                        sender.input(Input::ScanToggled);
-                        log::info!("No InfiniTime devices are known. Scanning...");
-                    } else if devices_guard.len() == 1 {
-                        // If only one suitable device is known - try to connect to it automatically
-                        sender.input(Input::DeviceSelected(0));
-                        log::info!("Trying to connect to InfiniTime ({})", devices_guard[0].address.to_string());
-                    } else {
-                        log::info!("Multiple InfiniTime devices are known. Waiting for the user to select");
+                        };
+                        self.devices.guard().clear();
+                        self.scan_handle = Some(relm4::spawn(bt::scan(adapter, callback)));
                     }
                 }
             }
@@ -198,16 +191,18 @@ impl Component for Model {
             }
 
             Input::DeviceAdded(address) => {
-                if let Ok(device) = self.adapter.device(address) {
-                    let device = Arc::new(device);
-                    relm4::spawn(async move {
-                        if bt::InfiniTime::check_device(&device).await {
-                            match DeviceInfo::new(device).await {
-                                Ok(info) => sender.input(Input::DeviceInfoReady(info)),
-                                Err(error) => log::error!("Failed to read device info: {}", error),
+                if let Some(adapter) = &self.adapter {
+                    if let Ok(device) = adapter.device(address) {
+                        let device = Arc::new(device);
+                        relm4::spawn(async move {
+                            if bt::InfiniTime::check_device(&device).await {
+                                match DeviceInfo::new(device).await {
+                                    Ok(info) => sender.input(Input::DeviceInfoReady(info)),
+                                    Err(error) => log::error!("Failed to read device info: {}", error),
+                                }
                             }
-                        }
-                    });
+                        });
+                    }
                 }
             }
 
@@ -234,7 +229,79 @@ impl Component for Model {
             Input::DeviceDisconnected(device) => {
                 sender.output(Output::DeviceDisconnected(device));
             }
+        }
+    }
 
+    fn update_cmd(&mut self, msg: Self::CommandOutput, sender: ComponentSender<Self>) {
+        match msg {
+            CommandOutput::AdapterInitResult(result) => match result {
+                Ok(adapter) => {
+                    let adapter = Arc::new(adapter);
+                    self.adapter = Some(adapter.clone());
+
+                    // Start GATT serices
+                    let adapter_ = adapter.clone();
+                    sender.oneshot_command(async move {
+                        CommandOutput::GattServicesResult(bt::start_gatt_services(&adapter_).await)
+                    });
+
+                    // Read known devices list
+                    sender.oneshot_command(async move {
+                        let mut devices = Vec::new();
+                        for device in bt::InfiniTime::list_known_devices(&adapter).await.unwrap() {
+                            devices.push(DeviceInfo::new(Arc::new(device)).await.unwrap())
+                        }
+                        CommandOutput::KnownDevices(devices)
+                    });
+                }
+                Err(error) => {
+                    log::error!("Failed to initialize bluetooth adapter: {error}");
+                }
+            }
+            CommandOutput::GattServicesResult(result) => match result {
+                Ok(handle) => {
+                    self.gatt_server = Some(handle);
+                }
+                Err(error) => {
+                    log::error!("Failed to start GATT server: {error}");
+                    sender.output(Output::Notification("Failed to start GATT server"));
+                }
+            }
+
+            CommandOutput::KnownDevices(devices) => {
+                let connected = devices.iter()
+                    .find(|d| d.state == DeviceState::Connected)
+                    .map(|d| d.address);
+
+                let mut devices_guard = self.devices.guard();
+                for device in devices {
+                    devices_guard.push_back(device);
+                }
+
+                // Automatic device selection logic
+                if let Some(address) = connected {
+                    // If suitable device is already connected - just report it as connected
+                    if let Some(adapter) = &self.adapter {
+                        if let Ok(device) = adapter.device(address) {
+                            let device = Arc::new(device);
+                            sender.output(Output::DeviceConnected(device));
+                            log::info!("InfiniTime ({}) is already connected", address.to_string());
+                        }
+                    }
+                } else {
+                    if devices_guard.is_empty() {
+                        // If no suitable devices are known - start scanning automatically
+                        sender.input(Input::ScanToggled);
+                        log::info!("No InfiniTime devices are known. Scanning...");
+                    } else if devices_guard.len() == 1 {
+                        // If only one suitable device is known - try to connect to it automatically
+                        sender.input(Input::DeviceSelected(0));
+                        log::info!("Trying to connect to InfiniTime ({})", devices_guard[0].address.to_string());
+                    } else {
+                        log::info!("Multiple InfiniTime devices are known. Waiting for the user to select");
+                    }
+                }
+            }
         }
     }
 }

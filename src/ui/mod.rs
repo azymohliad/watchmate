@@ -1,6 +1,5 @@
 use crate::inft::bt;
 use std::{sync::Arc, path::PathBuf};
-use bluer::gatt::local::ApplicationHandle;
 use gtk::prelude::{BoxExt, GtkWindowExt};
 use relm4::{
     adw, gtk, Component, ComponentController, ComponentParts, ComponentSender, Controller, RelmApp
@@ -23,11 +22,6 @@ enum Input {
     Notification(&'static str),
 }
 
-#[derive(Debug)]
-enum CommandOutput {
-    GattServicesResult(bluer::Result<ApplicationHandle>),
-}
-
 struct Model {
     // UI state
     active_view: View,
@@ -38,7 +32,6 @@ struct Model {
     fwupd: Controller<firmware_update::Model>,
     // Other
     infinitime: Option<Arc<bt::InfiniTime>>,
-    gatt_server: Option<ApplicationHandle>,
     toast_overlay: adw::ToastOverlay,
 }
 
@@ -50,8 +43,8 @@ impl Model {
 
 #[relm4::component]
 impl Component for Model {
-    type CommandOutput = CommandOutput;
-    type Init = Arc<bluer::Adapter>;
+    type CommandOutput = ();
+    type Init = ();
     type Input = Input;
     type Output = ();
     type Widgets = Widgets;
@@ -88,7 +81,7 @@ impl Component for Model {
         }
     }
 
-    fn init(adapter: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
+    fn init(_: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
         // Components
         let dashboard = dashboard::Model::builder()
             .launch(root.clone())
@@ -100,10 +93,11 @@ impl Component for Model {
             });
 
         let devices = devices::Model::builder()
-            .launch(adapter.clone())
+            .launch(())
             .forward(&sender.input, |message| match message {
                 devices::Output::DeviceConnected(device) => Input::DeviceConnected(device),
                 devices::Output::DeviceDisconnected(device) => Input::DeviceDisconnected(device),
+                devices::Output::Notification(text) => Input::Notification(text),
                 devices::Output::SetView(view) => Input::SetView(view),
             });
 
@@ -125,15 +119,10 @@ impl Component for Model {
             fwupd,
             // Other
             infinitime: None,
-            gatt_server: None,
             toast_overlay: toast_overlay.clone(),
         };
 
         let widgets = view_output!();
-
-        sender.oneshot_command(async move {
-            CommandOutput::GattServicesResult(bt::start_gatt_services(&adapter).await)
-        });
 
         ComponentParts { model, widgets }
     }
@@ -186,18 +175,6 @@ impl Component for Model {
             }
         }
     }
-
-    fn update_cmd(&mut self, msg: Self::CommandOutput, _sender: ComponentSender<Self>) {
-        match msg {
-            CommandOutput::GattServicesResult(Ok(handle)) => {
-                self.gatt_server = Some(handle);
-            }
-            CommandOutput::GattServicesResult(Err(error)) => {
-                log::error!("Failed to start GATT server: {error}");
-                self.notify("Failed to start GATT server");
-            }
-        }
-    }
 }
 
 
@@ -210,11 +187,11 @@ pub enum View {
 }
 
 
-pub fn run(adapter: Arc<bluer::Adapter>) {
+pub fn run() {
     // Init GTK before libadwaita (ToastOverlay)
     gtk::init().unwrap();
 
     // Run app
     let app = RelmApp::new("io.gitlab.azymohliad.WatchMate");
-    app.run::<Model>(adapter);
+    app.run::<Model>(());
 }
