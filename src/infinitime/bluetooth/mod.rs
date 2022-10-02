@@ -1,13 +1,13 @@
-use std::{sync::Arc, collections::HashMap};
+use bluer::{gatt::remote::Characteristic, Adapter, AdapterEvent, Device, Result, Session};
 use futures::{pin_mut, StreamExt};
-use bluer::{Adapter, AdapterEvent, Device, Result, Session, gatt::remote::Characteristic};
+use std::{collections::HashMap, sync::Arc};
 use uuid::Uuid;
 
 mod device;
-mod uuids;
 mod services;
+mod uuids;
 
-pub use device::{InfiniTime, FwUpdNotification, MediaPlayerEvent};
+pub use device::{FwUpdNotification, InfiniTime, MediaPlayerEvent};
 pub use services::start_gatt_services;
 
 pub async fn init_adapter() -> Result<Adapter> {
@@ -28,7 +28,7 @@ pub async fn scan(adapter: Arc<Adapter>, callback: impl Fn(AdapterEvent)) {
                     else => break,
                 }
             }
-        },
+        }
         Err(error) => {
             log::error!("Scanning failure: {}", error);
         }
@@ -55,8 +55,7 @@ impl CharacteristicsMap {
             None => Err(bluer::Error {
                 kind: bluer::ErrorKind::NotFound,
                 message: format!("Characteristic not found by UUID: {}", uuid.to_string()),
-            })
+            }),
         }
     }
 }
-

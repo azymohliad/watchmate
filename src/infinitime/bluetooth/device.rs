@@ -1,8 +1,11 @@
 use super::uuids;
-use std::{sync::Arc, io::{Cursor, Read}};
-use futures::{pin_mut, Stream, StreamExt};
 use anyhow::{anyhow, ensure, Result};
 use bluer::{gatt::remote::Characteristic, Adapter, Device};
+use futures::{pin_mut, Stream, StreamExt};
+use std::{
+    io::{Cursor, Read},
+    sync::Arc,
+};
 
 #[derive(Debug)]
 pub enum FwUpdNotification {
@@ -43,6 +46,8 @@ pub struct InfiniTime {
     chr_battery_level: Characteristic,
     chr_firmware_revision: Characteristic,
     chr_heart_rate: Characteristic,
+    chr_new_alert: Characteristic,
+    chr_notification_event: Characteristic,
     chr_fwupd_control_point: Characteristic,
     chr_fwupd_packet: Characteristic,
     chr_mp_events: Characteristic,
@@ -66,6 +71,8 @@ impl InfiniTime {
             chr_battery_level: characteristics.take(&uuids::CHR_BATTERY_LEVEL)?,
             chr_firmware_revision: characteristics.take(&uuids::CHR_FIRMWARE_REVISION)?,
             chr_heart_rate: characteristics.take(&uuids::CHR_HEART_RATE)?,
+            chr_new_alert: characteristics.take(&uuids::CHR_NEW_ALERT)?,
+            chr_notification_event: characteristics.take(&uuids::CHR_NOTIFICATION_EVENT)?,
             chr_fwupd_control_point: characteristics.take(&uuids::CHR_FWUPD_CONTROL_POINT)?,
             chr_fwupd_packet: characteristics.take(&uuids::CHR_FWUPD_PACKET)?,
             chr_mp_events: characteristics.take(&uuids::CHR_MP_EVENTS)?,
@@ -97,6 +104,22 @@ impl InfiniTime {
         // TODO: Parse properly according to 3.106 Heart Rate Measurement
         // from https://www.bluetooth.org/docman/handlers/DownloadDoc.ashx?doc_id=539729
         Ok(self.chr_heart_rate.read().await?[1])
+    }
+
+    pub async fn write_notification(
+        &self,
+        title: &str,
+        content: &str,
+    ) -> Result<()> {
+        // InfiniTime defines 10 categories, but at the time of writing only 2 of them
+        // are implemented in the firmware: simple alert and call. It's not clear
+        // whether others are intended to be implemented there later, so for now
+        // we explicitly don't support them for the sake of simplicity
+        let category = 0;   // Simple alert
+        let count = 1;      // Notifications count
+        let header = &[category, count];
+        let message = [header, title.as_bytes(), content.as_bytes()].join(&0);
+        Ok(self.chr_new_alert.write(&message).await?)
     }
 
     pub async fn write_mp_artist(&self, artist: &str) -> Result<()> {
@@ -147,7 +170,8 @@ impl InfiniTime {
     }
 
     pub async fn firmware_upgrade<F>(&self, dfu_content: &[u8], callback: F) -> Result<()>
-        where F: Fn(FwUpdNotification) + Send + 'static
+    where
+        F: Fn(FwUpdNotification) + Send + 'static,
     {
         callback(FwUpdNotification::Message("Extracting firmware files..."));
 
@@ -180,7 +204,6 @@ impl InfiniTime {
         zip.by_name(&dfu_dat).unwrap().read_to_end(&mut init_packet)?;
         let mut firmware_buffer = Vec::new();
         zip.by_name(&dfu_bin).unwrap().read_to_end(&mut firmware_buffer)?;
-
 
         // Obtain characteristics
         let control_point_stream = self.chr_fwupd_control_point.notify().await?;

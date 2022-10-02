@@ -1,4 +1,4 @@
-use crate::inft::bt;
+use crate::inft::{bt, fdo};
 use std::{sync::Arc, path::PathBuf};
 use gtk::prelude::{BoxExt, GtkWindowExt};
 use relm4::{
@@ -160,7 +160,11 @@ impl Component for Model {
                 self.infinitime = Some(infinitime.clone());
                 self.active_view = View::Dashboard;
                 self.dashboard.emit(dashboard::Input::Connected(infinitime.clone()));
-                self.fwupd.emit(firmware_update::Input::Connected(infinitime));
+                self.fwupd.emit(firmware_update::Input::Connected(infinitime.clone()));
+                
+                relm4::spawn(async move {
+                    fdo::notifications::run_notification_session(&infinitime).await
+                });
             }
             Input::FirmwareUpdateFromFile(filepath) => {
                 self.fwupd.emit(firmware_update::Input::FirmwareUpdateFromFile(filepath));
