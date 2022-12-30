@@ -14,7 +14,7 @@ reqwest = { version = "0.11", features = [ "json" ] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "*"
 futures = "0.3"
-uuid = "1.1"
+uuid = "1.2"
 anyhow = "1.0"
 chrono = "0.4"
 zip = "0.6"
@@ -22,7 +22,7 @@ version-compare = "0.1"
 mpris2-zbus = { git = "https://github.com/pop-os/mpris2-zbus" }
 zbus = { version = "2.1", default-features = false, features = ["tokio"] }
 log = "0.4"
-env_logger = "0.8"
+env_logger = "0.10"
 
 [profile.release]
 opt-level = "s"
