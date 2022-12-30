@@ -85,7 +85,7 @@ impl Component for Model {
         // Components
         let dashboard = dashboard::Model::builder()
             .launch(root.clone())
-            .forward(&sender.input, |message| match message {
+            .forward(&sender.input_sender(), |message| match message {
                 dashboard::Output::FirmwareUpdateFromFile(file) => Input::FirmwareUpdateFromFile(file),
                 dashboard::Output::FirmwareUpdateFromUrl(url) => Input::FirmwareUpdateFromUrl(url),
                 dashboard::Output::Notification(text) => Input::Notification(text),
@@ -94,7 +94,7 @@ impl Component for Model {
 
         let devices = devices::Model::builder()
             .launch(())
-            .forward(&sender.input, |message| match message {
+            .forward(&sender.input_sender(), |message| match message {
                 devices::Output::DeviceConnected(device) => Input::DeviceConnected(device),
                 devices::Output::DeviceDisconnected(device) => Input::DeviceDisconnected(device),
                 devices::Output::Notification(text) => Input::Notification(text),
@@ -103,7 +103,7 @@ impl Component for Model {
 
         let fwupd = firmware_update::Model::builder()
             .launch(())
-            .forward(&sender.input, |message| match message {
+            .forward(&sender.input_sender(), |message| match message {
                 firmware_update::Output::SetView(view) => Input::SetView(view),
             });
 
@@ -128,7 +128,7 @@ impl Component for Model {
     }
 
 
-    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
+    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, _root: &Self::Root) {
         match msg {
             Input::SetView(view) => {
                 self.active_view = view;

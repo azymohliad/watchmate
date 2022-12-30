@@ -2,7 +2,7 @@ use crate::inft::{bt, gh};
 use std::{sync::Arc, path::PathBuf};
 use tokio::{fs::File, io::AsyncReadExt};
 use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, WidgetExt};
-use relm4::{adw, gtk, ComponentParts, ComponentSender, Component, WidgetPlus, JoinHandle};
+use relm4::{adw, gtk, ComponentParts, ComponentSender, Component, JoinHandle, RelmWidgetExt};
 
 #[derive(Debug)]
 pub enum Input {
@@ -124,7 +124,7 @@ impl Component for Model {
                     #[watch]
                     set_visible: model.state != State::InProgress,
                     connect_clicked[sender] => move |_| {
-                        sender.output(Output::SetView(super::View::Dashboard));
+                        sender.output(Output::SetView(super::View::Dashboard)).unwrap();
                     },
                 },
             },
@@ -187,7 +187,7 @@ impl Component for Model {
                             #[watch]
                             set_visible: model.state != State::InProgress,
                             connect_clicked[sender] => move |_| {
-                                sender.output(Output::SetView(super::View::Dashboard));
+                                sender.output(Output::SetView(super::View::Dashboard)).unwrap();
                             },
                         },
                     }
@@ -202,7 +202,7 @@ impl Component for Model {
         ComponentParts { model, widgets }
     }
 
-    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
+    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, _root: &Self::Root) {
         match msg {
             Input::Connected(infinitime) => {
                 self.infinitime = Some(infinitime);

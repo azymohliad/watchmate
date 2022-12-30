@@ -4,8 +4,8 @@ use std::{sync::Arc, path::PathBuf};
 use futures::{pin_mut, StreamExt};
 use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, ListBoxRowExt, WidgetExt};
 use adw::prelude::{PreferencesRowExt, ExpanderRowExt};
-use relm4::{adw, gtk, ComponentController, ComponentParts, ComponentSender, Component, Controller, Sender, WidgetPlus};
-use anyhow::Result;
+use relm4::{adw, gtk, ComponentController, ComponentParts, ComponentSender, Component, Controller, Sender, RelmWidgetExt};
+use anyhow::{Result, anyhow};
 use version_compare::Version;
 
 
@@ -56,11 +56,16 @@ pub struct Model {
 
 impl Model {
     async fn read_info(infinitime: Arc<bt::InfiniTime>, sender: Sender<CommandOutput>) -> Result<()> {
-        sender.send(CommandOutput::Address(infinitime.device().address().to_string()));
-        sender.send(CommandOutput::BatteryLevel(infinitime.read_battery_level().await?));
-        sender.send(CommandOutput::HeartRate(infinitime.read_heart_rate().await?));
-        sender.send(CommandOutput::Alias(infinitime.device().alias().await?));
-        sender.send(CommandOutput::FirmwareVersion(infinitime.read_firmware_version().await?));
+        sender.send(CommandOutput::Address(infinitime.device().address().to_string()))
+            .map_err(|_| anyhow!("Relm4 message failure"))?;
+        sender.send(CommandOutput::BatteryLevel(infinitime.read_battery_level().await?))
+            .map_err(|_| anyhow!("Relm4 message failure"))?;
+        sender.send(CommandOutput::HeartRate(infinitime.read_heart_rate().await?))
+            .map_err(|_| anyhow!("Relm4 message failure"))?;
+        sender.send(CommandOutput::Alias(infinitime.device().alias().await?))
+            .map_err(|_| anyhow!("Relm4 message failure"))?;
+        sender.send(CommandOutput::FirmwareVersion(infinitime.read_firmware_version().await?))
+            .map_err(|_| anyhow!("Relm4 message failure"))?;
         Ok(())
     }
 
@@ -98,7 +103,7 @@ impl Component for Model {
                     set_tooltip_text: Some("Devices"),
                     set_icon_name: "open-menu-symbolic",
                     connect_clicked[sender] => move |_| {
-                        sender.output(Output::SetView(super::View::Devices));
+                        sender.output(Output::SetView(super::View::Devices)).unwrap();
                     },
                 },
             },
@@ -322,7 +327,7 @@ impl Component for Model {
                                 set_halign: gtk::Align::Center,
 
                                 connect_clicked[sender] => move |_| {
-                                    sender.output(Output::SetView(super::View::Devices));
+                                    sender.output(Output::SetView(super::View::Devices)).unwrap();
                                 },
                             },
                         }
@@ -337,10 +342,10 @@ impl Component for Model {
         let player_panel = media_player::Model::builder()
             .launch(())
             .detach();
-        
+
         let firmware_panel = firmware_panel::Model::builder()
             .launch(main_window)
-            .forward(&sender.input, |message| match message {
+            .forward(&sender.input_sender(), |message| match message {
                 firmware_panel::Output::FirmwareVersionLatest(f) => Input::FirmwareVersionLatest(f),
                 firmware_panel::Output::FirmwareUpdateFromFile(f) => Input::FirmwareUpdateFromFile(f),
                 firmware_panel::Output::FirmwareUpdateFromUrl(u) => Input::FirmwareUpdateFromUrl(u),
@@ -365,7 +370,7 @@ impl Component for Model {
         ComponentParts { model, widgets }
     }
 
-    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
+    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, _root: &Self::Root) {
         match msg {
             Input::Connected(infinitime) => {
                 self.infinitime = Some(infinitime.clone());
@@ -375,7 +380,7 @@ impl Component for Model {
                         // Read inital data
                         if let Err(error) = Self::read_info(infinitime_, out.clone()).await {
                             log::error!("Failed to read data: {}", error);
-                            out.send(CommandOutput::Notification("Failed to read data"));
+                            out.send(CommandOutput::Notification("Failed to read data")).unwrap();
                         }
                     }).drop_on_shutdown()
                 });
@@ -386,7 +391,7 @@ impl Component for Model {
                         if let Ok(hr_stream) = infinitime_.get_heart_rate_stream().await {
                             pin_mut!(hr_stream);
                             while let Some(hr) = hr_stream.next().await {
-                                out.send(CommandOutput::HeartRate(hr));
+                                out.send(CommandOutput::HeartRate(hr)).unwrap();
                             }
                         }
                     }).drop_on_shutdown()
@@ -412,13 +417,19 @@ impl Component for Model {
                 self.fw_latest = latest;
                 self.check_fw_update_available();
             }
-            Input::FirmwareUpdateFromFile(f) => sender.output(Output::FirmwareUpdateFromFile(f)),
-            Input::FirmwareUpdateFromUrl(u) => sender.output(Output::FirmwareUpdateFromUrl(u)),
-            Input::Notification(n) => sender.output(Output::Notification(n)),
+            Input::FirmwareUpdateFromFile(f) => {
+                sender.output(Output::FirmwareUpdateFromFile(f)).unwrap();
+            }
+            Input::FirmwareUpdateFromUrl(u) => {
+                sender.output(Output::FirmwareUpdateFromUrl(u)).unwrap();
+            }
+            Input::Notification(n) => {
+                sender.output(Output::Notification(n)).unwrap();
+            }
         }
     }
 
-    fn update_cmd(&mut self, msg: Self::CommandOutput, sender: ComponentSender<Self>) {
+    fn update_cmd(&mut self, msg: Self::CommandOutput, sender: ComponentSender<Self>, _root: &Self::Root) {
         match msg {
             CommandOutput::BatteryLevel(soc) => {
                 self.battery_level = Some(soc);
@@ -437,7 +448,7 @@ impl Component for Model {
                 self.check_fw_update_available();
             }
             CommandOutput::Notification(text) => {
-                sender.output(Output::Notification(text));
+                sender.output(Output::Notification(text)).unwrap();
             }
         }
     }
