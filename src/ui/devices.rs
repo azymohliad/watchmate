@@ -3,8 +3,8 @@ use std::sync::Arc;
 use bluer::gatt::local::ApplicationHandle;
 use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, ListBoxRowExt, WidgetExt};
 use relm4::{
-    adw, gtk, factory::{FactoryComponent, FactoryComponentSender, FactoryVecDeque, DynamicIndex},
-    ComponentParts, ComponentSender, WidgetPlus, Component, JoinHandle
+    adw, gtk, factory::{FactoryComponent, FactorySender, FactoryVecDeque, DynamicIndex},
+    ComponentParts, ComponentSender, Component, JoinHandle, RelmWidgetExt,
 };
 
 
@@ -66,7 +66,7 @@ impl Component for Model {
                     set_tooltip_text: Some("Back"),
                     set_icon_name: "go-previous-symbolic",
                     connect_clicked[sender] => move |_| {
-                        sender.output(Output::SetView(super::View::Dashboard));
+                        sender.output(Output::SetView(super::View::Dashboard)).unwrap();
                     },
                 },
             },
@@ -74,7 +74,7 @@ impl Component for Model {
             adw::Clamp {
                 set_maximum_size: 400,
                 set_vexpand: true,
-                
+
                 if model.adapter.is_some() {
                     gtk::Box {
                         set_orientation: gtk::Orientation::Vertical,
@@ -142,7 +142,7 @@ impl Component for Model {
 
     fn init(_: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
         let model = Self {
-            devices: FactoryVecDeque::new(gtk::ListBox::new(), &sender.input),
+            devices: FactoryVecDeque::new(gtk::ListBox::new(), &sender.input_sender()),
             adapter: None,
             gatt_server: None,
             scan_handle: None,
@@ -156,7 +156,7 @@ impl Component for Model {
         ComponentParts { model, widgets }
     }
 
-    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
+    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, _root: &Self::Root) {
         match msg {
             Input::AdapterInit => {
                 sender.oneshot_command(async move {
@@ -223,16 +223,16 @@ impl Component for Model {
             }
 
             Input::DeviceConnected(device) => {
-                sender.output(Output::DeviceConnected(device));
+                sender.output(Output::DeviceConnected(device)).unwrap();
             }
 
             Input::DeviceDisconnected(device) => {
-                sender.output(Output::DeviceDisconnected(device));
+                sender.output(Output::DeviceDisconnected(device)).unwrap();
             }
         }
     }
 
-    fn update_cmd(&mut self, msg: Self::CommandOutput, sender: ComponentSender<Self>) {
+    fn update_cmd(&mut self, msg: Self::CommandOutput, sender: ComponentSender<Self>, _root: &Self::Root) {
         match msg {
             CommandOutput::AdapterInitResult(result) => match result {
                 Ok(adapter) => {
@@ -264,7 +264,7 @@ impl Component for Model {
                 }
                 Err(error) => {
                     log::error!("Failed to start GATT server: {error}");
-                    sender.output(Output::Notification("Failed to start GATT server"));
+                    sender.output(Output::Notification("Failed to start GATT server")).unwrap();
                 }
             }
 
@@ -284,7 +284,7 @@ impl Component for Model {
                     if let Some(adapter) = &self.adapter {
                         if let Ok(device) = adapter.device(address) {
                             let device = Arc::new(device);
-                            sender.output(Output::DeviceConnected(device));
+                            sender.output(Output::DeviceConnected(device)).unwrap();
                             log::info!("InfiniTime ({}) is already connected", address.to_string());
                         }
                     }
@@ -356,7 +356,7 @@ pub enum DeviceOutput {
 #[relm4::factory(pub)]
 impl FactoryComponent for DeviceInfo {
     type ParentWidget = gtk::ListBox;
-    type ParentMsg = Input;
+    type ParentInput = Input;
     type CommandOutput = ();
     type Init = Self;
     type Input = DeviceInput;
@@ -418,7 +418,7 @@ impl FactoryComponent for DeviceInfo {
         }
     }
 
-    fn output_to_parent_msg(output: Self::Output) -> Option<Input> {
+    fn output_to_parent_input(output: Self::Output) -> Option<Input> {
         Some(match output {
             DeviceOutput::Connected(device) => Input::DeviceConnected(device),
             DeviceOutput::Disconnected(device) => Input::DeviceDisconnected(device),
@@ -428,7 +428,7 @@ impl FactoryComponent for DeviceInfo {
     fn init_model(
         model: Self,
         _index: &DynamicIndex,
-        _sender: FactoryComponentSender<Self>,
+        _sender: FactorySender<Self>,
     ) -> Self {
         model
     }
@@ -438,7 +438,7 @@ impl FactoryComponent for DeviceInfo {
         _index: &DynamicIndex,
         root: &Self::Root,
         _returned_widget: &gtk::ListBoxRow,
-        sender: FactoryComponentSender<Self>,
+        sender: FactorySender<Self>,
     ) -> Self::Widgets {
         let widgets = view_output!();
         widgets
@@ -447,7 +447,7 @@ impl FactoryComponent for DeviceInfo {
     fn update(
         &mut self,
         msg: Self::Input,
-        sender: FactoryComponentSender<Self>,
+        sender: FactorySender<Self>,
     ) {
         match msg {
             DeviceInput::Connect => {

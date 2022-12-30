@@ -2,7 +2,7 @@ use crate::inft::{bt, fdo::mpris};
 use std::sync::Arc;
 use futures::StreamExt;
 use gtk::prelude::{BoxExt, OrientableExt, WidgetExt};
-use relm4::{gtk, ComponentParts, ComponentSender, Component, WidgetPlus, JoinHandle};
+use relm4::{gtk, ComponentParts, ComponentSender, Component, JoinHandle, RelmWidgetExt};
 use mpris2_zbus::media_player::MediaPlayer;
 use zbus::names::OwnedBusName;
 
@@ -105,7 +105,7 @@ impl Component for Model {
         ComponentParts { model, widgets }
     }
 
-    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
+    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, _root: &Self::Root) {
         match msg {
             Input::Device(infinitime) => {
                 self.infinitime = infinitime;
@@ -193,7 +193,7 @@ impl Component for Model {
         }
     }
 
-    fn update_cmd(&mut self, msg: Self::CommandOutput, sender: ComponentSender<Self>) {
+    fn update_cmd(&mut self, msg: Self::CommandOutput, sender: ComponentSender<Self>, _root: &Self::Root) {
         match msg {
             CommandOutput::None => {}
             CommandOutput::DBusConnection(connection) => {

@@ -1,7 +1,7 @@
 use crate::inft::gh;
 use std::path::PathBuf;
 use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, WidgetExt};
-use relm4::{adw, gtk, ComponentController, ComponentParts, ComponentSender, Component, Controller, WidgetPlus, JoinHandle};
+use relm4::{adw, gtk, ComponentController, ComponentParts, ComponentSender, Component, Controller, JoinHandle, RelmWidgetExt};
 use relm4_components::{open_dialog::*, save_dialog::*};
 use anyhow::Result;
 
@@ -10,7 +10,7 @@ pub enum Input {
     None,
     FirmwareReleasesRequest,
     FirmwareReleaseNotes(u32),
-    
+
     // Firmware Download
     FirmwareDownload(u32),
     FirmwareDownloadCancel,
@@ -204,7 +204,7 @@ impl Component for Model {
                     sender.input(Input::FirmwareUpdateOpenDialog);
                 },
             },
-        }                                
+        }
     }
 
     fn init(main_window: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
@@ -217,7 +217,7 @@ impl Component for Model {
                 filters: vec![file_filter],
                 ..Default::default()
             })
-            .forward(&sender.input, |message| match message {
+            .forward(&sender.input_sender(), |message| match message {
                 OpenDialogResponse::Accept(path) => Input::FirmwareUpdateFromFile(path),
                 OpenDialogResponse::Cancel => Input::None,
             });
@@ -225,7 +225,7 @@ impl Component for Model {
         let save_file_dialog = SaveDialog::builder()
             .transient_for_native(&main_window)
             .launch(SaveDialogSettings::default())
-            .forward(&sender.input, |message| match message {
+            .forward(&sender.input_sender(), |message| match message {
                 SaveDialogResponse::Accept(path) => Input::FirmwareSave(path),
                 SaveDialogResponse::Cancel => Input::FirmwareDownloadCancel,
             });
@@ -245,7 +245,7 @@ impl Component for Model {
         ComponentParts { model, widgets }
     }
 
-    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
+    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, _root: &Self::Root) {
         match msg {
             Input::None => {}
             Input::FirmwareReleasesRequest => {
@@ -274,10 +274,10 @@ impl Component for Model {
                             self.save_file_dialog.emit(SaveDialogMsg::SaveAs(filename));
                         }
                         None => {
-                            sender.output(Output::Notification("DFU file not found"));
+                            sender.output(Output::Notification("DFU file not found")).unwrap();
                         }
                     }
-                }                
+                }
             }
             Input::FirmwareDownloadCancel => {
                 self.download_task.take().map(|h| h.abort());
@@ -294,7 +294,7 @@ impl Component for Model {
                     Err(error) => {
                         self.download_content = None;
                         log::error!("Failed to download DFU file: {}", error);
-                        sender.output(Output::Notification("Failed to download DFU file"));
+                        sender.output(Output::Notification("Failed to download DFU file")).unwrap();
                     }
                 }
             }
@@ -309,21 +309,21 @@ impl Component for Model {
                 if let FirmwareReleasesState::Some(releases) = &self.releases {
                     match releases[index as usize].get_dfu_asset() {
                         Some(asset) => {
-                            sender.output(Output::FirmwareUpdateFromUrl(asset.url.clone()));
+                            sender.output(Output::FirmwareUpdateFromUrl(asset.url.clone())).unwrap();
                         }
                         None => {
-                            sender.output(Output::Notification("DFU file not found"));
+                            sender.output(Output::Notification("DFU file not found")).unwrap();
                         }
                     }
                 }
             }
             Input::FirmwareUpdateFromFile(filepath) => {
-                sender.output(Output::FirmwareUpdateFromFile(filepath));
+                sender.output(Output::FirmwareUpdateFromFile(filepath)).unwrap();
             }
         }
     }
 
-    fn update_cmd(&mut self, msg: Self::CommandOutput, sender: ComponentSender<Self>) {
+    fn update_cmd(&mut self, msg: Self::CommandOutput, sender: ComponentSender<Self>, _root: &Self::Root) {
         match msg {
             CommandOutput::FirmwareReleasesResponse(response) => match response {
                 Ok(releases) => {
@@ -331,22 +331,22 @@ impl Component for Model {
                     let latest = tags.first().map(|t| t.to_string());
                     self.tags = Some(gtk::StringList::new(&tags));
                     self.releases = FirmwareReleasesState::Some(releases);
-                    sender.output(Output::FirmwareVersionLatest(latest));
+                    sender.output(Output::FirmwareVersionLatest(latest)).unwrap();
                 }
                 Err(error) => {
                     self.tags = None;
                     self.releases = FirmwareReleasesState::Error;
-                    sender.output(Output::FirmwareVersionLatest(None));
+                    sender.output(Output::FirmwareVersionLatest(None)).unwrap();
                     log::error!("Failed to fetch firmware releases: {error}");
                 }
             }
             CommandOutput::FirmwareSaveResponse(response) => match response {
                 Ok(()) => {
-                    sender.output(Output::Notification("Firmware downloaded"));
+                    sender.output(Output::Notification("Firmware downloaded")).unwrap();
                 }
                 Err(error) => {
                     log::error!("Failed to save firmware file: {error}");
-                    sender.output(Output::Notification("Failed to save DFU file"));
+                    sender.output(Output::Notification("Failed to save DFU file")).unwrap();
                 }
             }
         }
