@@ -20,7 +20,7 @@ chrono = "0.4"
 zip = "0.6"
 version-compare = "0.1"
 mpris2-zbus = { git = "https://github.com/pop-os/mpris2-zbus" }
-zbus = { version = "2.1", default-features = false, features = ["tokio"] }
+zbus = { version = "3.7", default-features = false, features = ["tokio"] }
 log = "0.4"
 env_logger = "0.10"
 
