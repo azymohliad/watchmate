@@ -8,6 +8,8 @@ use std::{
     sync::{Arc, atomic::{AtomicBool, Ordering}},
 };
 
+pub mod fs;
+
 #[derive(Debug)]
 pub enum FwUpdNotification {
     Message(&'static str),
@@ -68,6 +70,8 @@ pub struct InfiniTime {
     chr_heart_rate: Characteristic,
     chr_new_alert: Characteristic,
     chr_notification_event: Characteristic,
+    chr_fs_version: Characteristic,
+    chr_fs_transfer: Characteristic,
     chr_fwupd_control_point: Characteristic,
     chr_fwupd_packet: Characteristic,
     chr_mp_events: Characteristic,
@@ -94,6 +98,8 @@ impl InfiniTime {
             chr_heart_rate: characteristics.take(&uuids::CHR_HEART_RATE)?,
             chr_new_alert: characteristics.take(&uuids::CHR_NEW_ALERT)?,
             chr_notification_event: characteristics.take(&uuids::CHR_NOTIFICATION_EVENT)?,
+            chr_fs_version: characteristics.take(&uuids::CHR_FS_VERSION)?,
+            chr_fs_transfer: characteristics.take(&uuids::CHR_FS_TRANSFER)?,
             chr_fwupd_control_point: characteristics.take(&uuids::CHR_FWUPD_CONTROL_POINT)?,
             chr_fwupd_packet: characteristics.take(&uuids::CHR_FWUPD_PACKET)?,
             chr_mp_events: characteristics.take(&uuids::CHR_MP_EVENTS)?,
@@ -113,6 +119,8 @@ impl InfiniTime {
         &self.device
     }
 
+    // -- Basic getters --
+
     pub async fn read_battery_level(&self) -> Result<u8> {
         Ok(self.chr_battery_level.read().await?[0])
     }
@@ -127,6 +135,8 @@ impl InfiniTime {
         Ok(self.chr_heart_rate.read().await?[1])
     }
 
+    // -- Notifications --
+
     pub async fn write_notification<'s>(&self, notification: Notification<'s>) -> Result<()> {
         let header = &[notification.category(), 1];
         let message = match notification {
@@ -139,6 +149,8 @@ impl InfiniTime {
         };
         Ok(self.chr_new_alert.write(&message).await?)
     }
+
+    // -- Media player control --
 
     pub async fn write_mp_artist(&self, artist: &str) -> Result<()> {
         Ok(self.chr_mp_artist.write(artist.as_ref()).await?)
@@ -177,6 +189,8 @@ impl InfiniTime {
         Ok(self.chr_mp_shuffle.write(&[u8::from(shuffle)]).await?)
     }
 
+    // -- Event streams --
+
     pub async fn get_heart_rate_stream(&self) -> Result<impl Stream<Item = u8>> {
         let stream = self.chr_heart_rate.notify().await?;
         Ok(stream.filter_map(|v| async move { v.get(1).cloned() }))
@@ -187,15 +201,17 @@ impl InfiniTime {
         Ok(stream.filter_map(|v| async move { MediaPlayerEvent::from_raw(v[0]) }))
     }
 
+    // -- Firmware upgrade --
+
     pub async fn firmware_upgrade<F>(&self, dfu_content: &[u8], callback: F) -> Result<()>
     where
         F: Fn(FwUpdNotification) + Send + 'static,
     {
         self.is_upgrading_firmware.store(true, Ordering::SeqCst);
-        
+
         // Set is_upgrading_firmware back to false automatically when function returns
         let _guard = ScopeGuard::new(|| self.is_upgrading_firmware.store(false, Ordering::SeqCst));
-        
+
         callback(FwUpdNotification::Message("Extracting firmware files..."));
 
         let mut zip = zip::ZipArchive::new(Cursor::new(dfu_content))?;
@@ -299,7 +315,7 @@ impl InfiniTime {
 
         Ok(())
     }
-    
+
     pub fn is_upgrading_firmware(&self) -> bool {
         self.is_upgrading_firmware.load(Ordering::SeqCst)
     }
