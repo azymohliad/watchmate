@@ -8,7 +8,7 @@ use crate::inft::bt;
 
 #[allow(unused)]
 #[derive(Debug, Deserialize, Type)]
-struct Notification<'s> {
+struct DesktopNotification<'s> {
     app_name: &'s str,
     replaces_id: u32,
     app_icon: &'s str,
@@ -33,7 +33,7 @@ pub async fn run_notification_session(infinitime: &bt::InfiniTime) -> Result<()>
 
     let mut stream = zbus::MessageStream::from(&connection);
     while let Some(msg) = stream.try_next().await? {
-        match msg.body::<Notification>() {
+        match msg.body::<DesktopNotification>() {
             Ok(notification) => {
                 // Dirty hack to avoid duplicated notifications:
                 // For some reason, every notification produces two identical calls on DBus,
@@ -49,8 +49,11 @@ pub async fn run_notification_session(infinitime: &bt::InfiniTime) -> Result<()>
                 }
 
                 log::debug!("Forwarding notification: {notification:?}");
-                let title = format!("{}: {}", notification.app_name, notification.summary);
-                _ = infinitime.write_notification(&title, notification.body).await;
+                let alert = bt::Notification::Alert {
+                    title: &format!("{}: {}", notification.app_name, notification.summary),
+                    content: notification.body,
+                };
+                _ = infinitime.write_notification(alert).await;
             }
             Err(error) => {
                 log::error!("Failed to parse notification: {error}");
