@@ -6,7 +6,7 @@ use futures::TryStreamExt;
 
 use crate::inft::bt;
 
-
+#[allow(unused)]
 #[derive(Debug, Deserialize, Type)]
 struct Notification<'s> {
     app_name: &'s str,
@@ -41,6 +41,10 @@ pub async fn run_notification_session(infinitime: &bt::InfiniTime) -> Result<()>
                 // can deduplicate them by filtering out one of these types.
                 // TODO: Find proper solution.
                 if let Some(Value::I64(_)) = notification.hints.get("sender-pid") {
+                    continue;
+                }
+                
+                if infinitime.is_upgrading_firmware() {
                     continue;
                 }
 

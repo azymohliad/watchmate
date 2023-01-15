@@ -1,10 +1,11 @@
 use super::uuids;
+use crate::inft::utils::ScopeGuard;
 use anyhow::{anyhow, ensure, Result};
 use bluer::{gatt::remote::Characteristic, Adapter, Device};
 use futures::{pin_mut, Stream, StreamExt};
 use std::{
     io::{Cursor, Read},
-    sync::Arc,
+    sync::{Arc, atomic::{AtomicBool, Ordering}},
 };
 
 #[derive(Debug)]
@@ -42,6 +43,7 @@ impl MediaPlayerEvent {
 #[derive(Debug)]
 pub struct InfiniTime {
     device: Arc<Device>,
+    is_upgrading_firmware: AtomicBool,
     // BLE Characteristics
     chr_battery_level: Characteristic,
     chr_firmware_revision: Characteristic,
@@ -68,6 +70,7 @@ impl InfiniTime {
         log::debug!("Characteristics: {:#?}", characteristics.0.keys());
         Ok(Self {
             device,
+            is_upgrading_firmware: AtomicBool::new(false),
             chr_battery_level: characteristics.take(&uuids::CHR_BATTERY_LEVEL)?,
             chr_firmware_revision: characteristics.take(&uuids::CHR_FIRMWARE_REVISION)?,
             chr_heart_rate: characteristics.take(&uuids::CHR_HEART_RATE)?,
@@ -173,6 +176,11 @@ impl InfiniTime {
     where
         F: Fn(FwUpdNotification) + Send + 'static,
     {
+        self.is_upgrading_firmware.store(true, Ordering::SeqCst);
+        
+        // Set is_upgrading_firmware back to false automatically when function returns
+        let _guard = ScopeGuard::new(|| self.is_upgrading_firmware.store(false, Ordering::SeqCst));
+        
         callback(FwUpdNotification::Message("Extracting firmware files..."));
 
         let mut zip = zip::ZipArchive::new(Cursor::new(dfu_content))?;
@@ -275,6 +283,10 @@ impl InfiniTime {
         callback(FwUpdNotification::Message("Done!"));
 
         Ok(())
+    }
+    
+    pub fn is_upgrading_firmware(&self) -> bool {
+        self.is_upgrading_firmware.load(Ordering::SeqCst)
     }
 
     pub async fn check_device(device: &Device) -> bool {
