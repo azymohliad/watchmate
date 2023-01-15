@@ -1,4 +1,4 @@
-use crate::inft::{bt, fdo};
+use crate::inft::bt;
 use std::{sync::Arc, path::PathBuf};
 use gtk::prelude::{BoxExt, GtkWindowExt};
 use relm4::{
@@ -10,6 +10,7 @@ mod devices;
 mod firmware_update;
 mod firmware_panel;
 mod media_player;
+mod notifications;
 
 #[derive(Debug)]
 enum Input {
@@ -161,10 +162,6 @@ impl Component for Model {
                 self.active_view = View::Dashboard;
                 self.dashboard.emit(dashboard::Input::Connected(infinitime.clone()));
                 self.fwupd.emit(firmware_update::Input::Connected(infinitime.clone()));
-                
-                relm4::spawn(async move {
-                    fdo::notifications::run_notification_session(&infinitime).await
-                });
             }
             Input::FirmwareUpdateFromFile(filepath) => {
                 self.fwupd.emit(firmware_update::Input::FirmwareUpdateFromFile(filepath));

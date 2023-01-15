@@ -68,10 +68,17 @@ impl Component for Model {
             set_margin_all: 12,
             set_spacing: 10,
 
+            gtk::Label {
+                set_label: "Media Player",
+                set_halign: gtk::Align::Start,
+            },
+            
             if model.player_handles.is_empty() {
                 gtk::Label {
+                    set_label: "Not running",
                     set_hexpand: true,
-                    set_label: "No media players detected",
+                    set_halign: gtk::Align::End,
+                    add_css_class: "dim-label",
                 }
             } else {
                 #[local]
