@@ -16,14 +16,14 @@ pub enum Input {
     FirmwareVersionLatest(Option<String>),
     FirmwareUpdateFromFile(PathBuf),
     FirmwareUpdateFromUrl(String),
-    Notification(&'static str),
+    Toast(&'static str),
 }
 
 #[derive(Debug)]
 pub enum Output {
     FirmwareUpdateFromFile(PathBuf),
     FirmwareUpdateFromUrl(String),
-    Notification(&'static str),
+    Toast(&'static str),
     SetView(super::View),
 }
 
@@ -34,7 +34,7 @@ pub enum CommandOutput {
     Alias(String),
     Address(String),
     FirmwareVersion(String),
-    Notification(&'static str),
+    Toast(&'static str),
 }
 
 pub struct Model {
@@ -361,7 +361,7 @@ impl Component for Model {
                 firmware_panel::Output::FirmwareVersionLatest(f) => Input::FirmwareVersionLatest(f),
                 firmware_panel::Output::FirmwareUpdateFromFile(f) => Input::FirmwareUpdateFromFile(f),
                 firmware_panel::Output::FirmwareUpdateFromUrl(u) => Input::FirmwareUpdateFromUrl(u),
-                firmware_panel::Output::Notification(n) => Input::Notification(n),
+                firmware_panel::Output::Toast(n) => Input::Toast(n),
             });
 
         let model = Model {
@@ -393,7 +393,7 @@ impl Component for Model {
                         // Read inital data
                         if let Err(error) = Self::read_info(infinitime_, out.clone()).await {
                             log::error!("Failed to read data: {}", error);
-                            out.send(CommandOutput::Notification("Failed to read data")).unwrap();
+                            out.send(CommandOutput::Toast("Failed to read data")).unwrap();
                         }
                     }).drop_on_shutdown()
                 });
@@ -439,8 +439,8 @@ impl Component for Model {
             Input::FirmwareUpdateFromUrl(u) => {
                 sender.output(Output::FirmwareUpdateFromUrl(u)).unwrap();
             }
-            Input::Notification(n) => {
-                sender.output(Output::Notification(n)).unwrap();
+            Input::Toast(n) => {
+                sender.output(Output::Toast(n)).unwrap();
             }
         }
     }
@@ -463,8 +463,8 @@ impl Component for Model {
                 self.fw_version = Some(version);
                 self.check_fw_update_available();
             }
-            CommandOutput::Notification(text) => {
-                sender.output(Output::Notification(text)).unwrap();
+            CommandOutput::Toast(text) => {
+                sender.output(Output::Toast(text)).unwrap();
             }
         }
     }

@@ -25,7 +25,7 @@ pub enum Input {
 pub enum Output {
     DeviceConnected(Arc<bluer::Device>),
     DeviceDisconnected(Arc<bluer::Device>),
-    Notification(&'static str),
+    Toast(&'static str),
     SetView(super::View),
 }
 
@@ -264,7 +264,7 @@ impl Component for Model {
                 }
                 Err(error) => {
                     log::error!("Failed to start GATT server: {error}");
-                    sender.output(Output::Notification("Failed to start GATT server")).unwrap();
+                    sender.output(Output::Toast("Failed to start GATT server")).unwrap();
                 }
             }
 

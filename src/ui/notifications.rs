@@ -7,9 +7,9 @@ use relm4::{gtk, ComponentParts, ComponentSender, Component, JoinHandle, RelmWid
 #[derive(Debug)]
 pub enum Input {
     Device(Option<Arc<bt::InfiniTime>>),
-    NotificationSessionStart,
-    NotificationSessionStop,
-    NotificationSessionEnded,
+    SessionStart,
+    SessionStop,
+    SessionEnded,
 }
 
 #[derive(Debug)]
@@ -50,9 +50,9 @@ impl Component for Model {
                 set_hexpand: true,
                 connect_active_notify[sender] => move |switch| {
                     if switch.is_active() {
-                        sender.input(Input::NotificationSessionStart);
+                        sender.input(Input::SessionStart);
                     } else {
-                        sender.input(Input::NotificationSessionStop);
+                        sender.input(Input::SessionStop);
                     }
                 }
             }
@@ -70,10 +70,10 @@ impl Component for Model {
             Input::Device(infinitime) => {
                 self.infinitime = infinitime;
                 if self.infinitime.is_some() && self.is_enabled {
-                    sender.input(Input::NotificationSessionStart);
+                    sender.input(Input::SessionStart);
                 }
             }
-            Input::NotificationSessionStart => {
+            Input::SessionStart => {
                 if self.task.is_some() {
                     log::warn!("Notification session is already running");
                 } else if let Some(infinitime) = &self.infinitime {
@@ -83,12 +83,12 @@ impl Component for Model {
                         if let Err(error) = notifications::run_notification_session(&infinitime).await {
                             log::error!("Notifications session error: {error}");
                         }
-                        sender.input(Input::NotificationSessionEnded);
+                        sender.input(Input::SessionEnded);
                     }));
                     self.is_enabled = true;
                 }
             }
-            Input::NotificationSessionStop => {
+            Input::SessionStop => {
                 // TODO: Is it safe to abort, or does it makes sense to
                 // hook up a message channel to finish gracefully?
                 if self.task.take().map(|h| h.abort()).is_some() {
@@ -96,7 +96,7 @@ impl Component for Model {
                 }
                 self.is_enabled = false;
             }
-            Input::NotificationSessionEnded => {
+            Input::SessionEnded => {
                 self.task = None;
                 self.is_enabled = false;
             }
