@@ -10,6 +10,7 @@ mod devices;
 mod firmware_update;
 mod firmware_panel;
 mod media_player;
+mod notifications;
 
 #[derive(Debug)]
 enum Input {
@@ -19,7 +20,7 @@ enum Input {
     DeviceReady(Arc<bt::InfiniTime>),
     FirmwareUpdateFromFile(PathBuf),
     FirmwareUpdateFromUrl(String),
-    Notification(&'static str),
+    Toast(&'static str),
 }
 
 struct Model {
@@ -88,7 +89,7 @@ impl Component for Model {
             .forward(&sender.input_sender(), |message| match message {
                 dashboard::Output::FirmwareUpdateFromFile(file) => Input::FirmwareUpdateFromFile(file),
                 dashboard::Output::FirmwareUpdateFromUrl(url) => Input::FirmwareUpdateFromUrl(url),
-                dashboard::Output::Notification(text) => Input::Notification(text),
+                dashboard::Output::Toast(text) => Input::Toast(text),
                 dashboard::Output::SetView(view) => Input::SetView(view),
             });
 
@@ -97,7 +98,7 @@ impl Component for Model {
             .forward(&sender.input_sender(), |message| match message {
                 devices::Output::DeviceConnected(device) => Input::DeviceConnected(device),
                 devices::Output::DeviceDisconnected(device) => Input::DeviceDisconnected(device),
-                devices::Output::Notification(text) => Input::Notification(text),
+                devices::Output::Toast(text) => Input::Toast(text),
                 devices::Output::SetView(view) => Input::SetView(view),
             });
 
@@ -142,7 +143,7 @@ impl Component for Model {
                         }
                         Err(error) => {
                             log::error!("Device is rejected: {}", error);
-                            sender.input(Input::Notification("Device is rejected by the app"));
+                            sender.input(Input::Toast("Device is rejected by the app"));
                         }
                     }
                 });
@@ -160,7 +161,7 @@ impl Component for Model {
                 self.infinitime = Some(infinitime.clone());
                 self.active_view = View::Dashboard;
                 self.dashboard.emit(dashboard::Input::Connected(infinitime.clone()));
-                self.fwupd.emit(firmware_update::Input::Connected(infinitime));
+                self.fwupd.emit(firmware_update::Input::Connected(infinitime.clone()));
             }
             Input::FirmwareUpdateFromFile(filepath) => {
                 self.fwupd.emit(firmware_update::Input::FirmwareUpdateFromFile(filepath));
@@ -170,7 +171,7 @@ impl Component for Model {
                 self.fwupd.emit(firmware_update::Input::FirmwareUpdateFromUrl(url));
                 sender.input(Input::SetView(View::FirmwareUpdate));
             }
-            Input::Notification(message) => {
+            Input::Toast(message) => {
                 self.notify(message);
             }
         }

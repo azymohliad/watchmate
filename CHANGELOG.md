@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Updated dependencies
+- Added basic desktop notifications propagation
+
 ## v0.3.0 - 2022-09-01
 
 - Replaced println with a proper logging

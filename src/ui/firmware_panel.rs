@@ -28,7 +28,7 @@ pub enum Output {
     FirmwareUpdateFromFile(PathBuf),
     FirmwareUpdateFromUrl(String),
     FirmwareVersionLatest(Option<String>),
-    Notification(&'static str),
+    Toast(&'static str),
 }
 
 #[derive(Debug)]
@@ -274,7 +274,7 @@ impl Component for Model {
                             self.save_file_dialog.emit(SaveDialogMsg::SaveAs(filename));
                         }
                         None => {
-                            sender.output(Output::Notification("DFU file not found")).unwrap();
+                            sender.output(Output::Toast("DFU file not found")).unwrap();
                         }
                     }
                 }
@@ -294,7 +294,7 @@ impl Component for Model {
                     Err(error) => {
                         self.download_content = None;
                         log::error!("Failed to download DFU file: {}", error);
-                        sender.output(Output::Notification("Failed to download DFU file")).unwrap();
+                        sender.output(Output::Toast("Failed to download DFU file")).unwrap();
                     }
                 }
             }
@@ -312,7 +312,7 @@ impl Component for Model {
                             sender.output(Output::FirmwareUpdateFromUrl(asset.url.clone())).unwrap();
                         }
                         None => {
-                            sender.output(Output::Notification("DFU file not found")).unwrap();
+                            sender.output(Output::Toast("DFU file not found")).unwrap();
                         }
                     }
                 }
@@ -342,11 +342,11 @@ impl Component for Model {
             }
             CommandOutput::FirmwareSaveResponse(response) => match response {
                 Ok(()) => {
-                    sender.output(Output::Notification("Firmware downloaded")).unwrap();
+                    sender.output(Output::Toast("Firmware downloaded")).unwrap();
                 }
                 Err(error) => {
                     log::error!("Failed to save firmware file: {error}");
-                    sender.output(Output::Notification("Failed to save DFU file")).unwrap();
+                    sender.output(Output::Toast("Failed to save DFU file")).unwrap();
                 }
             }
         }

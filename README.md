@@ -91,12 +91,16 @@ flatpak-builder --install build-dir flatpak/io.gitlab.azymohliad.WatchMate.yml
     - [x] Battery level
     - [x] Firmware version
     - [x] Heart rate
+    - [ ] Steps count
 - [x] OTA firmware update
     - [x] Firmware update from manually selected file
     - [x] Automatic firmware downloading from [InfiniTime releases](https://github.com/InfiniTimeOrg/InfiniTime/releases)
 - [x] Media-player control
 - [ ] Secure pairing
 - [ ] Notifications
+    - [x] Basic desktop notifications propagation
+    - [ ] Filtering by app, title, or content
+- [ ] "Find-my-watch" (fake call) 
 - [ ] Settings
 - [ ] About dialog
 - [x] Packaging and distribution

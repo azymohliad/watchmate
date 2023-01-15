@@ -1,5 +1,5 @@
 use crate::inft::bt;
-use super::{media_player, firmware_panel};
+use super::{media_player, firmware_panel, notifications};
 use std::{sync::Arc, path::PathBuf};
 use futures::{pin_mut, StreamExt};
 use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, ListBoxRowExt, WidgetExt};
@@ -16,14 +16,14 @@ pub enum Input {
     FirmwareVersionLatest(Option<String>),
     FirmwareUpdateFromFile(PathBuf),
     FirmwareUpdateFromUrl(String),
-    Notification(&'static str),
+    Toast(&'static str),
 }
 
 #[derive(Debug)]
 pub enum Output {
     FirmwareUpdateFromFile(PathBuf),
     FirmwareUpdateFromUrl(String),
-    Notification(&'static str),
+    Toast(&'static str),
     SetView(super::View),
 }
 
@@ -34,7 +34,7 @@ pub enum CommandOutput {
     Alias(String),
     Address(String),
     FirmwareVersion(String),
-    Notification(&'static str),
+    Toast(&'static str),
 }
 
 pub struct Model {
@@ -49,6 +49,7 @@ pub struct Model {
     fw_update_available: bool,
     // Components
     player_panel: Controller<media_player::Model>,
+    notifications_panel: Controller<notifications::Model>,
     firmware_panel: Controller<firmware_panel::Model>,
     // Other
     infinitime: Option<Arc<bt::InfiniTime>>,
@@ -193,7 +194,7 @@ impl Component for Model {
                             },
 
                             gtk::Label {
-                                set_label: "Media Player Control",
+                                set_label: "Companion Integration",
                                 set_halign: gtk::Align::Start,
                                 set_margin_top: 20,
                             },
@@ -207,6 +208,13 @@ impl Component for Model {
                                     #[watch]
                                     set_sensitive: model.alias.is_some(),
                                     set_child: Some(model.player_panel.widget()),
+                                },
+                                
+                                gtk::ListBoxRow {
+                                    set_selectable: false,
+                                    #[watch]
+                                    set_sensitive: model.alias.is_some(),
+                                    set_child: Some(model.notifications_panel.widget()),
                                 },
                             },
 
@@ -342,6 +350,10 @@ impl Component for Model {
         let player_panel = media_player::Model::builder()
             .launch(())
             .detach();
+            
+        let notifications_panel = notifications::Model::builder()
+            .launch(())
+            .detach();
 
         let firmware_panel = firmware_panel::Model::builder()
             .launch(main_window)
@@ -349,7 +361,7 @@ impl Component for Model {
                 firmware_panel::Output::FirmwareVersionLatest(f) => Input::FirmwareVersionLatest(f),
                 firmware_panel::Output::FirmwareUpdateFromFile(f) => Input::FirmwareUpdateFromFile(f),
                 firmware_panel::Output::FirmwareUpdateFromUrl(u) => Input::FirmwareUpdateFromUrl(u),
-                firmware_panel::Output::Notification(n) => Input::Notification(n),
+                firmware_panel::Output::Toast(n) => Input::Toast(n),
             });
 
         let model = Model {
@@ -361,6 +373,7 @@ impl Component for Model {
             fw_latest: None,
             fw_update_available: false,
             player_panel,
+            notifications_panel,
             firmware_panel,
             infinitime: None,
         };
@@ -380,7 +393,7 @@ impl Component for Model {
                         // Read inital data
                         if let Err(error) = Self::read_info(infinitime_, out.clone()).await {
                             log::error!("Failed to read data: {}", error);
-                            out.send(CommandOutput::Notification("Failed to read data")).unwrap();
+                            out.send(CommandOutput::Toast("Failed to read data")).unwrap();
                         }
                     }).drop_on_shutdown()
                 });
@@ -399,6 +412,9 @@ impl Component for Model {
                 // Propagate to components
                 self.player_panel.emit(
                     media_player::Input::Device(Some(infinitime.clone()))
+                );
+                self.notifications_panel.emit(
+                    notifications::Input::Device(Some(infinitime.clone()))
                 );
             }
             Input::Disconnected => {
@@ -423,8 +439,8 @@ impl Component for Model {
             Input::FirmwareUpdateFromUrl(u) => {
                 sender.output(Output::FirmwareUpdateFromUrl(u)).unwrap();
             }
-            Input::Notification(n) => {
-                sender.output(Output::Notification(n)).unwrap();
+            Input::Toast(n) => {
+                sender.output(Output::Toast(n)).unwrap();
             }
         }
     }
@@ -447,8 +463,8 @@ impl Component for Model {
                 self.fw_version = Some(version);
                 self.check_fw_update_available();
             }
-            CommandOutput::Notification(text) => {
-                sender.output(Output::Notification(text)).unwrap();
+            CommandOutput::Toast(text) => {
+                sender.output(Output::Toast(text)).unwrap();
             }
         }
     }

@@ -1,8 +1,12 @@
 use super::uuids;
-use std::{sync::Arc, io::{Cursor, Read}};
-use futures::{pin_mut, Stream, StreamExt};
+use crate::inft::utils::ScopeGuard;
 use anyhow::{anyhow, ensure, Result};
 use bluer::{gatt::remote::Characteristic, Adapter, Device};
+use futures::{pin_mut, Stream, StreamExt};
+use std::{
+    io::{Cursor, Read},
+    sync::{Arc, atomic::{AtomicBool, Ordering}},
+};
 
 #[derive(Debug)]
 pub enum FwUpdNotification {
@@ -36,13 +40,34 @@ impl MediaPlayerEvent {
     }
 }
 
+pub enum Notification<'s> {
+    // InfiniTime defines 10 categories, but at the time of writing only 2 of them
+    // are implemented in the firmware: simple alert and call. It's not clear
+    // whether others are intended to be implemented there later, so for now
+    // we explicitly don't support them for the sake of simplicity
+    Alert { title: &'s str, content: &'s str },
+    Call { title: &'s str },
+}
+
+impl<'s> Notification<'s> {
+    pub fn category(&self) -> u8 {
+        match &self {
+            Self::Alert { title: _, content: _ } => 0,
+            Self::Call { title: _ } => 3,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct InfiniTime {
     device: Arc<Device>,
+    is_upgrading_firmware: AtomicBool,
     // BLE Characteristics
     chr_battery_level: Characteristic,
     chr_firmware_revision: Characteristic,
     chr_heart_rate: Characteristic,
+    chr_new_alert: Characteristic,
+    chr_notification_event: Characteristic,
     chr_fwupd_control_point: Characteristic,
     chr_fwupd_packet: Characteristic,
     chr_mp_events: Characteristic,
@@ -63,9 +88,12 @@ impl InfiniTime {
         log::debug!("Characteristics: {:#?}", characteristics.0.keys());
         Ok(Self {
             device,
+            is_upgrading_firmware: AtomicBool::new(false),
             chr_battery_level: characteristics.take(&uuids::CHR_BATTERY_LEVEL)?,
             chr_firmware_revision: characteristics.take(&uuids::CHR_FIRMWARE_REVISION)?,
             chr_heart_rate: characteristics.take(&uuids::CHR_HEART_RATE)?,
+            chr_new_alert: characteristics.take(&uuids::CHR_NEW_ALERT)?,
+            chr_notification_event: characteristics.take(&uuids::CHR_NOTIFICATION_EVENT)?,
             chr_fwupd_control_point: characteristics.take(&uuids::CHR_FWUPD_CONTROL_POINT)?,
             chr_fwupd_packet: characteristics.take(&uuids::CHR_FWUPD_PACKET)?,
             chr_mp_events: characteristics.take(&uuids::CHR_MP_EVENTS)?,
@@ -97,6 +125,19 @@ impl InfiniTime {
         // TODO: Parse properly according to 3.106 Heart Rate Measurement
         // from https://www.bluetooth.org/docman/handlers/DownloadDoc.ashx?doc_id=539729
         Ok(self.chr_heart_rate.read().await?[1])
+    }
+
+    pub async fn write_notification<'s>(&self, notification: Notification<'s>) -> Result<()> {
+        let header = &[notification.category(), 1];
+        let message = match notification {
+            Notification::Alert { title, content } => {
+                [header, title.as_bytes(), content.as_bytes()].join(&0)
+            }
+            Notification::Call { title } => {
+                [header, title.as_bytes()].join(&0)
+            }
+        };
+        Ok(self.chr_new_alert.write(&message).await?)
     }
 
     pub async fn write_mp_artist(&self, artist: &str) -> Result<()> {
@@ -147,8 +188,14 @@ impl InfiniTime {
     }
 
     pub async fn firmware_upgrade<F>(&self, dfu_content: &[u8], callback: F) -> Result<()>
-        where F: Fn(FwUpdNotification) + Send + 'static
+    where
+        F: Fn(FwUpdNotification) + Send + 'static,
     {
+        self.is_upgrading_firmware.store(true, Ordering::SeqCst);
+        
+        // Set is_upgrading_firmware back to false automatically when function returns
+        let _guard = ScopeGuard::new(|| self.is_upgrading_firmware.store(false, Ordering::SeqCst));
+        
         callback(FwUpdNotification::Message("Extracting firmware files..."));
 
         let mut zip = zip::ZipArchive::new(Cursor::new(dfu_content))?;
@@ -180,7 +227,6 @@ impl InfiniTime {
         zip.by_name(&dfu_dat).unwrap().read_to_end(&mut init_packet)?;
         let mut firmware_buffer = Vec::new();
         zip.by_name(&dfu_bin).unwrap().read_to_end(&mut firmware_buffer)?;
-
 
         // Obtain characteristics
         let control_point_stream = self.chr_fwupd_control_point.notify().await?;
@@ -252,6 +298,10 @@ impl InfiniTime {
         callback(FwUpdNotification::Message("Done!"));
 
         Ok(())
+    }
+    
+    pub fn is_upgrading_firmware(&self) -> bool {
+        self.is_upgrading_firmware.load(Ordering::SeqCst)
     }
 
     pub async fn check_device(device: &Device) -> bool {
