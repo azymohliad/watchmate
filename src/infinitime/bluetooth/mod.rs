@@ -7,7 +7,10 @@ mod device;
 mod services;
 mod uuids;
 
-pub use device::{FwUpdNotification, InfiniTime, MediaPlayerEvent, Notification};
+pub use device::{
+    fwupd::DfuProgressMsg, media_player::MediaPlayerEvent,
+    notification::Notification, InfiniTime
+};
 pub use services::start_gatt_services;
 
 pub async fn init_adapter() -> Result<Adapter> {

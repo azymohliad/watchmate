@@ -84,10 +84,10 @@ impl Model {
         relm4::spawn(async move {
             let sender_ = sender.clone();
             let callback = move |notification| match notification {
-                bt::FwUpdNotification::Message(text) => {
+                bt::DfuProgressMsg::Message(text) => {
                     sender_.input(Input::StatusMessage(text));
                 }
-                bt::FwUpdNotification::BytesSent(flashed, total) => {
+                bt::DfuProgressMsg::BytesSent(flashed, total) => {
                     sender_.input(Input::FlashProgress { flashed, total });
                 }
             };

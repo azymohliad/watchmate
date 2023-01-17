@@ -1,11 +1,10 @@
-mod msg;
-
-use msg::Response;
 use super::InfiniTime;
+use msg::Response;
 use chrono::Utc;
 use futures::{pin_mut, StreamExt};
 use anyhow::{anyhow, Result};
 
+mod msg;
 
 const CHUNK_SIZE: u32 = 50;
 
