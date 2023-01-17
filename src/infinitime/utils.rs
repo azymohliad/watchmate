@@ -20,17 +20,15 @@ macro_rules! value_enum {
     ) => {
         $(#[$attr])*
         $visibility enum $name {
-            $(
-                $variant = $value
-            ),*
+            $( $variant = $value ),*
         }
-        
+
         impl TryFrom<$type> for $name {
             type Error = anyhow::Error;
-            
+
             fn try_from(v: $type) -> Result<Self, Self::Error> {
                 match v {
-                    $(x if x == Self::$variant as $type => Ok(Self::$variant),)* 
+                    $(x if x == Self::$variant as $type => Ok(Self::$variant),)*
                     _ => Err(anyhow::anyhow!("Invalid enum value: {}", v)),
                 }
             }

@@ -7,7 +7,30 @@ use futures::{pin_mut, StreamExt};
 use anyhow::{anyhow, Result};
 
 
-const CHUNK_SIZE: u32 = 200;
+const CHUNK_SIZE: u32 = 50;
+
+#[derive(Debug)]
+pub struct DirEntry {
+    pub path: String,
+    pub size: u32,
+    pub is_dir: bool,
+    pub timestamp: u64,
+    pub entry_idx: u32,
+    pub entries_total: u32,
+}
+
+impl<'s> From<&msg::ListDirResponse<'s>> for DirEntry {
+    fn from(resp: &msg::ListDirResponse) -> Self {
+        Self {
+            path: String::from(resp.path),
+            size: resp.size,
+            is_dir: resp.flags & 0x1 != 0,
+            timestamp: resp.timestamp,
+            entry_idx: resp.entry_idx,
+            entries_total: resp.entries_total,
+        }
+    }
+}
 
 
 impl InfiniTime {
@@ -17,111 +40,116 @@ impl InfiniTime {
     }
 
     pub async fn read_file(&self, path: &str, position: u32) -> Result<Vec<u8>> {
-        let response_stream = self.chr_fs_transfer.notify().await?;
-        pin_mut!(response_stream);
+        log::info!("Reading file: {}", path);
+        let resp_stream = self.chr_fs_transfer.notify().await?;
+        pin_mut!(resp_stream);
 
         let mut offset = position;
 
         // Init
-        log::trace!("Sending file read header");
-        let header = [
-            [msg::Command::ReadInit as u8, 0x00].as_slice(),
-            &(path.as_bytes().len() as u16).to_le_bytes(),
-            &offset.to_le_bytes(),
-            &CHUNK_SIZE.to_le_bytes(),
-            path.as_bytes()
-        ].concat();
-        self.chr_fs_transfer.write(&header).await?;
+        let req = msg::read_init_req(path, offset, CHUNK_SIZE);
+        self.chr_fs_transfer.write(&req).await?;
+        let resp = resp_stream.next().await.ok_or(anyhow!("No response"))?;
+        let parsed = msg::ReadResponse::deserialize_check(resp.as_slice())?;
 
-        let data = response_stream.next().await.ok_or(anyhow!("No response"))?;
-        let response = msg::ReadResponse::try_from(data.as_slice())?;
-        response.check()?;
-
-        let mut content = Vec::with_capacity(response.total_size as usize);
-        
-        log::trace!("Read chunk: {} - {}", offset, offset + response.chunk_size);
-        content.extend_from_slice(response.data);
-        offset += response.chunk_size;
+        let mut content = Vec::with_capacity(parsed.total_size as usize);
+        content.extend_from_slice(parsed.data);
+        offset += parsed.chunk_size;
 
         // Read content
-        while content.len() < response.total_size as usize {
-            let packet = [
-                [msg::Command::ReadContinue as u8, msg::Status::Ok  as u8, 0x00, 0x00],
-                offset.to_le_bytes(),
-                CHUNK_SIZE.to_le_bytes(),
-            ].concat();
-            self.chr_fs_transfer.write(&packet).await?;
+        while content.len() < parsed.total_size as usize {
+            let req = msg::read_chunk_req(offset, CHUNK_SIZE);
+            self.chr_fs_transfer.write(&req).await?;
+            let resp = resp_stream.next().await.ok_or(anyhow!("No response"))?;
+            let parsed = msg::ReadResponse::deserialize_check(resp.as_slice())?;
 
-            let data = response_stream.next().await.ok_or(anyhow!("No response"))?;
-            let response = msg::ReadResponse::try_from(data.as_slice())?;
-            response.check()?;
-
-            log::trace!("Read chunk: {} - {}", offset, offset + response.chunk_size);
-            content.extend_from_slice(response.data);
-            offset += response.chunk_size;
+            content.extend_from_slice(parsed.data);
+            offset += parsed.chunk_size;
         }
 
         Ok(content)
     }
 
     pub async fn write_file(&self, path: &str, content: &[u8], position: u32) -> Result<()> {
-        let response_stream = self.chr_fs_transfer.notify().await?;
-        pin_mut!(response_stream);
+        log::info!("Writing file: {}", path);
+        let resp_stream = self.chr_fs_transfer.notify().await?;
+        pin_mut!(resp_stream);
 
         // Init
-        log::trace!("Sending file write header");
-        let header = [
-            [msg::Command::WriteInit as u8, 0x00].as_slice(),
-            &(path.as_bytes().len() as u16).to_le_bytes(),
-            &position.to_le_bytes(),
-            &(Utc::now().timestamp_nanos() as u64).to_le_bytes(),
-            &(content.len() as u32).to_le_bytes(),
-            path.as_bytes()
-        ].concat();
-        self.chr_fs_transfer.write(&header).await?;
-
-        // Process init resonse
-        let data = response_stream.next().await.ok_or(anyhow!("No response"))?;
-        let response = msg::WriteResponse::try_from(data.as_slice())?;
-        response.check()?;
+        let timestamp = Utc::now().timestamp_nanos() as u64;
+        let req = msg::write_init_req(path, position, content.len() as u32, timestamp);
+        self.chr_fs_transfer.write(&req).await?;
+        let resp = resp_stream.next().await.ok_or(anyhow!("No response"))?;
+        msg::WriteResponse::deserialize_check(resp.as_slice())?;
 
         // Write content
         let mut offset = 0u32;
         for chunk in content.chunks(CHUNK_SIZE as usize) {
             log::trace!("Sending file chunk: {} - {}", offset, chunk.len() as u32 + offset);
             // Write chunk
-            let packet = [
-                [msg::Command::WriteContinue as u8, msg::Status::Ok as u8, 0x00, 0x00].as_slice(),
-                &offset.to_le_bytes(),
-                &(chunk.len() as u32).to_le_bytes(),
-                chunk
-            ].concat();
+            let req = msg::write_chunk_req(offset, chunk);
+            self.chr_fs_transfer.write(&req).await?;
+            let resp = resp_stream.next().await.ok_or(anyhow!("No response"))?;
+            msg::WriteResponse::deserialize_check(resp.as_slice())?;
             offset += chunk.len() as u32;
-            self.chr_fs_transfer.write(&packet).await?;
-
-            // Process response
-            let data = response_stream.next().await.ok_or(anyhow!("No response"))?;
-            let response = msg::WriteResponse::try_from(data.as_slice())?;
-            response.check()?;
         }
 
-        log::debug!("File written to PineTime: {} ({} B)", path, content.len());
         Ok(())
     }
 
     pub async fn delete_file(&self, path: &str) -> Result<()> {
-        Ok(())
-    }
+        log::info!("Deleting file: {}", path);
+        let resp_stream = self.chr_fs_transfer.notify().await?;
+        pin_mut!(resp_stream);
 
-    pub async fn move_file(&self, old_path: &str, new_path: &str) -> Result<()> {
+        let req = msg::delete_req(path);
+        self.chr_fs_transfer.write(&req).await?;
+        let resp = resp_stream.next().await.ok_or(anyhow!("No response"))?;
+        msg::DeleteResponse::deserialize_check(resp.as_slice())?;
         Ok(())
     }
 
     pub async fn make_dir(&self, path: &str) -> Result<()> {
+        log::info!("Making dir: {}", path);
+        let resp_stream = self.chr_fs_transfer.notify().await?;
+        pin_mut!(resp_stream);
+
+        let timestamp = Utc::now().timestamp_nanos() as u64;
+        let req = msg::make_dir_req(path, timestamp);
+        self.chr_fs_transfer.write(&req).await?;
+        let resp = resp_stream.next().await.ok_or(anyhow!("No response"))?;
+        msg::MakeDirResponse::deserialize_check(resp.as_slice())?;
         Ok(())
     }
 
-    pub async fn list_dir(&self, path: &str) -> Result<()> {
+    pub async fn list_dir(&self, path: &str) -> Result<Vec<DirEntry>> {
+        log::info!("Listing dir: {}", path);
+        let resp_stream = self.chr_fs_transfer.notify().await?;
+        pin_mut!(resp_stream);
+
+        let req = msg::list_dir_req(path);
+        self.chr_fs_transfer.write(&req).await?;
+
+        let mut output = Vec::new();
+        while let Some(resp) = resp_stream.next().await {
+            let parsed = msg::ListDirResponse::deserialize_check(resp.as_slice())?;
+            output.push(DirEntry::from(&parsed));
+            if parsed.entry_idx >= parsed.entries_total - 1 {
+                break;
+            }
+        }
+        Ok(output)
+    }
+
+    pub async fn move_file(&self, old_path: &str, new_path: &str) -> Result<()> {
+        log::info!("Move file or directory: {} -> {}", old_path, new_path);
+        let resp_stream = self.chr_fs_transfer.notify().await?;
+        pin_mut!(resp_stream);
+
+        let req = msg::move_req(old_path, new_path);
+        self.chr_fs_transfer.write(&req).await?;
+        let resp = resp_stream.next().await.ok_or(anyhow!("No response"))?;
+        msg::MoveResp::deserialize_check(resp.as_slice())?;
         Ok(())
     }
 }
