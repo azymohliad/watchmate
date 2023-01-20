@@ -3,11 +3,13 @@ use anyhow::Result;
 use bluer::{gatt::remote::Characteristic, Adapter, Device};
 use futures::{Stream, StreamExt};
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use tokio::sync::mpsc;
 
 pub mod fs;
 pub mod fwupd;
 pub mod notification;
 pub mod media_player;
+pub mod resources;
 
 
 #[derive(Debug)]
@@ -116,5 +118,28 @@ impl InfiniTime {
             }
         }
         Ok(result)
+    }
+}
+
+
+#[derive(Debug, Clone)]
+pub enum ProgressEvent {
+    Msg(&'static str),
+    DynMsg(String),
+    Progress { current: u32, total: u32 },
+}
+
+pub type ProgressRx = mpsc::Receiver<ProgressEvent>;
+pub type ProgressTx = mpsc::Sender<ProgressEvent>;
+
+pub fn progress_channel(capacity: usize) -> (ProgressTx, ProgressRx) {
+    mpsc::channel(capacity)
+}
+
+async fn report_progress(tx: &Option<ProgressTx>, event: ProgressEvent) {
+    if let Some(tx) = tx {
+        if let Err(err) = tx.send(event).await {
+            log::error!("Failed to send progress event: {}", err);
+        }
     }
 }

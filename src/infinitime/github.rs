@@ -31,6 +31,13 @@ impl ReleaseInfo {
             a.name.ends_with(".zip")
         })
     }
+
+    pub fn get_resources_asset(&self) -> Option<&Asset> {
+        self.assets.iter().find(|a| {
+            a.name.starts_with("infinitime-resources") &&
+            a.name.ends_with(".zip")
+        })
+    }
 }
 
 pub async fn list_releases() -> Result<Vec<ReleaseInfo>> {

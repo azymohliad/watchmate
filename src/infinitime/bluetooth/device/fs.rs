@@ -1,12 +1,12 @@
-use super::InfiniTime;
-use msg::Response;
+use super::{InfiniTime, ProgressEvent, ProgressTx, report_progress};
+use msg::{Response, Status};
 use chrono::Utc;
 use futures::{pin_mut, StreamExt};
 use anyhow::{anyhow, Result};
 
 mod msg;
 
-const CHUNK_SIZE: u32 = 50;
+const CHUNK_SIZE: u32 = 200;
 
 #[derive(Debug)]
 pub struct DirEntry {
@@ -31,6 +31,35 @@ impl<'s> From<&msg::ListDirResponse<'s>> for DirEntry {
     }
 }
 
+pub fn parent(path: &str) -> Option<&str> {
+    let (parent, _) = path.rsplit_once('/')?;
+    if parent.is_empty() {
+        None
+    } else {
+        Some(parent)
+    }
+}
+
+pub fn ancestors(path: &str) -> Vec<&str> {
+    let mut result = Vec::new();
+    let mut child = path;
+    while let Some(parent) = parent(child) {
+        result.push(parent);
+        child = parent;
+    }
+    result
+}
+
+pub fn ancestors_union<'s>(paths: impl Iterator<Item=&'s str>) -> Vec<&'s str> {
+    let mut result = Vec::new();
+    for path in paths {
+        result.append(&mut ancestors(path))
+    }
+    result.sort();
+    result.dedup();
+    result
+}
+
 
 impl InfiniTime {
     pub async fn read_fs_version(&self) -> Result<u16> {
@@ -38,25 +67,30 @@ impl InfiniTime {
         Ok(u16::from_le_bytes(data.as_slice().try_into()?))
     }
 
-    pub async fn read_file(&self, path: &str, position: u32) -> Result<Vec<u8>> {
+    pub async fn read_file(
+        &self, path: &str, position: u32, progress_sender: Option<ProgressTx>
+    ) -> Result<Vec<u8>> {
         log::info!("Reading file: {}", path);
         let resp_stream = self.chr_fs_transfer.notify().await?;
         pin_mut!(resp_stream);
 
-        let mut offset = position;
-
         // Init
-        let req = msg::read_init_req(path, offset, CHUNK_SIZE);
+        let req = msg::read_init_req(path, position, CHUNK_SIZE);
         self.chr_fs_transfer.write(&req).await?;
         let resp = resp_stream.next().await.ok_or(anyhow!("No response"))?;
         let parsed = msg::ReadResponse::deserialize_check(resp.as_slice())?;
 
-        let mut content = Vec::with_capacity(parsed.total_size as usize);
+        let total_size = parsed.total_size - position;
+        let mut offset = position;
+        let mut content = Vec::with_capacity(total_size as usize);
         content.extend_from_slice(parsed.data);
         offset += parsed.chunk_size;
+        report_progress(&progress_sender, ProgressEvent::Progress {
+            current: content.len() as u32, total: total_size
+        }).await;
 
         // Read content
-        while content.len() < parsed.total_size as usize {
+        while content.len() < total_size as usize {
             let req = msg::read_chunk_req(offset, CHUNK_SIZE);
             self.chr_fs_transfer.write(&req).await?;
             let resp = resp_stream.next().await.ok_or(anyhow!("No response"))?;
@@ -64,12 +98,17 @@ impl InfiniTime {
 
             content.extend_from_slice(parsed.data);
             offset += parsed.chunk_size;
+            report_progress(&progress_sender, ProgressEvent::Progress {
+                current: content.len() as u32, total: total_size
+            }).await;
         }
 
         Ok(content)
     }
 
-    pub async fn write_file(&self, path: &str, content: &[u8], position: u32) -> Result<()> {
+    pub async fn write_file(
+        &self, path: &str, content: &[u8], position: u32, progress_sender: Option<ProgressTx>
+    ) -> Result<()> {
         log::info!("Writing file: {}", path);
         let resp_stream = self.chr_fs_transfer.notify().await?;
         pin_mut!(resp_stream);
@@ -82,15 +121,18 @@ impl InfiniTime {
         msg::WriteResponse::deserialize_check(resp.as_slice())?;
 
         // Write content
-        let mut offset = 0u32;
+        let mut offset = position;
         for chunk in content.chunks(CHUNK_SIZE as usize) {
-            log::trace!("Sending file chunk: {} - {}", offset, chunk.len() as u32 + offset);
+            log::trace!("Sending file chunk: {} - {}", offset, offset + chunk.len() as u32);
             // Write chunk
             let req = msg::write_chunk_req(offset, chunk);
             self.chr_fs_transfer.write(&req).await?;
             let resp = resp_stream.next().await.ok_or(anyhow!("No response"))?;
             msg::WriteResponse::deserialize_check(resp.as_slice())?;
             offset += chunk.len() as u32;
+            report_progress(&progress_sender, ProgressEvent::Progress {
+                current: offset - position, total: content.len() as u32
+            }).await;
         }
 
         Ok(())
@@ -117,8 +159,12 @@ impl InfiniTime {
         let req = msg::make_dir_req(path, timestamp);
         self.chr_fs_transfer.write(&req).await?;
         let resp = resp_stream.next().await.ok_or(anyhow!("No response"))?;
-        msg::MakeDirResponse::deserialize_check(resp.as_slice())?;
-        Ok(())
+        let parsed = msg::MakeDirResponse::deserialize(resp.as_slice())?;
+        if parsed.status != Status::Ok && parsed.status != Status::Exists {
+            Err(anyhow!("LittleFS error: {:?}", parsed.status))
+        } else {
+            Ok(())
+        }
     }
 
     pub async fn list_dir(&self, path: &str) -> Result<Vec<DirEntry>> {
@@ -149,6 +195,13 @@ impl InfiniTime {
         self.chr_fs_transfer.write(&req).await?;
         let resp = resp_stream.next().await.ok_or(anyhow!("No response"))?;
         msg::MoveResp::deserialize_check(resp.as_slice())?;
+        Ok(())
+    }
+
+    pub async fn make_dirs(&self, path: &str) -> Result<()> {
+        for p in ancestors(path).iter().rev() {
+            self.make_dir(p).await?;
+        }
         Ok(())
     }
 }
