@@ -124,9 +124,8 @@ impl InfiniTime {
 
 #[derive(Debug, Clone)]
 pub enum ProgressEvent {
-    Msg(&'static str),
-    DynMsg(String),
-    Progress { current: u32, total: u32 },
+    Message(String),
+    Numbers { current: u32, total: u32 },
 }
 
 pub type ProgressRx = mpsc::Receiver<ProgressEvent>;
@@ -136,10 +135,24 @@ pub fn progress_channel(capacity: usize) -> (ProgressTx, ProgressRx) {
     mpsc::channel(capacity)
 }
 
-async fn report_progress(tx: &Option<ProgressTx>, event: ProgressEvent) {
-    if let Some(tx) = tx {
-        if let Err(err) = tx.send(event).await {
-            log::error!("Failed to send progress event: {}", err);
+// Private helper
+
+struct ProgressTxWrapper(Option<ProgressTx>);
+
+impl ProgressTxWrapper {
+    async fn report(&self, event: ProgressEvent) {
+        if let Some(tx) = &self.0 {
+            if let Err(err) = tx.send(event).await {
+                log::error!("Failed to send progress event: {}", err);
+            }
         }
+    }
+
+    async fn report_msg<T: Into<String>>(&self, msg: T) {
+        self.report(ProgressEvent::Message(msg.into())).await;
+    }
+
+    async fn report_num(&self, current: u32, total: u32) {
+        self.report(ProgressEvent::Numbers { current, total }).await;
     }
 }

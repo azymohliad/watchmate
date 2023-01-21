@@ -1,4 +1,4 @@
-use super::{InfiniTime, ProgressEvent, ProgressTx, report_progress};
+use super::{InfiniTime, ProgressTx, ProgressTxWrapper};
 use msg::{Response, Status};
 use chrono::Utc;
 use futures::{pin_mut, StreamExt};
@@ -70,6 +70,8 @@ impl InfiniTime {
     pub async fn read_file(
         &self, path: &str, position: u32, progress_sender: Option<ProgressTx>
     ) -> Result<Vec<u8>> {
+        let progress = ProgressTxWrapper(progress_sender);
+
         log::info!("Reading file: {}", path);
         let resp_stream = self.chr_fs_transfer.notify().await?;
         pin_mut!(resp_stream);
@@ -85,9 +87,7 @@ impl InfiniTime {
         let mut content = Vec::with_capacity(total_size as usize);
         content.extend_from_slice(parsed.data);
         offset += parsed.chunk_size;
-        report_progress(&progress_sender, ProgressEvent::Progress {
-            current: content.len() as u32, total: total_size
-        }).await;
+        progress.report_num(content.len() as u32, total_size).await;
 
         // Read content
         while content.len() < total_size as usize {
@@ -98,9 +98,7 @@ impl InfiniTime {
 
             content.extend_from_slice(parsed.data);
             offset += parsed.chunk_size;
-            report_progress(&progress_sender, ProgressEvent::Progress {
-                current: content.len() as u32, total: total_size
-            }).await;
+            progress.report_num(content.len() as u32, total_size).await;
         }
 
         Ok(content)
@@ -109,6 +107,8 @@ impl InfiniTime {
     pub async fn write_file(
         &self, path: &str, content: &[u8], position: u32, progress_sender: Option<ProgressTx>
     ) -> Result<()> {
+        let progress = ProgressTxWrapper(progress_sender);
+
         log::info!("Writing file: {}", path);
         let resp_stream = self.chr_fs_transfer.notify().await?;
         pin_mut!(resp_stream);
@@ -130,9 +130,7 @@ impl InfiniTime {
             let resp = resp_stream.next().await.ok_or(anyhow!("No response"))?;
             msg::WriteResponse::deserialize_check(resp.as_slice())?;
             offset += chunk.len() as u32;
-            report_progress(&progress_sender, ProgressEvent::Progress {
-                current: offset - position, total: content.len() as u32
-            }).await;
+            progress.report_num(offset - position, content.len() as u32).await;
         }
 
         Ok(())

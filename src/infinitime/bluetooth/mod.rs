@@ -8,8 +8,9 @@ mod services;
 mod uuids;
 
 pub use device::{
-    fwupd::DfuProgressMsg, media_player::MediaPlayerEvent,
-    notification::Notification, InfiniTime
+    media_player::MediaPlayerEvent, notification::Notification,
+    InfiniTime, ProgressEvent, ProgressRx, ProgressTx,
+    progress_channel,
 };
 pub use services::start_gatt_services;
 

@@ -1,4 +1,4 @@
-use super::{fs, InfiniTime, ProgressEvent, ProgressTx, report_progress};
+use super::{fs, InfiniTime, ProgressTx, ProgressTxWrapper};
 // use std::sync::mpsc;
 use std::io::{Cursor, Read};
 // use futures::{pin_mut, StreamExt};
@@ -22,6 +22,8 @@ struct Resource {
 impl InfiniTime {
     pub async fn upload_resources(&self, resources_archive: &[u8], progress_sender: Option<ProgressTx>) -> Result<()>
     {
+        let progress = ProgressTxWrapper(progress_sender);
+
         // Parse manifest from the archive
         let mut zip = zip::ZipArchive::new(Cursor::new(resources_archive))?;
         let mut json = String::new();
@@ -31,20 +33,16 @@ impl InfiniTime {
         // Make dirs
         let files = manifest.resources.iter().map(|r| r.path.as_str());
         for dir in fs::ancestors_union(files) {
-            report_progress(&progress_sender, ProgressEvent::DynMsg(
-                format!("Creating directory: {}", dir)
-            )).await;
+            progress.report_msg(format!("Creating directory: {}", dir)).await;
             self.make_dir(dir).await?;
         }
 
         // Write files
         for res in manifest.resources {
             let mut content = Vec::new();
-            report_progress(&progress_sender, ProgressEvent::DynMsg(
-                format!("Writing resource file: {}", &res.path)
-            )).await;
+            progress.report_msg(format!("Writing resource file: {}", &res.path)).await;
             zip.by_name(&res.filename)?.read_to_end(&mut content)?;
-            self.write_file(&res.path, &content, 0, progress_sender.clone()).await?;
+            self.write_file(&res.path, &content, 0, progress.0.clone()).await?;
         }
 
         Ok(())
