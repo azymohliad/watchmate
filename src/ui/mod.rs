@@ -12,14 +12,17 @@ mod firmware_panel;
 mod media_player;
 mod notifications;
 
+use firmware_update::AssetType;
+
+
 #[derive(Debug)]
 enum Input {
     SetView(View),
     DeviceConnected(Arc<bluer::Device>),
     DeviceDisconnected(Arc<bluer::Device>),
     DeviceReady(Arc<bt::InfiniTime>),
-    FirmwareUpdateFromFile(PathBuf),
-    FirmwareUpdateFromUrl(String),
+    FlashAssetFromFile(PathBuf, AssetType),
+    FlashAssetFromUrl(String, AssetType),
     Toast(&'static str),
 }
 
@@ -87,8 +90,8 @@ impl Component for Model {
         let dashboard = dashboard::Model::builder()
             .launch(root.clone())
             .forward(&sender.input_sender(), |message| match message {
-                dashboard::Output::FirmwareUpdateFromFile(file) => Input::FirmwareUpdateFromFile(file),
-                dashboard::Output::FirmwareUpdateFromUrl(url) => Input::FirmwareUpdateFromUrl(url),
+                dashboard::Output::FlashAssetFromFile(file, atype) => Input::FlashAssetFromFile(file, atype),
+                dashboard::Output::FlashAssetFromUrl(url, atype) => Input::FlashAssetFromUrl(url, atype),
                 dashboard::Output::Toast(text) => Input::Toast(text),
                 dashboard::Output::SetView(view) => Input::SetView(view),
             });
@@ -163,12 +166,12 @@ impl Component for Model {
                 self.dashboard.emit(dashboard::Input::Connected(infinitime.clone()));
                 self.fwupd.emit(firmware_update::Input::Connected(infinitime.clone()));
             }
-            Input::FirmwareUpdateFromFile(filepath) => {
-                self.fwupd.emit(firmware_update::Input::FirmwareUpdateFromFile(filepath));
+            Input::FlashAssetFromFile(file, atype) => {
+                self.fwupd.emit(firmware_update::Input::FlashAssetFromFile(file, atype));
                 sender.input(Input::SetView(View::FirmwareUpdate));
             }
-            Input::FirmwareUpdateFromUrl(url) => {
-                self.fwupd.emit(firmware_update::Input::FirmwareUpdateFromUrl(url));
+            Input::FlashAssetFromUrl(url, atype) => {
+                self.fwupd.emit(firmware_update::Input::FlashAssetFromUrl(url, atype));
                 sender.input(Input::SetView(View::FirmwareUpdate));
             }
             Input::Toast(message) => {

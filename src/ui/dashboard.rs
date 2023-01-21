@@ -1,5 +1,5 @@
 use crate::inft::bt;
-use super::{media_player, firmware_panel, notifications};
+use super::{media_player, firmware_panel, notifications, AssetType};
 use std::{sync::Arc, path::PathBuf};
 use futures::{pin_mut, StreamExt};
 use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, ListBoxRowExt, WidgetExt};
@@ -13,16 +13,16 @@ use version_compare::Version;
 pub enum Input {
     Connected(Arc<bt::InfiniTime>),
     Disconnected,
-    FirmwareVersionLatest(Option<String>),
-    FirmwareUpdateFromFile(PathBuf),
-    FirmwareUpdateFromUrl(String),
+    LatestFirmwareVersion(Option<String>),
+    FlashAssetFromFile(PathBuf, AssetType),
+    FlashAssetFromUrl(String, AssetType),
     Toast(&'static str),
 }
 
 #[derive(Debug)]
 pub enum Output {
-    FirmwareUpdateFromFile(PathBuf),
-    FirmwareUpdateFromUrl(String),
+    FlashAssetFromFile(PathBuf, AssetType),
+    FlashAssetFromUrl(String, AssetType),
     Toast(&'static str),
     SetView(super::View),
 }
@@ -209,7 +209,7 @@ impl Component for Model {
                                     set_sensitive: model.alias.is_some(),
                                     set_child: Some(model.player_panel.widget()),
                                 },
-                                
+
                                 gtk::ListBoxRow {
                                     set_selectable: false,
                                     #[watch]
@@ -350,7 +350,7 @@ impl Component for Model {
         let player_panel = media_player::Model::builder()
             .launch(())
             .detach();
-            
+
         let notifications_panel = notifications::Model::builder()
             .launch(())
             .detach();
@@ -358,9 +358,9 @@ impl Component for Model {
         let firmware_panel = firmware_panel::Model::builder()
             .launch(main_window)
             .forward(&sender.input_sender(), |message| match message {
-                firmware_panel::Output::FirmwareVersionLatest(f) => Input::FirmwareVersionLatest(f),
-                firmware_panel::Output::FirmwareUpdateFromFile(f) => Input::FirmwareUpdateFromFile(f),
-                firmware_panel::Output::FirmwareUpdateFromUrl(u) => Input::FirmwareUpdateFromUrl(u),
+                firmware_panel::Output::LatestFirmwareVersion(f) => Input::LatestFirmwareVersion(f),
+                firmware_panel::Output::FlashAssetFromFile(f, t) => Input::FlashAssetFromFile(f, t),
+                firmware_panel::Output::FlashAssetFromUrl(u, t) => Input::FlashAssetFromUrl(u, t),
                 firmware_panel::Output::Toast(n) => Input::Toast(n),
             });
 
@@ -429,15 +429,15 @@ impl Component for Model {
                 // Propagate to components
                 self.player_panel.emit(media_player::Input::Device(None));
             }
-            Input::FirmwareVersionLatest(latest) => {
+            Input::LatestFirmwareVersion(latest) => {
                 self.fw_latest = latest;
                 self.check_fw_update_available();
             }
-            Input::FirmwareUpdateFromFile(f) => {
-                sender.output(Output::FirmwareUpdateFromFile(f)).unwrap();
+            Input::FlashAssetFromFile(f, t) => {
+                sender.output(Output::FlashAssetFromFile(f, t)).unwrap();
             }
-            Input::FirmwareUpdateFromUrl(u) => {
-                sender.output(Output::FirmwareUpdateFromUrl(u)).unwrap();
+            Input::FlashAssetFromUrl(u, t) => {
+                sender.output(Output::FlashAssetFromUrl(u, t)).unwrap();
             }
             Input::Toast(n) => {
                 sender.output(Output::Toast(n)).unwrap();
