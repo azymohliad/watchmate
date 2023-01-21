@@ -56,7 +56,7 @@ pub struct Model {
 impl Model {
     fn download_dfu(url: Arc<String>, sender: ComponentSender<Self>) -> JoinHandle<()> {
         relm4::spawn(async move {
-            match gh::download_dfu_content(url.as_str()).await {
+            match gh::download_content(url.as_str()).await {
                 Ok(content) => sender.input(Input::FirmwareContentReady(content)),
                 Err(_) => sender.input(Input::FirmwareUpdateFailed("Failed to download DFU file")),
             }
