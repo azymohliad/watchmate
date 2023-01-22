@@ -2,6 +2,7 @@ use super::{InfiniTime, ProgressTx, ProgressTxWrapper};
 use crate::inft::utils;
 use anyhow::{anyhow, ensure, Result};
 use futures::{pin_mut, StreamExt};
+use serde::Deserialize;
 use std::{
     io::{Cursor, Read},
     sync::atomic::Ordering,
@@ -9,6 +10,34 @@ use std::{
 
 
 pub const MAX_FIRMWARE_SIZE: usize = 512 * 1024;
+
+
+#[derive(Deserialize, Debug)]
+struct Manifest {
+    manifest: ManifestInner,
+}
+
+#[derive(Deserialize, Debug)]
+struct ManifestInner {
+    application: Application,
+    // dfu_version: String,
+}
+
+#[derive(Deserialize, Debug)]
+struct Application {
+    bin_file: String,
+    dat_file: String,
+    // init_packet_data: InitPacketData,
+}
+
+// #[derive(Deserialize, Debug)]
+// struct InitPacketData {
+//     application_version: u32,
+//     device_revision: u16,
+//     device_type: u16,
+//     firmware_crc16: u16,
+//     softdevice_req: Vec<u16>,
+// }
 
 
 impl InfiniTime {
@@ -22,39 +51,22 @@ impl InfiniTime {
 
         progress.report_msg("Extracting firmware files...").await;
 
+        // Parse manifest from the archive
         let mut zip = zip::ZipArchive::new(Cursor::new(dfu_content))?;
+        let mut json = String::new();
+        zip.by_name("manifest.json")?.read_to_string(&mut json)?;
+        let manifest = serde_json::from_str::<Manifest>(&json)
+            .map_err(|_| anyhow!("Invalid manifest.json"))?.manifest;
 
-        // Find filenames
-        let mut dfu_bin = None;
-        let mut dfu_dat = None;
-        for filename in zip.file_names() {
-            if filename.ends_with(".bin") {
-                if dfu_bin.replace(filename).is_some() {
-                    return Err(anyhow!("DFU archive contains multiple .bin files"));
-                }
-            }
-            if filename.ends_with(".dat") {
-                if dfu_dat.replace(filename).is_some() {
-                    return Err(anyhow!("DFU archive contains multiple .dat files"));
-                }
-            }
-        }
-        if dfu_bin.is_none() || dfu_dat.is_none() {
-            return Err(anyhow!("DFU archive is lacking .bin and/or .dat files"));
-        }
-
-        // Filenames need to be cloned to unborrow zip
-        let dfu_bin = dfu_bin.unwrap().to_string();
-        let dfu_dat = dfu_dat.unwrap().to_string();
 
         // Read DFU data
         let mut init_packet = Vec::new();
-        zip.by_name(&dfu_dat)?.read_to_end(&mut init_packet)?;
+        zip.by_name(&manifest.application.dat_file)?.read_to_end(&mut init_packet)?;
 
         let mut firmware_buffer = Vec::new();
         {
             // file is not Send, so it needs to go out of scope before the next await
-            let mut file = zip.by_name(&dfu_bin)?;
+            let mut file = zip.by_name(&manifest.application.bin_file)?;
             ensure!(file.size() < MAX_FIRMWARE_SIZE as u64, "Firmware cannot be that large");
             file.read_to_end(&mut firmware_buffer)?;
         }
