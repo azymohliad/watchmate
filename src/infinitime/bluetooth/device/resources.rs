@@ -4,19 +4,26 @@ use std::io::{Cursor, Read};
 // use futures::{pin_mut, StreamExt};
 use anyhow::{anyhow, ensure, Result};
 use serde::Deserialize;
+use version_compare::Version;
 
 pub const MAX_RESOURCE_SIZE: usize = 4 * 1024 * 1024;
 
 #[derive(Deserialize, Debug)]
 struct Resources {
     resources: Vec<Resource>,
+    obsolete_files: Vec<ObsoleteFile>,
 }
-
 
 #[derive(Deserialize, Debug)]
 struct Resource {
     filename: String,
     path: String,
+}
+
+#[derive(Deserialize, Debug)]
+struct ObsoleteFile {
+    path: String,
+    since: String,
 }
 
 
@@ -39,7 +46,7 @@ impl InfiniTime {
             self.make_dir(dir).await?;
         }
 
-        // Write files
+        // Write new files
         for res in manifest.resources {
             let mut content = Vec::new();
             {
@@ -50,6 +57,21 @@ impl InfiniTime {
             }
             progress.report_msg(format!("Writing resource file: {}", &res.path)).await;
             self.write_file(&res.path, &content, 0, progress.0.clone()).await?;
+        }
+
+        // Remove obsolete files
+        let fw_version = self.read_firmware_version().await?;
+        let current_version = Version::from(&fw_version)
+            .ok_or(anyhow!("Failed to parse current firmware version"))?;
+        for obsolete in manifest.obsolete_files {
+            if let Some(obsolete_version) = Version::from(&obsolete.since) {
+                if current_version >= obsolete_version {
+                    progress.report_msg(format!("Removing obsolete file: {}", &obsolete.path)).await;
+                    if let Err(err) = self.delete_file(&obsolete.path).await {
+                        log::warn!("Failed to delete file '{}': {}", &obsolete.path, err);
+                    }
+                }
+            }
         }
 
         Ok(())
