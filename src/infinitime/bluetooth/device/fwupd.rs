@@ -1,4 +1,4 @@
-use super::{InfiniTime, ProgressTx, ProgressTxWrapper};
+use super::{uuids, InfiniTime, ProgressTx, ProgressTxWrapper};
 use crate::inft::utils;
 use anyhow::{anyhow, ensure, Result};
 use futures::{pin_mut, StreamExt};
@@ -42,6 +42,9 @@ struct Application {
 
 impl InfiniTime {
     pub async fn firmware_upgrade(&self, dfu_content: &[u8], progress_sender: Option<ProgressTx>) -> Result<()> {
+        let chr_ctrl = self.chr(&uuids::CHR_FWUPD_CONTROL_POINT)?;
+        let chr_packet = self.chr(&uuids::CHR_FWUPD_PACKET)?;
+
         let progress = ProgressTxWrapper(progress_sender);
 
         self.is_upgrading_firmware.store(true, Ordering::SeqCst);
@@ -72,18 +75,18 @@ impl InfiniTime {
         }
 
         // Obtain characteristics
-        let control_point_stream = self.chr_fwupd_control_point.notify().await?;
+        let control_point_stream = chr_ctrl.notify().await?;
         pin_mut!(control_point_stream);
 
         // Step 1
         progress.report_msg("Initiating firmware upgrade...").await;
-        self.chr_fwupd_control_point.write(&[0x01, 0x04]).await?;
+        chr_ctrl.write(&[0x01, 0x04]).await?;
 
         // Step 2
         let mut size_packet = vec![0; 8];
         let firmware_size = firmware_buffer.len() as u32;
         size_packet.extend_from_slice(&firmware_size.to_le_bytes());
-        self.chr_fwupd_packet.write(&size_packet).await?;
+        chr_packet.write(&size_packet).await?;
 
         let receipt = control_point_stream.next().await
             .ok_or(anyhow!("Control point notification stream ended"))?;
@@ -91,11 +94,11 @@ impl InfiniTime {
 
         // Step 3
         progress.report_msg("Sending DFU init packet...").await;
-        self.chr_fwupd_control_point.write(&[0x02, 0x00]).await?;
+        chr_ctrl.write(&[0x02, 0x00]).await?;
 
         // Step 4
-        self.chr_fwupd_packet.write(&init_packet).await?;
-        self.chr_fwupd_control_point.write(&[0x02, 0x01]).await?;
+        chr_packet.write(&init_packet).await?;
+        chr_ctrl.write(&[0x02, 0x01]).await?;
 
         let receipt = control_point_stream.next().await
             .ok_or(anyhow!("Control point notification stream ended"))?;
@@ -104,16 +107,16 @@ impl InfiniTime {
         // Step 5
         progress.report_msg("Configuring receipt interval...").await;
         let receipt_interval = 100;
-        self.chr_fwupd_control_point.write(&[0x08, receipt_interval]).await?;
+        chr_ctrl.write(&[0x08, receipt_interval]).await?;
 
         // Step 6
-        self.chr_fwupd_control_point.write(&[0x03]).await?;
+        chr_ctrl.write(&[0x03]).await?;
 
         // Step 7
         progress.report_msg("Sending firmware...").await;
         let mut bytes_sent = 0;
         for (idx, packet) in firmware_buffer.chunks(20).enumerate() {
-            self.chr_fwupd_packet.write(&packet).await?;
+            chr_packet.write(&packet).await?;
             bytes_sent += packet.len() as u32;
             if (idx + 1) % receipt_interval as usize == 0 {
                 let receipt = control_point_stream.next().await
@@ -129,14 +132,14 @@ impl InfiniTime {
         let receipt = control_point_stream.next().await
             .ok_or(anyhow!("Control point notification stream ended"))?;
         ensure!(receipt == &[0x10, 0x03, 0x01]);
-        self.chr_fwupd_control_point.write(&[0x04]).await?;
+        chr_ctrl.write(&[0x04]).await?;
 
         // Step 9
         progress.report_msg("Waiting for firmware validation...").await;
         let receipt = control_point_stream.next().await
             .ok_or(anyhow!("Control point notification stream ended"))?;
         ensure!(receipt == &[0x10, 0x04, 0x01]);
-        self.chr_fwupd_control_point.write(&[0x05]).await?;
+        chr_ctrl.write(&[0x05]).await?;
 
         progress.report_msg("Done!").await;
 

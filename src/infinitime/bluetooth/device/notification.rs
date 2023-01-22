@@ -1,4 +1,4 @@
-use super::InfiniTime;
+use super::{uuids, InfiniTime};
 use anyhow::Result;
 
 
@@ -32,6 +32,7 @@ impl InfiniTime {
                 [header, title.as_bytes()].join(&0)
             }
         };
-        Ok(self.chr_new_alert.write(&message).await?)
+        let characteristic = self.chr(&uuids::CHR_NEW_ALERT)?;
+        Ok(characteristic.write(&message).await?)
     }
 }

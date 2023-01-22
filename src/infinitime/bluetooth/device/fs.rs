@@ -1,4 +1,4 @@
-use super::{InfiniTime, ProgressTx, ProgressTxWrapper};
+use super::{uuids, InfiniTime, ProgressTx, ProgressTxWrapper};
 use msg::{Response, Status};
 use chrono::Utc;
 use futures::{pin_mut, StreamExt};
@@ -65,21 +65,22 @@ pub fn ancestors_union<'s>(paths: impl Iterator<Item=&'s str>) -> Vec<&'s str> {
 #[allow(unused)]
 impl InfiniTime {
     pub async fn read_fs_version(&self) -> Result<u16> {
-        let data = self.chr_fs_version.read().await?;
+        let data = self.chr(&uuids::CHR_FS_VERSION)?.read().await?;
         Ok(u16::from_le_bytes(data.as_slice().try_into()?))
     }
 
     pub async fn read_file(
         &self, path: &str, position: u32, progress_sender: Option<ProgressTx>
     ) -> Result<Vec<u8>> {
-        let progress = ProgressTxWrapper(progress_sender);
         log::info!("Reading file: {}", path);
-        let resp_stream = self.chr_fs_transfer.notify().await?;
+        let chr = self.chr(&uuids::CHR_FS_TRANSFER)?;
+        let progress = ProgressTxWrapper(progress_sender);
+        let resp_stream = chr.notify().await?;
         pin_mut!(resp_stream);
 
         // Init
         let req = msg::read_init_req(path, position, CHUNK_SIZE);
-        self.chr_fs_transfer.write(&req).await?;
+        chr.write(&req).await?;
         let resp = resp_stream.next().await.ok_or(anyhow!("No response"))?;
         let parsed = msg::ReadResponse::deserialize_check(resp.as_slice())?;
 
@@ -93,7 +94,7 @@ impl InfiniTime {
         // Read content
         while content.len() < total_size as usize {
             let req = msg::read_chunk_req(offset, CHUNK_SIZE);
-            self.chr_fs_transfer.write(&req).await?;
+            chr.write(&req).await?;
             let resp = resp_stream.next().await.ok_or(anyhow!("No response"))?;
             let parsed = msg::ReadResponse::deserialize_check(resp.as_slice())?;
 
@@ -108,16 +109,16 @@ impl InfiniTime {
     pub async fn write_file(
         &self, path: &str, content: &[u8], position: u32, progress_sender: Option<ProgressTx>
     ) -> Result<()> {
-        let progress = ProgressTxWrapper(progress_sender);
-
         log::info!("Writing file: {}", path);
-        let resp_stream = self.chr_fs_transfer.notify().await?;
+        let chr = self.chr(&uuids::CHR_FS_TRANSFER)?;
+        let progress = ProgressTxWrapper(progress_sender);
+        let resp_stream = chr.notify().await?;
         pin_mut!(resp_stream);
 
         // Init
         let timestamp = Utc::now().timestamp_nanos() as u64;
         let req = msg::write_init_req(path, position, content.len() as u32, timestamp);
-        self.chr_fs_transfer.write(&req).await?;
+        chr.write(&req).await?;
         let resp = resp_stream.next().await.ok_or(anyhow!("No response"))?;
         msg::WriteResponse::deserialize_check(resp.as_slice())?;
 
@@ -127,7 +128,7 @@ impl InfiniTime {
             log::trace!("Sending file chunk: {} - {}", offset, offset + chunk.len() as u32);
             // Write chunk
             let req = msg::write_chunk_req(offset, chunk);
-            self.chr_fs_transfer.write(&req).await?;
+            chr.write(&req).await?;
             let resp = resp_stream.next().await.ok_or(anyhow!("No response"))?;
             msg::WriteResponse::deserialize_check(resp.as_slice())?;
             offset += chunk.len() as u32;
@@ -139,11 +140,12 @@ impl InfiniTime {
 
     pub async fn delete_file(&self, path: &str) -> Result<()> {
         log::info!("Deleting file: {}", path);
-        let resp_stream = self.chr_fs_transfer.notify().await?;
+        let chr = self.chr(&uuids::CHR_FS_TRANSFER)?;
+        let resp_stream = chr.notify().await?;
         pin_mut!(resp_stream);
 
         let req = msg::delete_req(path);
-        self.chr_fs_transfer.write(&req).await?;
+        chr.write(&req).await?;
         let resp = resp_stream.next().await.ok_or(anyhow!("No response"))?;
         msg::DeleteResponse::deserialize_check(resp.as_slice())?;
         Ok(())
@@ -151,12 +153,13 @@ impl InfiniTime {
 
     pub async fn make_dir(&self, path: &str) -> Result<()> {
         log::info!("Making dir: {}", path);
-        let resp_stream = self.chr_fs_transfer.notify().await?;
+        let chr = self.chr(&uuids::CHR_FS_TRANSFER)?;
+        let resp_stream = chr.notify().await?;
         pin_mut!(resp_stream);
 
         let timestamp = Utc::now().timestamp_nanos() as u64;
         let req = msg::make_dir_req(path, timestamp);
-        self.chr_fs_transfer.write(&req).await?;
+        chr.write(&req).await?;
         let resp = resp_stream.next().await.ok_or(anyhow!("No response"))?;
         let parsed = msg::MakeDirResponse::deserialize(resp.as_slice())?;
         if parsed.status != Status::Ok && parsed.status != Status::Exists {
@@ -168,11 +171,12 @@ impl InfiniTime {
 
     pub async fn list_dir(&self, path: &str) -> Result<Vec<DirEntry>> {
         log::info!("Listing dir: {}", path);
-        let resp_stream = self.chr_fs_transfer.notify().await?;
+        let chr = self.chr(&uuids::CHR_FS_TRANSFER)?;
+        let resp_stream = chr.notify().await?;
         pin_mut!(resp_stream);
 
         let req = msg::list_dir_req(path);
-        self.chr_fs_transfer.write(&req).await?;
+        chr.write(&req).await?;
 
         let mut output = Vec::new();
         while let Some(resp) = resp_stream.next().await {
@@ -187,11 +191,12 @@ impl InfiniTime {
 
     pub async fn move_file(&self, old_path: &str, new_path: &str) -> Result<()> {
         log::info!("Move file or directory: {} -> {}", old_path, new_path);
-        let resp_stream = self.chr_fs_transfer.notify().await?;
+        let chr = self.chr(&uuids::CHR_FS_TRANSFER)?;
+        let resp_stream = chr.notify().await?;
         pin_mut!(resp_stream);
 
         let req = msg::move_req(old_path, new_path);
-        self.chr_fs_transfer.write(&req).await?;
+        chr.write(&req).await?;
         let resp = resp_stream.next().await.ok_or(anyhow!("No response"))?;
         msg::MoveResp::deserialize_check(resp.as_slice())?;
         Ok(())
