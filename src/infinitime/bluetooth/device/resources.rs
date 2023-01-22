@@ -2,9 +2,10 @@ use super::{fs, InfiniTime, ProgressTx, ProgressTxWrapper};
 // use std::sync::mpsc;
 use std::io::{Cursor, Read};
 // use futures::{pin_mut, StreamExt};
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, ensure, Result};
 use serde::Deserialize;
 
+pub const MAX_RESOURCE_SIZE: usize = 4 * 1024 * 1024;
 
 #[derive(Deserialize, Debug)]
 struct Resources {
@@ -41,8 +42,13 @@ impl InfiniTime {
         // Write files
         for res in manifest.resources {
             let mut content = Vec::new();
+            {
+                // file is not Send, so it has to go out of scope befor the next await
+                let mut file = zip.by_name(&res.filename)?;
+                ensure!(file.size() < MAX_RESOURCE_SIZE as u64, "File too large: {}", res.filename);
+                file.read_to_end(&mut content)?;
+            }
             progress.report_msg(format!("Writing resource file: {}", &res.path)).await;
-            zip.by_name(&res.filename)?.read_to_end(&mut content)?;
             self.write_file(&res.path, &content, 0, progress.0.clone()).await?;
         }
 

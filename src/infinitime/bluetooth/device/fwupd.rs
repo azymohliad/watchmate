@@ -8,6 +8,9 @@ use std::{
 };
 
 
+pub const MAX_FIRMWARE_SIZE: usize = 512 * 1024;
+
+
 impl InfiniTime {
     pub async fn firmware_upgrade(&self, dfu_content: &[u8], progress_sender: Option<ProgressTx>) -> Result<()> {
         let progress = ProgressTxWrapper(progress_sender);
@@ -39,15 +42,22 @@ impl InfiniTime {
         if dfu_bin.is_none() || dfu_dat.is_none() {
             return Err(anyhow!("DFU archive is lacking .bin and/or .dat files"));
         }
+
         // Filenames need to be cloned to unborrow zip
         let dfu_bin = dfu_bin.unwrap().to_string();
         let dfu_dat = dfu_dat.unwrap().to_string();
 
         // Read DFU data
         let mut init_packet = Vec::new();
-        zip.by_name(&dfu_dat).unwrap().read_to_end(&mut init_packet)?;
+        zip.by_name(&dfu_dat)?.read_to_end(&mut init_packet)?;
+
         let mut firmware_buffer = Vec::new();
-        zip.by_name(&dfu_bin).unwrap().read_to_end(&mut firmware_buffer)?;
+        {
+            // file is not Send, so it needs to go out of scope before the next await
+            let mut file = zip.by_name(&dfu_bin)?;
+            ensure!(file.size() < MAX_FIRMWARE_SIZE as u64, "Firmware cannot be that large");
+            file.read_to_end(&mut firmware_buffer)?;
+        }
 
         // Obtain characteristics
         let control_point_stream = self.chr_fwupd_control_point.notify().await?;
