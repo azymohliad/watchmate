@@ -14,7 +14,7 @@ pub struct ReleaseInfo {
     pub assets: Vec<Asset>,
 }
 
-#[derive(Deserialize, Debug, PartialEq)]
+#[derive(Clone, Deserialize, Debug, PartialEq)]
 pub struct Asset {
     pub name: String,
     pub url: String,
@@ -28,6 +28,13 @@ impl ReleaseInfo {
     pub fn get_dfu_asset(&self) -> Option<&Asset> {
         self.assets.iter().find(|a| {
             a.name.starts_with("pinetime-mcuboot-app-dfu") &&
+            a.name.ends_with(".zip")
+        })
+    }
+
+    pub fn get_resources_asset(&self) -> Option<&Asset> {
+        self.assets.iter().find(|a| {
+            a.name.starts_with("infinitime-resources") &&
             a.name.ends_with(".zip")
         })
     }
@@ -53,7 +60,7 @@ pub async fn list_releases() -> Result<Vec<ReleaseInfo>> {
     }
 }
 
-pub async fn download_dfu_content(url: impl IntoUrl) -> Result<Vec<u8>>
+pub async fn download_content(url: impl IntoUrl) -> Result<Vec<u8>>
 {
     let client = reqwest::Client::new();
     let response = client
@@ -73,15 +80,15 @@ pub async fn download_dfu_content(url: impl IntoUrl) -> Result<Vec<u8>>
     }
 }
 
-pub async fn save_dfu_file(content: &[u8], filepath: impl AsRef<Path>) -> Result<()> {
+pub async fn save_file(content: &[u8], filepath: impl AsRef<Path>) -> Result<()> {
     let mut file = File::create(&filepath).await?;
     file.write_all(&content).await?;
     Ok(())
 }
 
-pub async fn _download_dfu_file(url: impl IntoUrl, filepath: impl AsRef<Path>) -> Result<()> {
-    let content = download_dfu_content(url).await?;
-    save_dfu_file(&content, filepath).await?;
+pub async fn _download_file(url: impl IntoUrl, filepath: impl AsRef<Path>) -> Result<()> {
+    let content = download_content(url).await?;
+    save_file(&content, filepath).await?;
     Ok(())
 }
 

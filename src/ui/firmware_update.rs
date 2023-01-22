@@ -1,4 +1,4 @@
-use crate::inft::{bt, gh};
+use crate::inft::{bt::{self, ProgressEvent, InfiniTime}, gh};
 use std::{sync::Arc, path::PathBuf};
 use tokio::{fs::File, io::AsyncReadExt};
 use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, WidgetExt};
@@ -9,15 +9,14 @@ pub enum Input {
     Connected(Arc<bt::InfiniTime>),
     Disconnected,
 
-    FirmwareUpdateFromFile(PathBuf),
-    FirmwareUpdateFromUrl(String),
+    FlashAssetFromFile(PathBuf, AssetType),
+    FlashAssetFromUrl(String, AssetType),
 
-    FirmwareContentReady(Vec<u8>),
-    FirmwareUpdateFinished,
-    FirmwareUpdateFailed(&'static str),
+    ContentReady(Vec<u8>),
 
-    StatusMessage(&'static str),
-    FlashProgress { flashed: u32, total: u32 },
+    OtaProgress(ProgressEvent),
+    OtaFinished,
+    OtaFailed(String),
 
     Retry,
     Abort,
@@ -41,60 +40,91 @@ pub enum State {
     Finished,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub enum AssetType {
+    #[default]
+    Firmware,
+    Resources,
+}
+
+impl AssetType {
+    fn name(&self) -> &'static str {
+        match self {
+            AssetType::Firmware => "Firmware",
+            AssetType::Resources => "Resources",
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct Model {
-    status_message: String,
-    progress: f64,
+    progress_status: String,
+    progress_current: u32,
+    progress_total: u32,
     state: State,
-    dfu_content: Option<Arc<Vec<u8>>>,
-    dfu_source: Option<Source>,
+    asset_type: AssetType,
+    asset_content: Option<Arc<Vec<u8>>>,
+    asset_source: Option<Source>,
 
     infinitime: Option<Arc<bt::InfiniTime>>,
     task_handle: Option<JoinHandle<()>>,
 }
 
 impl Model {
-    fn download_dfu(url: Arc<String>, sender: ComponentSender<Self>) -> JoinHandle<()> {
+    fn download_asset(url: Arc<String>, sender: ComponentSender<Self>) -> JoinHandle<()> {
         relm4::spawn(async move {
-            match gh::download_dfu_content(url.as_str()).await {
-                Ok(content) => sender.input(Input::FirmwareContentReady(content)),
-                Err(_) => sender.input(Input::FirmwareUpdateFailed("Failed to download DFU file")),
+            match gh::download_content(url.as_str()).await {
+                Ok(content) => sender.input(Input::ContentReady(content)),
+                Err(_) => sender.input(Input::OtaFailed("Downloading failed".to_string())),
             }
         })
     }
 
-    fn read_dfu_file(filepath: Arc<PathBuf>, sender: ComponentSender<Self>) -> JoinHandle<()> {
+    fn read_asset_file(filepath: Arc<PathBuf>, sender: ComponentSender<Self>) -> JoinHandle<()> {
         relm4::spawn(async move {
             match File::open(filepath.as_path()).await {
                 Ok(mut file) => {
                     let mut content = Vec::new();
                     match file.read_to_end(&mut content).await {
-                        Ok(_) => sender.input(Input::FirmwareContentReady(content)),
-                        Err(_) => sender.input(Input::FirmwareUpdateFailed("Failed to open DFU file")),
+                        Ok(_) => sender.input(Input::ContentReady(content)),
+                        Err(_) => sender.input(Input::OtaFailed("Failed to open file".to_string())),
                     }
                 }
-                Err(_) => {
-                    sender.input(Input::FirmwareUpdateFailed("Failed to read DFU file"));
+                Err(err) => {
+                    sender.input(Input::OtaFailed("Failed to read file".to_string()));
+                    log::error!("Failed to read file '{:?}': {}", &filepath, err)
                 }
             }
         })
     }
 
-    fn flash(infinitime: Arc<bt::InfiniTime>, dfu: Arc<Vec<u8>>, sender: ComponentSender<Self>) -> JoinHandle<()> {
+    fn flash_asset(infinitime: Arc<InfiniTime>, content: Arc<Vec<u8>>, asset_type: AssetType, sender: ComponentSender<Self>) -> JoinHandle<()> {
+        let (progress_tx, mut progress_rx) = bt::progress_channel(32);
+
+        let sender_ = sender.clone();
+        let progress_updater = async move {
+            while let Some(event) = progress_rx.recv().await {
+                sender_.input(Input::OtaProgress(event));
+            }
+        };
+
+        let flasher = async move {
+            match asset_type {
+                AssetType::Firmware => {
+                    infinitime.firmware_upgrade(&content, Some(progress_tx)).await
+                }
+                AssetType::Resources => {
+                    infinitime.upload_resources(&content, Some(progress_tx)).await
+                }
+            }
+        };
+
         relm4::spawn(async move {
-            let sender_ = sender.clone();
-            let callback = move |notification| match notification {
-                bt::FwUpdNotification::Message(text) => {
-                    sender_.input(Input::StatusMessage(text));
-                }
-                bt::FwUpdNotification::BytesSent(flashed, total) => {
-                    sender_.input(Input::FlashProgress { flashed, total });
-                }
-            };
-            match infinitime.firmware_upgrade(dfu.as_slice(), callback).await {
-                Ok(()) => sender.input(Input::FirmwareUpdateFinished),
-                Err(_) => sender.input(Input::FirmwareUpdateFailed("Failed to flash firmware")),
-            };
+            let (_, result) = tokio::join!(progress_updater, flasher);
+            match result {
+                Ok(()) => sender.input(Input::OtaFinished),
+                Err(err) => sender.input(Input::OtaFailed(err.to_string())),
+            }
         })
     }
 }
@@ -141,7 +171,7 @@ impl Component for Model {
 
                     gtk::Label {
                         #[watch]
-                        set_label: &model.status_message,
+                        set_label: &model.progress_status,
                         set_halign: gtk::Align::Center,
                         set_margin_top: 20,
                     },
@@ -149,16 +179,23 @@ impl Component for Model {
                     gtk::LevelBar {
                         set_min_value: 0.0,
                         #[watch]
-                        set_max_value: 1.0,
+                        set_max_value: model.progress_total as f64,
                         #[watch]
-                        set_value: model.progress,
+                        set_value: model.progress_current as f64,
                         #[watch]
-                        set_visible: model.state == State::InProgress && model.progress > 0.0,
+                        set_visible: model.state == State::InProgress && model.progress_current > 0,
+                    },
+
+                    gtk::Label {
+                        #[watch]
+                        set_label: &format!("{:.1} KB / {:.1} KB", model.progress_current as f32 / 1024.0, model.progress_total as f32 / 1024.0),
+                        #[watch]
+                        set_visible: model.state == State::InProgress && model.progress_current > 0,
                     },
 
                     gtk::Spinner {
                         #[watch]
-                        set_visible: model.state == State::InProgress && model.progress == 0.0,
+                        set_visible: model.state == State::InProgress && model.progress_current == 0,
                         set_spinning: true,
                     },
 
@@ -210,62 +247,71 @@ impl Component for Model {
             Input::Disconnected => {
                 self.infinitime = None;
             }
-            Input::FirmwareUpdateFromFile(filepath) => {
+            Input::FlashAssetFromFile(filepath, asset_type) => {
                 let filepath = Arc::new(filepath);
-                self.status_message = format!("Reading firmware file");
-                self.progress = 0.0;
+                self.progress_status = format!("Reading {} file", asset_type.name().to_lowercase());
+                self.progress_current = 0;
+                self.progress_total = 0;
                 self.state = State::InProgress;
-                self.dfu_source = Some(Source::File(filepath.clone()));
-                self.task_handle = Some(Self::read_dfu_file(filepath.clone(), sender));
+                self.asset_type = asset_type;
+                self.asset_source = Some(Source::File(filepath.clone()));
+                self.task_handle = Some(Self::read_asset_file(filepath.clone(), sender));
             }
-            Input::FirmwareUpdateFromUrl(url) => {
+            Input::FlashAssetFromUrl(url, asset_type) => {
                 let url = Arc::new(url);
-                self.status_message = format!("Downloading firmware");
-                self.progress = 0.0;
+                self.progress_status = format!("Downloading {}", asset_type.name().to_lowercase());
+                self.progress_current = 0;
+                self.progress_total = 0;
                 self.state = State::InProgress;
-                self.dfu_source = Some(Source::Url(url.clone()));
-                self.task_handle = Some(Self::download_dfu(url.clone(), sender));
+                self.asset_type = asset_type;
+                self.asset_source = Some(Source::Url(url.clone()));
+                self.task_handle = Some(Self::download_asset(url.clone(), sender));
             }
-            Input::FirmwareContentReady(content) => {
-                if let Some(infinitime) = &self.infinitime {
+            Input::ContentReady(content) => {
+                if let Some(infinitime) = self.infinitime.clone() {
                     let content = Arc::new(content);
-                    self.dfu_source = None;
-                    self.dfu_content = Some(content.clone());
-                    self.task_handle = Some(Self::flash(infinitime.clone(), content, sender));
+                    self.asset_source = None;
+                    self.asset_content = Some(content.clone());
+                    self.task_handle = Some(Self::flash_asset(infinitime, content, self.asset_type, sender));
                 }
             }
-            Input::FirmwareUpdateFinished => {
-                self.status_message = format!("Firmware update complete :)");
+            Input::OtaFinished => {
+                self.progress_status = format!("{} update complete :)", self.asset_type.name());
                 self.state = State::Finished;
                 self.task_handle = None;
-                self.dfu_content = None;
+                self.asset_content = None;
             }
-            Input::FirmwareUpdateFailed(message) => {
-                self.status_message = format!("Firmware update error: {message}");
+            Input::OtaFailed(message) => {
+                self.progress_status = format!("{} update failed: {}", self.asset_type.name(), message);
                 self.state = State::Aborted;
                 self.task_handle = None;
             }
-            Input::StatusMessage(text) => {
-                self.status_message = text.to_string();
-            }
-            Input::FlashProgress { flashed, total } => {
-                let flashed = flashed as f64 / 1024.0;
-                let total = total as f64 / 1024.0;
-                self.status_message = format!("Flashing firmware: {flashed:.01}/{total:.01} kB");
-                self.progress = (flashed / total) as f64;
+            Input::OtaProgress(event) => {
+                match event {
+                    ProgressEvent::Message(text) => {
+                        self.progress_status = text;
+                    }
+                    ProgressEvent::Numbers { current, total } => {
+                        self.progress_current = current;
+                        self.progress_total = total;
+                    }
+                }
             }
             Input::Retry => {
-                if let Some(content) = &self.dfu_content {
-                    if let Some(infinitime) = &self.infinitime {
-                        self.task_handle = Some(Self::flash(infinitime.clone(), content.clone(), sender));
+                self.progress_current = 0;
+                self.progress_total = 0;
+                if let Some(content) = self.asset_content.clone() {
+                    if let Some(infinitime) = self.infinitime.clone() {
+                        self.state = State::InProgress;
+                        self.task_handle = Some(Self::flash_asset(infinitime, content, self.asset_type, sender));
                     }
                 } else {
-                    match &self.dfu_source {
+                    match &self.asset_source {
                         Some(Source::File(filepath)) => {
-                            self.task_handle = Some(Self::read_dfu_file(filepath.clone(), sender));
+                            self.task_handle = Some(Self::read_asset_file(filepath.clone(), sender));
                         }
                         Some(Source::Url(url)) => {
-                            self.task_handle = Some(Self::download_dfu(url.clone(), sender));
+                            self.task_handle = Some(Self::download_asset(url.clone(), sender));
                         }
                         None => {}
                     }
@@ -274,7 +320,7 @@ impl Component for Model {
             Input::Abort => {
                 if let Some(handle) = self.task_handle.take() {
                     handle.abort();
-                    self.status_message = format!("Firmware update aborted");
+                    self.progress_status = format!("{} update aborted", self.asset_type.name());
                     self.state = State::Aborted;
                 }
             }

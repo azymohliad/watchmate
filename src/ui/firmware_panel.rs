@@ -1,4 +1,5 @@
 use crate::inft::gh;
+use super::AssetType;
 use std::path::PathBuf;
 use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, WidgetExt};
 use relm4::{adw, gtk, ComponentController, ComponentParts, ComponentSender, Component, Controller, JoinHandle, RelmWidgetExt};
@@ -8,33 +9,38 @@ use anyhow::Result;
 #[derive(Debug)]
 pub enum Input {
     None,
-    FirmwareReleasesRequest,
-    FirmwareReleaseNotes(u32),
+    RequestReleases,
+    ReleaseNotes(u32),
 
-    // Firmware Download
-    FirmwareDownload(u32),
-    FirmwareDownloadCancel,
-    FirmwareDownloadFinished(Result<Vec<u8>>),
-    FirmwareSave(PathBuf),
+    // Firmware & Resources Download
+    DownloadFirmware(u32),
+    DownloadResources(u32),
+    DownloadAsset(gh::Asset),
+    CancelDownloading,
+    FinishedDownloading(Result<Vec<u8>>),
+    SaveFile(PathBuf),
 
-    // Firmware Update
-    FirmwareUpdateOpenDialog,
-    FirmwareUpdateFromUrl(u32),
-    FirmwareUpdateFromFile(PathBuf),
+    // Firmware & Resources Update
+    OpenFirmwareFileDialog,
+    FlashFirmwareFromRelease(u32),
+    FlashFirmwareFromFile(PathBuf),
+    OpenResourcesFileDialog,
+    FlashResourcesFromRelease(u32),
+    FlashResourcesFromFile(PathBuf),
 }
 
 #[derive(Debug)]
 pub enum Output {
-    FirmwareUpdateFromFile(PathBuf),
-    FirmwareUpdateFromUrl(String),
-    FirmwareVersionLatest(Option<String>),
+    FlashAssetFromFile(PathBuf, AssetType),
+    FlashAssetFromUrl(String, AssetType),
+    LatestFirmwareVersion(Option<String>),
     Toast(&'static str),
 }
 
 #[derive(Debug)]
 pub enum CommandOutput {
     FirmwareReleasesResponse(Result<Vec<gh::ReleaseInfo>>),
-    FirmwareSaveResponse(Result<()>),
+    SaveFileResponse(Result<()>),
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -80,18 +86,19 @@ pub struct Model {
     download_content: Option<Vec<u8>>,
     download_filepath: Option<PathBuf>,
     // Components
-    open_file_dialog: Controller<OpenDialog>,
-    save_file_dialog: Controller<SaveDialog>,
+    dfu_open_dialog: Controller<OpenDialog>,
+    res_open_dialog: Controller<OpenDialog>,
+    save_dialog: Controller<SaveDialog>,
 }
 
 impl Model {
-    fn save_firmware_file(&mut self, sender: ComponentSender<Self>) {
+    fn save_downloaded_file(&mut self, sender: ComponentSender<Self>) {
         if self.download_content.is_some() && self.download_filepath.is_some() {
             let content = self.download_content.take().unwrap();
             let filepath = self.download_filepath.take().unwrap();
             sender.oneshot_command(async move {
-                CommandOutput::FirmwareSaveResponse(
-                    gh::save_dfu_file(&content, filepath).await
+                CommandOutput::SaveFileResponse(
+                    gh::save_file(&content, filepath).await
                 )
             });
         }
@@ -136,7 +143,7 @@ impl Component for Model {
                     set_sensitive: !model.download_task.is_some(),
                     set_label: "Flash",
                     connect_clicked[sender, releases_dropdown] => move |_| {
-                        sender.input(Input::FirmwareUpdateFromUrl(releases_dropdown.selected()));
+                        sender.input(Input::FlashFirmwareFromRelease(releases_dropdown.selected()));
                     },
                     #[wrap(Some)]
                     set_popover = &gtk::Popover {
@@ -145,16 +152,30 @@ impl Component for Model {
                             set_orientation: gtk::Orientation::Vertical,
 
                             gtk::Button {
-                                set_label: "Download Only",
+                                set_label: "Flash Resources",
                                 connect_clicked[sender, releases_dropdown] => move |_| {
-                                    sender.input(Input::FirmwareDownload(releases_dropdown.selected()));
+                                    sender.input(Input::FlashResourcesFromRelease(releases_dropdown.selected()));
+                                },
+                            },
+
+                            gtk::Button {
+                                set_label: "Download",
+                                connect_clicked[sender, releases_dropdown] => move |_| {
+                                    sender.input(Input::DownloadFirmware(releases_dropdown.selected()));
+                                },
+                            },
+
+                            gtk::Button {
+                                set_label: "Download Resources",
+                                connect_clicked[sender, releases_dropdown] => move |_| {
+                                    sender.input(Input::DownloadResources(releases_dropdown.selected()));
                                 },
                             },
 
                             gtk::Button {
                                 set_label: "Release Notes",
                                 connect_clicked[sender, releases_dropdown] => move |_| {
-                                    sender.input(Input::FirmwareReleaseNotes(releases_dropdown.selected()));
+                                    sender.input(Input::ReleaseNotes(releases_dropdown.selected()));
                                 },
                             },
                         },
@@ -183,7 +204,7 @@ impl Component for Model {
                         set_tooltip_text: Some("Refresh releases list"),
                         set_icon_name: "view-refresh-symbolic",
                         connect_clicked[sender] => move |_| {
-                            sender.input(Input::FirmwareReleasesRequest);
+                            sender.input(Input::RequestReleases);
                         },
                     }
                 }
@@ -198,19 +219,46 @@ impl Component for Model {
                 set_halign: gtk::Align::Start,
             },
 
-            gtk::Button {
-                set_label: "Select File",
-                connect_clicked[sender] => move |_| {
-                    sender.input(Input::FirmwareUpdateOpenDialog);
+            gtk::Box {
+                set_orientation: gtk::Orientation::Horizontal,
+                set_spacing: 10,
+
+                gtk::Button {
+                    set_label: "Firmware",
+                    set_hexpand: true,
+                    connect_clicked[sender] => move |_| {
+                        sender.input(Input::OpenFirmwareFileDialog);
+                    },
                 },
-            },
+
+                gtk::Button {
+                    set_label: "Resources",
+                    set_hexpand: true,
+                    connect_clicked[sender] => move |_| {
+                        sender.input(Input::OpenResourcesFileDialog);
+                    },
+                },
+            }
         }
     }
 
     fn init(main_window: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
         let file_filter = gtk::FileFilter::new();
         file_filter.add_pattern("*.zip");
-        let open_file_dialog = OpenDialog::builder()
+
+        let dfu_open_dialog = OpenDialog::builder()
+            .transient_for_native(&main_window)
+            .launch(OpenDialogSettings {
+                create_folders: false,
+                filters: vec![file_filter.clone()],
+                ..Default::default()
+            })
+            .forward(&sender.input_sender(), |message| match message {
+                OpenDialogResponse::Accept(path) => Input::FlashFirmwareFromFile(path),
+                OpenDialogResponse::Cancel => Input::None,
+            });
+
+        let res_open_dialog = OpenDialog::builder()
             .transient_for_native(&main_window)
             .launch(OpenDialogSettings {
                 create_folders: false,
@@ -218,16 +266,16 @@ impl Component for Model {
                 ..Default::default()
             })
             .forward(&sender.input_sender(), |message| match message {
-                OpenDialogResponse::Accept(path) => Input::FirmwareUpdateFromFile(path),
+                OpenDialogResponse::Accept(path) => Input::FlashResourcesFromFile(path),
                 OpenDialogResponse::Cancel => Input::None,
             });
 
-        let save_file_dialog = SaveDialog::builder()
+        let save_dialog = SaveDialog::builder()
             .transient_for_native(&main_window)
             .launch(SaveDialogSettings::default())
             .forward(&sender.input_sender(), |message| match message {
-                SaveDialogResponse::Accept(path) => Input::FirmwareSave(path),
-                SaveDialogResponse::Cancel => Input::FirmwareDownloadCancel,
+                SaveDialogResponse::Accept(path) => Input::SaveFile(path),
+                SaveDialogResponse::Cancel => Input::CancelDownloading,
             });
 
         let model = Model {
@@ -236,42 +284,35 @@ impl Component for Model {
             download_task: None,
             download_content: None,
             download_filepath: None,
-            open_file_dialog,
-            save_file_dialog,
+            dfu_open_dialog,
+            res_open_dialog,
+            save_dialog,
         };
 
         let widgets = view_output!();
-        sender.input(Input::FirmwareReleasesRequest);
+        sender.input(Input::RequestReleases);
         ComponentParts { model, widgets }
     }
 
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, _root: &Self::Root) {
         match msg {
             Input::None => {}
-            Input::FirmwareReleasesRequest => {
+            Input::RequestReleases => {
                 self.releases = FirmwareReleasesState::Requested;
                 sender.oneshot_command(async move {
                     CommandOutput::FirmwareReleasesResponse(gh::list_releases().await)
                 });
             }
-            Input::FirmwareReleaseNotes(index) => {
+            Input::ReleaseNotes(index) => {
                 if let FirmwareReleasesState::Some(releases) = &self.releases {
                     gtk::show_uri(None as Option<&adw::ApplicationWindow>, &releases[index as usize].url, 0);
                 }
             }
-            Input::FirmwareDownload(index) => {
+            Input::DownloadFirmware(index) => {
                 if let FirmwareReleasesState::Some(releases) = &self.releases {
                     match releases[index as usize].get_dfu_asset() {
                         Some(asset) => {
-                            let url = asset.url.clone();
-                            let filename = asset.name.clone();
-                            let task = relm4::spawn(async move {
-                                sender.input(Input::FirmwareDownloadFinished(
-                                    gh::download_dfu_content(url.as_str()).await
-                                ))
-                            });
-                            self.download_task = Some(task);
-                            self.save_file_dialog.emit(SaveDialogMsg::SaveAs(filename));
+                            sender.input(Input::DownloadAsset(asset.clone()));
                         }
                         None => {
                             sender.output(Output::Toast("DFU file not found")).unwrap();
@@ -279,17 +320,40 @@ impl Component for Model {
                     }
                 }
             }
-            Input::FirmwareDownloadCancel => {
+            Input::DownloadResources(index) => {
+                if let FirmwareReleasesState::Some(releases) = &self.releases {
+                    match releases[index as usize].get_resources_asset() {
+                        Some(asset) => {
+                            sender.input(Input::DownloadAsset(asset.clone()));
+                        }
+                        None => {
+                            sender.output(Output::Toast("Resources file not found")).unwrap();
+                        }
+                    }
+                }
+            }
+            Input::DownloadAsset(asset) => {
+                    let url = asset.url;
+                    let filename = asset.name;
+                    let task = relm4::spawn(async move {
+                        sender.input(Input::FinishedDownloading(
+                            gh::download_content(url.as_str()).await
+                        ))
+                    });
+                    self.download_task = Some(task);
+                    self.save_dialog.emit(SaveDialogMsg::SaveAs(filename));
+            }
+            Input::CancelDownloading => {
                 self.download_task.take().map(|h| h.abort());
                 self.download_content = None;
                 self.download_filepath = None;
             }
-            Input::FirmwareDownloadFinished(result) => {
+            Input::FinishedDownloading(result) => {
                 self.download_task.take().map(|h| h.abort());
                 match result {
                     Ok(content) => {
                         self.download_content = Some(content);
-                        self.save_firmware_file(sender);
+                        self.save_downloaded_file(sender);
                     }
                     Err(error) => {
                         self.download_content = None;
@@ -298,18 +362,23 @@ impl Component for Model {
                     }
                 }
             }
-            Input::FirmwareSave(filepath) => {
+            Input::SaveFile(filepath) => {
                 self.download_filepath = Some(filepath);
-                self.save_firmware_file(sender);
+                self.save_downloaded_file(sender);
             }
-            Input::FirmwareUpdateOpenDialog => {
-                self.open_file_dialog.emit(OpenDialogMsg::Open);
+            Input::OpenFirmwareFileDialog => {
+                self.dfu_open_dialog.emit(OpenDialogMsg::Open);
             }
-            Input::FirmwareUpdateFromUrl(index) => {
+            Input::OpenResourcesFileDialog => {
+                self.res_open_dialog.emit(OpenDialogMsg::Open);
+            }
+            Input::FlashFirmwareFromRelease(index) => {
                 if let FirmwareReleasesState::Some(releases) = &self.releases {
                     match releases[index as usize].get_dfu_asset() {
                         Some(asset) => {
-                            sender.output(Output::FirmwareUpdateFromUrl(asset.url.clone())).unwrap();
+                            let url = asset.url.clone();
+                            let atype = AssetType::Firmware;
+                            sender.output(Output::FlashAssetFromUrl(url, atype)).unwrap();
                         }
                         None => {
                             sender.output(Output::Toast("DFU file not found")).unwrap();
@@ -317,8 +386,27 @@ impl Component for Model {
                     }
                 }
             }
-            Input::FirmwareUpdateFromFile(filepath) => {
-                sender.output(Output::FirmwareUpdateFromFile(filepath)).unwrap();
+            Input::FlashFirmwareFromFile(filepath) => {
+                let atype = AssetType::Firmware;
+                sender.output(Output::FlashAssetFromFile(filepath, atype)).unwrap();
+            }
+            Input::FlashResourcesFromRelease(index) => {
+                if let FirmwareReleasesState::Some(releases) = &self.releases {
+                    match releases[index as usize].get_resources_asset() {
+                        Some(asset) => {
+                            let url = asset.url.clone();
+                            let atype = AssetType::Resources;
+                            sender.output(Output::FlashAssetFromUrl(url, atype)).unwrap();
+                        }
+                        None => {
+                            sender.output(Output::Toast("DFU file not found")).unwrap();
+                        }
+                    }
+                }
+            }
+            Input::FlashResourcesFromFile(filepath) => {
+                let atype = AssetType::Resources;
+                sender.output(Output::FlashAssetFromFile(filepath, atype)).unwrap();
             }
         }
     }
@@ -331,16 +419,16 @@ impl Component for Model {
                     let latest = tags.first().map(|t| t.to_string());
                     self.tags = Some(gtk::StringList::new(&tags));
                     self.releases = FirmwareReleasesState::Some(releases);
-                    sender.output(Output::FirmwareVersionLatest(latest)).unwrap();
+                    sender.output(Output::LatestFirmwareVersion(latest)).unwrap();
                 }
                 Err(error) => {
                     self.tags = None;
                     self.releases = FirmwareReleasesState::Error;
-                    sender.output(Output::FirmwareVersionLatest(None)).unwrap();
+                    sender.output(Output::LatestFirmwareVersion(None)).unwrap();
                     log::error!("Failed to fetch firmware releases: {error}");
                 }
             }
-            CommandOutput::FirmwareSaveResponse(response) => match response {
+            CommandOutput::SaveFileResponse(response) => match response {
                 Ok(()) => {
                     sender.output(Output::Toast("Firmware downloaded")).unwrap();
                 }
