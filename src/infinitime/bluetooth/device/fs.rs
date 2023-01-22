@@ -61,6 +61,8 @@ pub fn ancestors_union<'s>(paths: impl Iterator<Item=&'s str>) -> Vec<&'s str> {
 }
 
 
+// TODO: Remove this attribute when moved to a separate library crate
+#[allow(unused)]
 impl InfiniTime {
     pub async fn read_fs_version(&self) -> Result<u16> {
         let data = self.chr_fs_version.read().await?;
@@ -71,7 +73,6 @@ impl InfiniTime {
         &self, path: &str, position: u32, progress_sender: Option<ProgressTx>
     ) -> Result<Vec<u8>> {
         let progress = ProgressTxWrapper(progress_sender);
-
         log::info!("Reading file: {}", path);
         let resp_stream = self.chr_fs_transfer.notify().await?;
         pin_mut!(resp_stream);
