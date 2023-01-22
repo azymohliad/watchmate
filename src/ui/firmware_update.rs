@@ -16,7 +16,7 @@ pub enum Input {
 
     OtaProgress(ProgressEvent),
     OtaFinished,
-    OtaFailed(&'static str),
+    OtaFailed(String),
 
     Retry,
     Abort,
@@ -47,6 +47,15 @@ pub enum AssetType {
     Resources,
 }
 
+impl AssetType {
+    fn name(&self) -> &'static str {
+        match self {
+            AssetType::Firmware => "Firmware",
+            AssetType::Resources => "Resources",
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct Model {
     progress_status: String,
@@ -66,7 +75,7 @@ impl Model {
         relm4::spawn(async move {
             match gh::download_content(url.as_str()).await {
                 Ok(content) => sender.input(Input::ContentReady(content)),
-                Err(_) => sender.input(Input::OtaFailed("Failed to download file")),
+                Err(_) => sender.input(Input::OtaFailed("Downloading failed".to_string())),
             }
         })
     }
@@ -78,11 +87,12 @@ impl Model {
                     let mut content = Vec::new();
                     match file.read_to_end(&mut content).await {
                         Ok(_) => sender.input(Input::ContentReady(content)),
-                        Err(_) => sender.input(Input::OtaFailed("Failed to open file")),
+                        Err(_) => sender.input(Input::OtaFailed("Failed to open file".to_string())),
                     }
                 }
-                Err(_) => {
-                    sender.input(Input::OtaFailed("Failed to read file"));
+                Err(err) => {
+                    sender.input(Input::OtaFailed("Failed to read file".to_string()));
+                    log::error!("Failed to read file '{:?}': {}", &filepath, err)
                 }
             }
         })
@@ -113,7 +123,7 @@ impl Model {
             let (_, result) = tokio::join!(progress_updater, flasher);
             match result {
                 Ok(()) => sender.input(Input::OtaFinished),
-                Err(_) => sender.input(Input::OtaFailed("Failed to flash firmare or resource")),
+                Err(err) => sender.input(Input::OtaFailed(err.to_string())),
             }
         })
     }
@@ -239,7 +249,7 @@ impl Component for Model {
             }
             Input::FlashAssetFromFile(filepath, asset_type) => {
                 let filepath = Arc::new(filepath);
-                self.progress_status = format!("Reading firmware file");
+                self.progress_status = format!("Reading {} file", asset_type.name().to_lowercase());
                 self.progress_current = 0;
                 self.progress_total = 0;
                 self.state = State::InProgress;
@@ -249,7 +259,7 @@ impl Component for Model {
             }
             Input::FlashAssetFromUrl(url, asset_type) => {
                 let url = Arc::new(url);
-                self.progress_status = format!("Downloading firmware");
+                self.progress_status = format!("Downloading {}", asset_type.name().to_lowercase());
                 self.progress_current = 0;
                 self.progress_total = 0;
                 self.state = State::InProgress;
@@ -266,13 +276,13 @@ impl Component for Model {
                 }
             }
             Input::OtaFinished => {
-                self.progress_status = format!("Firmware update complete :)");
+                self.progress_status = format!("{} update complete :)", self.asset_type.name());
                 self.state = State::Finished;
                 self.task_handle = None;
                 self.asset_content = None;
             }
             Input::OtaFailed(message) => {
-                self.progress_status = format!("Firmware update error: {message}");
+                self.progress_status = format!("{} update failed: {}", self.asset_type.name(), message);
                 self.state = State::Aborted;
                 self.task_handle = None;
             }
@@ -310,7 +320,7 @@ impl Component for Model {
             Input::Abort => {
                 if let Some(handle) = self.task_handle.take() {
                     handle.abort();
-                    self.progress_status = format!("Firmware update aborted");
+                    self.progress_status = format!("{} update aborted", self.asset_type.name());
                     self.state = State::Aborted;
                 }
             }

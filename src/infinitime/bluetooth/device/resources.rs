@@ -2,7 +2,7 @@ use super::{fs, InfiniTime, ProgressTx, ProgressTxWrapper};
 // use std::sync::mpsc;
 use std::io::{Cursor, Read};
 // use futures::{pin_mut, StreamExt};
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use serde::Deserialize;
 
 
@@ -28,7 +28,8 @@ impl InfiniTime {
         let mut zip = zip::ZipArchive::new(Cursor::new(resources_archive))?;
         let mut json = String::new();
         zip.by_name("resources.json")?.read_to_string(&mut json)?;
-        let manifest: Resources = serde_json::from_str(&json)?;
+        let manifest: Resources = serde_json::from_str(&json)
+            .map_err(|_| anyhow!("Invalid resources.json"))?;
 
         // Make dirs
         let files = manifest.resources.iter().map(|r| r.path.as_str());
