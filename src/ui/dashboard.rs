@@ -31,6 +31,7 @@ pub enum Output {
 pub enum CommandOutput {
     BatteryLevel(u8),
     HeartRate(u8),
+    StepCount(u32),
     Alias(String),
     Address(String),
     FirmwareVersion(String),
@@ -42,6 +43,7 @@ pub struct Model {
     // - InfiniTime data
     battery_level: Option<u8>,
     heart_rate: Option<u8>,
+    step_count: Option<u32>,
     alias: Option<String>,
     address: Option<String>,
     fw_version: Option<String>,
@@ -62,6 +64,8 @@ impl Model {
         sender.send(CommandOutput::BatteryLevel(infinitime.read_battery_level().await?))
             .map_err(|_| anyhow!("Relm4 message failure"))?;
         sender.send(CommandOutput::HeartRate(infinitime.read_heart_rate().await?))
+            .map_err(|_| anyhow!("Relm4 message failure"))?;
+        sender.send(CommandOutput::StepCount(infinitime.read_step_count().await?))
             .map_err(|_| anyhow!("Relm4 message failure"))?;
         sender.send(CommandOutput::Alias(infinitime.device().alias().await?))
             .map_err(|_| anyhow!("Relm4 message failure"))?;
@@ -183,6 +187,35 @@ impl Component for Model {
                                             #[watch]
                                             set_label: match model.heart_rate {
                                                 Some(rate) => format!("{} BPM", rate),
+                                                None => String::from("Loading..."),
+                                            }.as_str(),
+                                            add_css_class: "dim-label",
+                                            set_hexpand: true,
+                                            set_halign: gtk::Align::End,
+                                        },
+                                    },
+                                },
+
+                                gtk::ListBoxRow {
+                                    set_selectable: false,
+                                    #[watch]
+                                    set_sensitive: model.step_count.is_some(),
+
+                                    gtk::Box {
+                                        set_orientation: gtk::Orientation::Horizontal,
+                                        set_margin_all: 12,
+                                        set_spacing: 10,
+
+                                        gtk::Label {
+                                            set_label: "Step Count",
+                                            set_hexpand: true,
+                                            set_halign: gtk::Align::Start,
+                                        },
+
+                                        gtk::Label {
+                                            #[watch]
+                                            set_label: match model.step_count {
+                                                Some(rate) => format!("{}", rate),
                                                 None => String::from("Loading..."),
                                             }.as_str(),
                                             add_css_class: "dim-label",
@@ -367,6 +400,7 @@ impl Component for Model {
         let model = Model {
             battery_level: None,
             heart_rate: None,
+            step_count: None,
             alias: None,
             address: None,
             fw_version: None,
@@ -405,6 +439,17 @@ impl Component for Model {
                             pin_mut!(hr_stream);
                             while let Some(hr) = hr_stream.next().await {
                                 out.send(CommandOutput::HeartRate(hr)).unwrap();
+                            }
+                        }
+                    }).drop_on_shutdown()
+                });
+                let infinitime_ = infinitime.clone();
+                sender.command(move |out, shutdown| {
+                    shutdown.register(async move {
+                        if let Ok(sc_stream) = infinitime_.get_step_count_stream().await {
+                            pin_mut!(sc_stream);
+                            while let Some(sc) = sc_stream.next().await {
+                                out.send(CommandOutput::StepCount(sc)).unwrap();
                             }
                         }
                     }).drop_on_shutdown()
@@ -452,6 +497,9 @@ impl Component for Model {
             }
             CommandOutput::HeartRate(rate) => {
                 self.heart_rate = Some(rate);
+            }
+            CommandOutput::StepCount(count) => {
+                self.step_count = Some(count);
             }
             CommandOutput::Alias(alias) => {
                 self.alias = Some(alias);

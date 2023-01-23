@@ -27,3 +27,6 @@ pub const CHR_MP_DURATION: Uuid = uuid!("00000007-78fc-48fe-8e23-433b3a1942d0");
 pub const CHR_MP_SPEED: Uuid = uuid!("0000000a-78fc-48fe-8e23-433b3a1942d0");
 pub const CHR_MP_REPEAT: Uuid = uuid!("0000000b-78fc-48fe-8e23-433b3a1942d0");
 pub const CHR_MP_SHUFFLE: Uuid = uuid!("0000000c-78fc-48fe-8e23-433b3a1942d0");
+
+pub const CHR_STEP_COUNT: Uuid = uuid!("00030001-78fc-48fe-8e23-433b3a1942d0");
+pub const CHR_MOTION: Uuid = uuid!("00030002-78fc-48fe-8e23-433b3a1942d0");

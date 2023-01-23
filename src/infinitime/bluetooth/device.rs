@@ -52,6 +52,14 @@ impl InfiniTime {
         Ok(self.chr(&uuids::CHR_HEART_RATE)?.read().await?[1])
     }
 
+    pub async fn read_step_count(&self) -> Result<u32> {
+        let data = self.chr(&uuids::CHR_STEP_COUNT)?
+            .read().await?
+            .try_into()
+            .map_err(|_| anyhow!("Failed to convert Vec<u8> to [u8;4]"))?;
+        Ok(u32::from_le_bytes(data))
+    }
+
     // -- Media player control --
 
     // -- Event streams --
@@ -59,6 +67,13 @@ impl InfiniTime {
     pub async fn get_heart_rate_stream(&self) -> Result<impl Stream<Item = u8>> {
         let stream = self.chr(&uuids::CHR_HEART_RATE)?.notify().await?;
         Ok(stream.filter_map(|v| async move { v.get(1).cloned() }))
+    }
+
+    pub async fn get_step_count_stream(&self) -> Result<impl Stream<Item = u32>> {
+        let stream = self.chr(&uuids::CHR_STEP_COUNT)?.notify().await?;
+        Ok(stream.filter_map(|v| async move {
+            v.try_into().ok().map(u32::from_le_bytes)
+        }))
     }
 
     // -- Firmware upgrade --
