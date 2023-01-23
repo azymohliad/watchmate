@@ -1,6 +1,6 @@
 id: io.gitlab.azymohliad.WatchMate
 runtime: org.gnome.Platform
-runtime-version: '42'
+runtime-version: '43'
 sdk: org.gnome.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
@@ -8,12 +8,13 @@ command: watchmate
 finish-args:
   - --allow=bluetooth
   - --share=ipc
-  - --share=network
-  - --device=dri
-  - --socket=wayland
-  - --socket=fallback-x11
-  - --system-talk-name=org.bluez
-  - --talk-name=org.mpris.MediaPlayer2.*
+  - --share=network                       # Download firmware releases
+  - --device=dri                          # Hardware acceleration
+  - --socket=wayland                      # Wayland
+  - --socket=fallback-x11                 # X11
+  - --socket=session-bus                  # Notifications propagation
+  - --system-talk-name=org.bluez          # Bluetooth
+  - --talk-name=org.mpris.MediaPlayer2.*  # Media player control
 modules:
   - name: watchmate
     buildsystem: simple
