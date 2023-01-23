@@ -4,6 +4,8 @@
 
 - Updated dependencies
 - Added basic desktop notifications propagation
+- Added external resources support
+- Added step count reading
 
 ## v0.3.0 - 2022-09-01
 

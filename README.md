@@ -83,20 +83,20 @@ Here and above, `target/flatpak` is the build directory. It's a convenient defau
     - [x] Battery level
     - [x] Firmware version
     - [x] Heart rate
-    - [ ] Steps count
+    - [x] Steps count
 - [x] OTA firmware update
     - [x] From DFU file
     - [x] From [InfiniTime releases](https://github.com/InfiniTimeOrg/InfiniTime/releases)
 - [ ] OTA external resources update
     - [x] From resources file
-    - [x] From InfiniTime release 
+    - [x] From InfiniTime release
     - [ ] Advanced resources management (read from the watch, delete, etc)
 - [x] Media-player control
 - [ ] Secure pairing
 - [ ] Notifications
     - [x] Basic desktop notifications propagation
     - [ ] Filtering by app, title, or content
-- [ ] "Find-my-watch" (fake call) 
+- [ ] "Find-my-watch" (fake call)
 - [ ] Persistent app settings
 - [ ] About dialog
 - [x] Packaging and distribution
