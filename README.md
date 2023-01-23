@@ -1,20 +1,10 @@
 # WatchMate
 
-Companion app for [PineTime](https://www.pine64.org/pinetime/) smart watch running [InfiniTime](https://github.com/InfiniTimeOrg/InfiniTime/) firmware.
+Companion app for [InfiniTime](https://github.com/InfiniTimeOrg/InfiniTime/)-powered [PineTime](https://www.pine64.org/pinetime/) smart watch.
 
-Visually optimized for GNOME, adaptive for Linux phone and desktop.
+Visually optimized for GNOME, adaptive for phone and desktop, Linux only.
 
 ![collage_2022-08-14_readme](/uploads/8dbf136bec813c09d44fac6d0b22b54c/collage_2022-08-14_readme.png)
-
-##### Features
-
-- Discover and connect to the watch via Bluetooth
-- Serve current time to the watch
-- Read data from the watch (battery level, heat rate, firmware version)
-- Perform OTA firmware update (from manually selected files or automatically downloaded release)
-- Automatically check for available firmware updates
-- Integrate with media-players
-- More to come
 
 ## Install
 
@@ -62,26 +52,28 @@ cargo run --release
 ##### Install Dependencies
 
 ```
-flatpak install org.gnome.Platform//42 org.gnome.Sdk//42 org.freedesktop.Sdk.Extension.rust-stable//21.08
+flatpak install org.gnome.Platform//43 org.gnome.Sdk//43 org.freedesktop.Sdk.Extension.rust-stable//22.08
 ```
 
 ##### Build
 
 ```
-flatpak-builder --user build-dir flatpak/io.gitlab.azymohliad.WatchMate.yml
+flatpak-builder --user target/flatpak flatpak/io.gitlab.azymohliad.WatchMate.yml
 ```
 
 ##### Run
 
 ```
-flatpak-builder --run build-dir flatpak/io.gitlab.azymohliad.WatchMate.yml watchmate
+flatpak-builder --run target/flatpak flatpak/io.gitlab.azymohliad.WatchMate.yml watchmate
 ```
 
 ##### Install
 
 ```
-flatpak-builder --install build-dir flatpak/io.gitlab.azymohliad.WatchMate.yml
+flatpak-builder --install target/flatpak flatpak/io.gitlab.azymohliad.WatchMate.yml
 ```
+
+Here and above, `target/flatpak` is the build directory. It's a convenient default for Rust project (`target` is already in `.gitignore`), but can be anything else.
 
 ## Roadmap
 
@@ -93,19 +85,25 @@ flatpak-builder --install build-dir flatpak/io.gitlab.azymohliad.WatchMate.yml
     - [x] Heart rate
     - [ ] Steps count
 - [x] OTA firmware update
-    - [x] Firmware update from manually selected file
-    - [x] Automatic firmware downloading from [InfiniTime releases](https://github.com/InfiniTimeOrg/InfiniTime/releases)
+    - [x] From DFU file
+    - [x] From [InfiniTime releases](https://github.com/InfiniTimeOrg/InfiniTime/releases)
+- [ ] OTA external resources update
+    - [x] From resources file
+    - [x] From InfiniTime release 
+    - [ ] Advanced resources management (read from the watch, delete, etc)
 - [x] Media-player control
 - [ ] Secure pairing
 - [ ] Notifications
     - [x] Basic desktop notifications propagation
     - [ ] Filtering by app, title, or content
 - [ ] "Find-my-watch" (fake call) 
-- [ ] Settings
+- [ ] Persistent app settings
 - [ ] About dialog
 - [x] Packaging and distribution
     - [x] Flathub
     - [x] AUR
+- [ ] InfiniTime companion crate (Rust library)
+- [ ] (Maybe) Support for other smart watches
 
 
 ## Tech Stack and Thanks
