@@ -72,7 +72,7 @@ impl Component for Model {
                 set_label: "Media Player",
                 set_halign: gtk::Align::Start,
             },
-            
+
             if model.player_handles.is_empty() {
                 gtk::Label {
                     set_label: "Not running",
@@ -116,8 +116,9 @@ impl Component for Model {
         match msg {
             Input::Device(infinitime) => {
                 self.infinitime = infinitime;
-                if self.infinitime.is_some() {
-                    sender.input(Input::PlayerControlSessionStart);
+                match self.infinitime {
+                    Some(_) => sender.input(Input::PlayerControlSessionStart),
+                    None => self.stop_control_task(),
                 }
             }
             Input::PlayerControlSessionStart => {

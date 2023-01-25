@@ -432,6 +432,9 @@ impl Component for Model {
                     }).drop_on_shutdown()
                 });
                 // Listed to data update notifications
+                // TODO:
+                //  - Abort streams upon disconnect
+                //  - Merge together with tokio::select!
                 let infinitime_ = infinitime.clone();
                 sender.command(move |out, shutdown| {
                     shutdown.register(async move {
@@ -473,6 +476,7 @@ impl Component for Model {
 
                 // Propagate to components
                 self.player_panel.emit(media_player::Input::Device(None));
+                self.notifications_panel.emit(notifications::Input::Device(None));
             }
             Input::LatestFirmwareVersion(latest) => {
                 self.fw_latest = latest;

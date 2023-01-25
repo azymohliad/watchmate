@@ -7,8 +7,7 @@ use relm4::{gtk, ComponentParts, ComponentSender, Component, JoinHandle, RelmWid
 #[derive(Debug)]
 pub enum Input {
     Device(Option<Arc<bt::InfiniTime>>),
-    SessionStart,
-    SessionStop,
+    SwitchProxy(bool),
     SessionEnded,
 }
 
@@ -21,6 +20,30 @@ pub struct Model {
     infinitime: Option<Arc<bt::InfiniTime>>,
     is_enabled: bool,
     task: Option<JoinHandle<()>>,
+}
+
+impl Model {
+    fn start_proxy_task(&mut self, sender: ComponentSender<Self>) {
+        if let Some(infinitime) = self.infinitime.clone() {
+            self.stop_proxy_task();
+            log::info!("Notification session started");
+            let infinitime = infinitime.clone();
+            self.task = Some(relm4::spawn(async move {
+                if let Err(error) = notifications::run_notification_session(&infinitime).await {
+                    log::error!("Notifications session error: {error}");
+                }
+                sender.input(Input::SessionEnded);
+            }));
+        }
+    }
+
+    fn stop_proxy_task(&mut self) {
+        // TODO: Is it safe to abort, or does it makes sense to
+        // hook up a message channel to finish gracefully?
+        if self.task.take().map(|h| h.abort()).is_some() {
+            log::info!("Notification session stopped");
+        }
+    }
 }
 
 
@@ -44,16 +67,12 @@ impl Component for Model {
             },
 
             gtk::Switch {
-                #[watch]
                 set_state: model.is_enabled,
                 set_halign: gtk::Align::End,
                 set_hexpand: true,
                 connect_active_notify[sender] => move |switch| {
-                    if switch.is_active() {
-                        sender.input(Input::SessionStart);
-                    } else {
-                        sender.input(Input::SessionStop);
-                    }
+                    let state = switch.is_active();
+                    sender.input(Input::SwitchProxy(state));
                 }
             }
         }
@@ -69,36 +88,21 @@ impl Component for Model {
         match msg {
             Input::Device(infinitime) => {
                 self.infinitime = infinitime;
-                if self.infinitime.is_some() && self.is_enabled {
-                    sender.input(Input::SessionStart);
+                match self.infinitime {
+                    Some(_) if self.is_enabled => self.start_proxy_task(sender),
+                    Some(_) => {},
+                    None => self.stop_proxy_task(),
                 }
             }
-            Input::SessionStart => {
-                if self.task.is_some() {
-                    log::warn!("Notification session is already running");
-                } else if let Some(infinitime) = &self.infinitime {
-                    log::info!("Notification session starting...");
-                    let infinitime = infinitime.clone();
-                    self.task = Some(relm4::spawn(async move {
-                        if let Err(error) = notifications::run_notification_session(&infinitime).await {
-                            log::error!("Notifications session error: {error}");
-                        }
-                        sender.input(Input::SessionEnded);
-                    }));
-                    self.is_enabled = true;
+            Input::SwitchProxy(state) => {
+                self.is_enabled = state;
+                match state {
+                    true => self.start_proxy_task(sender),
+                    false => self.stop_proxy_task(),
                 }
-            }
-            Input::SessionStop => {
-                // TODO: Is it safe to abort, or does it makes sense to
-                // hook up a message channel to finish gracefully?
-                if self.task.take().map(|h| h.abort()).is_some() {
-                    log::info!("Notification session stopped");
-                }
-                self.is_enabled = false;
             }
             Input::SessionEnded => {
                 self.task = None;
-                self.is_enabled = false;
             }
         }
     }
