@@ -694,10 +694,10 @@
      borderopacity="0.25490196"
      inkscape:pageopacity="0.0"
      inkscape:pageshadow="2"
-     inkscape:zoom="5.4308148"
-     inkscape:cx="134.69434"
-     inkscape:cy="21.911997"
-     inkscape:current-layer="layer1"
+     inkscape:zoom="3.5360277"
+     inkscape:cx="68.57978"
+     inkscape:cy="105.627"
+     inkscape:current-layer="g2907"
      showgrid="true"
      inkscape:grid-bbox="true"
      inkscape:document-units="px"
@@ -705,7 +705,7 @@
      inkscape:window-width="1920"
      inkscape:window-height="1011"
      inkscape:window-x="0"
-     inkscape:window-y="32"
+     inkscape:window-y="0"
      width="400px"
      height="300px"
      inkscape:snap-nodes="true"
@@ -3114,16 +3114,6 @@
          rx="5"
          ry="5.0000005"
          inkscape:label="wristband" />
-      <rect
-         style="font-variation-settings:'wght' 450;display:inline;fill:#3d3846;fill-rule:nonzero;stroke:none;stroke-width:5"
-         id="rect14210"
-         width="8"
-         height="24"
-         x="18"
-         y="224"
-         rx="3"
-         ry="3"
-         inkscape:label="button" />
       <g
          id="g4528"
          inkscape:label="body">
