@@ -4,8 +4,8 @@ use std::{sync::Arc, path::PathBuf};
 use futures::{pin_mut, StreamExt};
 use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, ListBoxRowExt, WidgetExt};
 use adw::prelude::{PreferencesRowExt, ExpanderRowExt};
-use relm4::{adw, gtk, ComponentController, ComponentParts, ComponentSender, Component, Controller, Sender, RelmWidgetExt};
-use anyhow::{Result, anyhow};
+use relm4::{adw, gtk, ComponentController, ComponentParts, ComponentSender, Component, Controller, JoinHandle, RelmWidgetExt};
+use anyhow::Result;
 use version_compare::Version;
 
 
@@ -17,6 +17,12 @@ pub enum Input {
     FlashAssetFromFile(PathBuf, AssetType),
     FlashAssetFromUrl(String, AssetType),
     Toast(&'static str),
+    BatteryLevel(u8),
+    HeartRate(u8),
+    StepCount(u32),
+    Alias(String),
+    Address(String),
+    FirmwareVersion(String),
 }
 
 #[derive(Debug)]
@@ -25,17 +31,6 @@ pub enum Output {
     FlashAssetFromUrl(String, AssetType),
     Toast(&'static str),
     SetView(super::View),
-}
-
-#[derive(Debug)]
-pub enum CommandOutput {
-    BatteryLevel(u8),
-    HeartRate(u8),
-    StepCount(u32),
-    Alias(String),
-    Address(String),
-    FirmwareVersion(String),
-    Toast(&'static str),
 }
 
 pub struct Model {
@@ -55,22 +50,33 @@ pub struct Model {
     firmware_panel: Controller<firmware_panel::Model>,
     // Other
     infinitime: Option<Arc<bt::InfiniTime>>,
+    data_task: Option<JoinHandle<()>>,
 }
 
 impl Model {
-    async fn read_info(infinitime: Arc<bt::InfiniTime>, sender: Sender<CommandOutput>) -> Result<()> {
-        sender.send(CommandOutput::Address(infinitime.device().address().to_string()))
-            .map_err(|_| anyhow!("Relm4 message failure"))?;
-        sender.send(CommandOutput::BatteryLevel(infinitime.read_battery_level().await?))
-            .map_err(|_| anyhow!("Relm4 message failure"))?;
-        sender.send(CommandOutput::HeartRate(infinitime.read_heart_rate().await?))
-            .map_err(|_| anyhow!("Relm4 message failure"))?;
-        sender.send(CommandOutput::StepCount(infinitime.read_step_count().await?))
-            .map_err(|_| anyhow!("Relm4 message failure"))?;
-        sender.send(CommandOutput::Alias(infinitime.device().alias().await?))
-            .map_err(|_| anyhow!("Relm4 message failure"))?;
-        sender.send(CommandOutput::FirmwareVersion(infinitime.read_firmware_version().await?))
-            .map_err(|_| anyhow!("Relm4 message failure"))?;
+    async fn read_info(infinitime: Arc<bt::InfiniTime>, sender: ComponentSender<Self>) -> Result<()> {
+        sender.input(Input::Address(infinitime.device().address().to_string()));
+        sender.input(Input::BatteryLevel(infinitime.read_battery_level().await?));
+        sender.input(Input::HeartRate(infinitime.read_heart_rate().await?));
+        sender.input(Input::StepCount(infinitime.read_step_count().await?));
+        sender.input(Input::Alias(infinitime.device().alias().await?));
+        sender.input(Input::FirmwareVersion(infinitime.read_firmware_version().await?));
+        Ok(())
+    }
+
+    async fn run_info_listener(infinitime: Arc<bt::InfiniTime>, sender: ComponentSender<Self>) -> Result<()> {
+        let hr_stream = infinitime.get_heart_rate_stream().await?;
+        let sc_stream = infinitime.get_step_count_stream().await?;
+        pin_mut!(hr_stream);
+        pin_mut!(sc_stream);
+
+        loop {
+            tokio::select! {
+                Some(hr) = hr_stream.next() => sender.input(Input::HeartRate(hr)),
+                Some(sc) = sc_stream.next() => sender.input(Input::StepCount(sc)),
+                else => break
+            }
+        }
         Ok(())
     }
 
@@ -87,7 +93,7 @@ impl Model {
 
 #[relm4::component(pub)]
 impl Component for Model {
-    type CommandOutput = CommandOutput;
+    type CommandOutput = ();
     type Init = adw::ApplicationWindow;
     type Input = Input;
     type Output = Output;
@@ -410,6 +416,7 @@ impl Component for Model {
             notifications_panel,
             firmware_panel,
             infinitime: None,
+            data_task: None,
         };
 
         let widgets = view_output!();
@@ -421,42 +428,6 @@ impl Component for Model {
         match msg {
             Input::Connected(infinitime) => {
                 self.infinitime = Some(infinitime.clone());
-                let infinitime_ = infinitime.clone();
-                sender.command(move |out, shutdown| {
-                    shutdown.register(async move {
-                        // Read inital data
-                        if let Err(error) = Self::read_info(infinitime_, out.clone()).await {
-                            log::error!("Failed to read data: {}", error);
-                            out.send(CommandOutput::Toast("Failed to read data")).unwrap();
-                        }
-                    }).drop_on_shutdown()
-                });
-                // Listed to data update notifications
-                // TODO:
-                //  - Abort streams upon disconnect
-                //  - Merge together with tokio::select!
-                let infinitime_ = infinitime.clone();
-                sender.command(move |out, shutdown| {
-                    shutdown.register(async move {
-                        if let Ok(hr_stream) = infinitime_.get_heart_rate_stream().await {
-                            pin_mut!(hr_stream);
-                            while let Some(hr) = hr_stream.next().await {
-                                out.send(CommandOutput::HeartRate(hr)).unwrap();
-                            }
-                        }
-                    }).drop_on_shutdown()
-                });
-                let infinitime_ = infinitime.clone();
-                sender.command(move |out, shutdown| {
-                    shutdown.register(async move {
-                        if let Ok(sc_stream) = infinitime_.get_step_count_stream().await {
-                            pin_mut!(sc_stream);
-                            while let Some(sc) = sc_stream.next().await {
-                                out.send(CommandOutput::StepCount(sc)).unwrap();
-                            }
-                        }
-                    }).drop_on_shutdown()
-                });
                 // Propagate to components
                 self.player_panel.emit(
                     media_player::Input::Device(Some(infinitime.clone()))
@@ -464,6 +435,19 @@ impl Component for Model {
                 self.notifications_panel.emit(
                     notifications::Input::Device(Some(infinitime.clone()))
                 );
+                // Read data from the watch
+                self.data_task = Some(relm4::spawn(async move {
+                    // Read initial values
+                    if let Err(error) = Self::read_info(infinitime.clone(), sender.clone()).await {
+                        log::error!("Failed to read data: {}", error);
+                        sender.input(Input::Toast("Failed to read data"));
+                    }
+                    // Run data update task
+                    if let Err(error) = Self::run_info_listener(infinitime, sender).await {
+                        log::error!("Data update task failed: {}", error);
+                    }
+                    log::warn!("Data update task ended");
+                }));
             }
             Input::Disconnected => {
                 self.battery_level = None;
@@ -473,7 +457,8 @@ impl Component for Model {
                 self.fw_version = None;
                 self.fw_update_available = false;
                 self.infinitime = None;
-
+                // Abort data update task
+                self.data_task.take().map(|h| h.abort());
                 // Propagate to components
                 self.player_panel.emit(media_player::Input::Device(None));
                 self.notifications_panel.emit(notifications::Input::Device(None));
@@ -491,32 +476,25 @@ impl Component for Model {
             Input::Toast(n) => {
                 sender.output(Output::Toast(n)).unwrap();
             }
-        }
-    }
-
-    fn update_cmd(&mut self, msg: Self::CommandOutput, sender: ComponentSender<Self>, _root: &Self::Root) {
-        match msg {
-            CommandOutput::BatteryLevel(soc) => {
+            // -- Watch data --
+            Input::BatteryLevel(soc) => {
                 self.battery_level = Some(soc);
             }
-            CommandOutput::HeartRate(rate) => {
+            Input::HeartRate(rate) => {
                 self.heart_rate = Some(rate);
             }
-            CommandOutput::StepCount(count) => {
+            Input::StepCount(count) => {
                 self.step_count = Some(count);
             }
-            CommandOutput::Alias(alias) => {
+            Input::Alias(alias) => {
                 self.alias = Some(alias);
             }
-            CommandOutput::Address(address) => {
+            Input::Address(address) => {
                 self.address = Some(address);
             }
-            CommandOutput::FirmwareVersion(version) => {
+            Input::FirmwareVersion(version) => {
                 self.fw_version = Some(version);
                 self.check_fw_update_available();
-            }
-            CommandOutput::Toast(text) => {
-                sender.output(Output::Toast(text)).unwrap();
             }
         }
     }
