@@ -64,6 +64,11 @@ impl InfiniTime {
 
     // -- Event streams --
 
+    pub async fn get_battery_level_stream(&self) -> Result<impl Stream<Item = u8>> {
+        let stream = self.chr(&uuids::CHR_BATTERY_LEVEL)?.notify().await?;
+        Ok(stream.filter_map(|v| async move { v.get(0).cloned() }))
+    }
+
     pub async fn get_heart_rate_stream(&self) -> Result<impl Stream<Item = u8>> {
         let stream = self.chr(&uuids::CHR_HEART_RATE)?.notify().await?;
         Ok(stream.filter_map(|v| async move { v.get(1).cloned() }))

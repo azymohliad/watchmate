@@ -65,13 +65,16 @@ impl Model {
     }
 
     async fn run_info_listener(infinitime: Arc<bt::InfiniTime>, sender: ComponentSender<Self>) -> Result<()> {
+        let bl_stream = infinitime.get_battery_level_stream().await?;
         let hr_stream = infinitime.get_heart_rate_stream().await?;
         let sc_stream = infinitime.get_step_count_stream().await?;
+        pin_mut!(bl_stream);
         pin_mut!(hr_stream);
         pin_mut!(sc_stream);
 
         loop {
             tokio::select! {
+                Some(bl) = bl_stream.next() => sender.input(Input::BatteryLevel(bl)),
                 Some(hr) = hr_stream.next() => sender.input(Input::HeartRate(hr)),
                 Some(sc) = sc_stream.next() => sender.input(Input::StepCount(sc)),
                 else => break
