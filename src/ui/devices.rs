@@ -13,9 +13,10 @@ use relm4::{
 
 #[derive(Debug)]
 pub enum Input {
-    AdapterInit,
-    ScanToggled,
-    ScanFailed,
+    InitAdapter,
+    StartDiscovery,
+    StopDiscovery,
+    DiscoveryFailed,
     DeviceInfoReady(DeviceInfo),
     DeviceAdded(bluer::Address),
     DeviceRemoved(bluer::Address),
@@ -23,6 +24,7 @@ pub enum Input {
     DeviceSelected(i32),
     DeviceManuallyConnected(Arc<bluer::Device>),
     DeviceManuallyDisconnected(Arc<bluer::Device>),
+    DeviceConnectionFailed,
 }
 
 #[derive(Debug)]
@@ -34,7 +36,7 @@ pub enum Output {
 
 #[derive(Debug)]
 pub enum CommandOutput {
-    AdapterInitResult(bluer::Result<bluer::Adapter>),
+    InitAdapterResult(bluer::Result<bluer::Adapter>),
     GattServicesResult(bluer::Result<ApplicationHandle>),
     KnownDevices(Vec<DeviceInfo>),
 }
@@ -43,7 +45,7 @@ pub struct Model {
     devices: FactoryVecDeque<DeviceInfo>,
     adapter: Option<Arc<bluer::Adapter>>,
     gatt_server: Option<ApplicationHandle>,
-    scan_task: Option<JoinHandle<()>>,
+    discovery_task: Option<JoinHandle<()>>,
 }
 
 impl Model {
@@ -54,7 +56,7 @@ impl Model {
         Ok(adapter)
     }
 
-    async fn run_scanner(adapter: Arc<Adapter>, sender: ComponentSender<Self>) {
+    async fn run_discovery(adapter: Arc<Adapter>, sender: ComponentSender<Self>) {
         match adapter.discover_devices().await {
             Ok(stream) => {
                 pin_mut!(stream);
@@ -70,7 +72,7 @@ impl Model {
                     }
                 }
             }
-            Err(_) => sender.input(Input::ScanFailed),
+            Err(_) => sender.input(Input::DiscoveryFailed),
         }
     }
 }
@@ -91,8 +93,19 @@ impl Component for Model {
 
             adw::HeaderBar {
                 #[wrap(Some)]
-                set_title_widget = &gtk::Label {
-                    set_label: "Devices",
+                set_title_widget = &gtk::Box {
+                    set_orientation: gtk::Orientation::Horizontal,
+                    set_spacing: 10,
+
+                    gtk::Label {
+                        set_label: "Devices",
+                    },
+
+                    gtk::Spinner {
+                        #[watch]
+                        set_visible: model.discovery_task.is_some(),
+                        set_spinning: true,
+                    }
                 },
 
                 pack_start = &gtk::Button {
@@ -128,26 +141,6 @@ impl Component for Model {
                                 }
                             },
                         },
-
-                        gtk::Spinner {
-                            #[watch]
-                            set_visible: model.scan_task.is_some(),
-                            set_spinning: true,
-                        },
-
-                        gtk::Button {
-                            #[watch]
-                            set_label: if model.scan_task.is_some() {
-                                "Stop Scanning"
-                            } else {
-                                "Start Scanning"
-                            },
-                            set_valign: gtk::Align::End,
-                            set_halign: gtk::Align::Center,
-                            connect_clicked[sender] => move |_| {
-                                sender.input(Input::ScanToggled);
-                            },
-                        },
                     }
                 } else {
                     gtk::Box {
@@ -164,7 +157,7 @@ impl Component for Model {
                             set_label: "Retry",
                             set_halign: gtk::Align::Center,
                             connect_clicked[sender] => move |_| {
-                                sender.input(Input::AdapterInit)
+                                sender.input(Input::InitAdapter)
                             }
                         },
                     }
@@ -178,38 +171,42 @@ impl Component for Model {
             devices: FactoryVecDeque::new(gtk::ListBox::new(), &sender.input_sender()),
             adapter: None,
             gatt_server: None,
-            scan_task: None,
+            discovery_task: None,
         };
 
         let factory_widget = model.devices.widget();
         let widgets = view_output!();
 
-        sender.input(Input::AdapterInit);
+        sender.input(Input::InitAdapter);
 
         ComponentParts { model, widgets }
     }
 
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, _root: &Self::Root) {
         match msg {
-            Input::AdapterInit => {
+            Input::InitAdapter => {
                 sender.oneshot_command(async move {
-                    CommandOutput::AdapterInitResult(Self::init_adapter().await)
+                    CommandOutput::InitAdapterResult(Self::init_adapter().await)
                 });
             }
 
-            Input::ScanToggled => {
-                if self.scan_task.is_some() {
-                    self.scan_task.take().unwrap().abort();
-                } else {
-                    if let Some(adapter) = self.adapter.clone() {
-                        self.devices.guard().clear();
-                        self.scan_task = Some(relm4::spawn(Self::run_scanner(adapter, sender)));
-                    }
+            Input::StartDiscovery => {
+                if let Some(adapter) = self.adapter.clone() {
+                    self.devices.guard().clear();
+                    self.discovery_task = Some(relm4::spawn(Self::run_discovery(adapter, sender)));
+                    log::info!("Discovery started");
                 }
             }
 
-            Input::ScanFailed => {
-                self.scan_task = None;
+            Input::StopDiscovery => {
+                if let Some(handle) = self.discovery_task.take() {
+                    handle.abort();
+                    log::info!("Discovery stopped");
+                }
+            }
+
+            Input::DiscoveryFailed => {
+                self.discovery_task = None;
             }
 
             Input::DeviceInfoReady(info) => {
@@ -217,6 +214,7 @@ impl Component for Model {
             }
 
             Input::DeviceAdded(address) => {
+                log::debug!("Device added: {}", address);
                 if let Some(adapter) = &self.adapter {
                     if let Ok(device) = adapter.device(address) {
                         let device = Arc::new(device);
@@ -233,10 +231,12 @@ impl Component for Model {
             }
 
             Input::DeviceRemoved(address) => {
+                log::debug!("Device removed: {}", address);
                 let mut devices_guard = self.devices.guard();
                 for i in (0..devices_guard.len()).rev() {
                     if let Some(device) = devices_guard.get(i) {
-                        if device.address == address {
+                        // Preserve connected and transitioning devices on the list
+                        if device.address == address && device.state == DeviceState::Disconnected {
                             devices_guard.remove(i);
                         }
                     }
@@ -251,7 +251,7 @@ impl Component for Model {
             }
 
             Input::DeviceSelected(index) => {
-                self.scan_task.take().map(|h| h.abort());
+                sender.input(Input::StopDiscovery);
                 self.devices.send(index as usize, DeviceInput::Connect);
             }
 
@@ -259,13 +259,17 @@ impl Component for Model {
                 sender.output(Output::DeviceConnected(device)).unwrap();
             }
 
-            Input::DeviceManuallyDisconnected(device) => {}
+            Input::DeviceManuallyDisconnected(_) => {}
+
+            Input::DeviceConnectionFailed => {
+                sender.input(Input::StartDiscovery);
+            }
         }
     }
 
     fn update_cmd(&mut self, msg: Self::CommandOutput, sender: ComponentSender<Self>, _root: &Self::Root) {
         match msg {
-            CommandOutput::AdapterInitResult(result) => match result {
+            CommandOutput::InitAdapterResult(result) => match result {
                 Ok(adapter) => {
                     let adapter = Arc::new(adapter);
                     self.adapter = Some(adapter.clone());
@@ -320,16 +324,13 @@ impl Component for Model {
                         }
                     }
                 } else {
-                    if devices_guard.is_empty() {
-                        // If no suitable devices are known - start scanning automatically
-                        sender.input(Input::ScanToggled);
-                        log::info!("No InfiniTime devices are known. Scanning...");
-                    } else if devices_guard.len() == 1 {
+                    if devices_guard.len() == 1 {
                         // If only one suitable device is known - try to connect to it automatically
                         sender.input(Input::DeviceSelected(0));
                         log::info!("Trying to connect to InfiniTime ({})", devices_guard[0].address.to_string());
                     } else {
-                        log::info!("Multiple InfiniTime devices are known. Waiting for the user to select");
+                        // Otherwise, start discovery
+                        sender.input(Input::StartDiscovery);
                     }
                 }
             }
@@ -381,6 +382,7 @@ pub enum DeviceInput {
 pub enum DeviceOutput {
     Connected(Arc<bluer::Device>),
     Disconnected(Arc<bluer::Device>),
+    ConnectionFailed,
 }
 
 // Factory for device list
@@ -453,6 +455,7 @@ impl FactoryComponent for DeviceInfo {
         Some(match output {
             DeviceOutput::Connected(device) => Input::DeviceManuallyConnected(device),
             DeviceOutput::Disconnected(device) => Input::DeviceManuallyDisconnected(device),
+            DeviceOutput::ConnectionFailed => Input::DeviceConnectionFailed,
         })
     }
 
@@ -492,6 +495,7 @@ impl FactoryComponent for DeviceInfo {
                         }
                         Err(error) => {
                             sender.input(DeviceInput::StateUpdated(DeviceState::Disconnected));
+                            sender.output(DeviceOutput::ConnectionFailed);
                             log::error!("Connection failure: {}", error);
                         }
                     }
