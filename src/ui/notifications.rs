@@ -38,10 +38,7 @@ impl Model {
                             command: `flatpak override --socket=session-bus io.gitlab.azymohliad.WatchMate`, \
                             or via Flatseal"
                         );
-                        _ = sender.output(Output::Toast(
-                            "Notifications require full D-Bus session bus access.\n\
-                            Please grant it via Flatseal or `flatpak override`"
-                        ));
+                        _ = sender.output(Output::Toast("Notifications require D-Bus session bus permission"));
                     } else {
                         log::warn!("Notifications session failed: {error}");
                         _ = sender.output(Output::Toast("Notification session failed"));

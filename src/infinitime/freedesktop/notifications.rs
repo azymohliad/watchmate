@@ -40,10 +40,10 @@ pub async fn run_notification_session(infinitime: &bt::InfiniTime) -> Result<()>
                 // except one has hints["sender-pid"] as U32 and another one as I64, so we
                 // can deduplicate them by filtering out one of these types.
                 // TODO: Find proper solution.
-                if let Some(Value::I64(_)) = notification.hints.get("sender-pid") {
+                if let Some(Value::U32(_)) = notification.hints.get("sender-pid") {
                     continue;
                 }
-                
+
                 if infinitime.is_upgrading_firmware() {
                     continue;
                 }

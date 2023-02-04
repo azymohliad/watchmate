@@ -235,8 +235,14 @@ impl Component for Model {
                 let mut devices_guard = self.devices.guard();
                 for i in (0..devices_guard.len()).rev() {
                     if let Some(device) = devices_guard.get(i) {
-                        // Preserve connected and transitioning devices on the list
-                        if device.address == address && device.state == DeviceState::Disconnected {
+                        if device.address == address {
+                            // Temporary hack to prevent removing devices
+                            // while they're being manually disconnected.
+                            // TODO: Ask bluer maintainers if the adapter is supposed to
+                            // sends AdapterEvent::DeviceRemoved event when disconnecting,
+                            // or if it is a bug
+                            if device.state == DeviceState::Transitioning { continue; }
+
                             devices_guard.remove(i);
                         }
                     }
