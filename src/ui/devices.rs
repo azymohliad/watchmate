@@ -1,6 +1,7 @@
 use crate::inft::bt;
 use std::sync::Arc;
-use bluer::gatt::local::ApplicationHandle;
+use futures::{pin_mut, StreamExt};
+use bluer::{gatt::local::ApplicationHandle, Adapter, Result, Session};
 use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, ListBoxRowExt, WidgetExt};
 use relm4::{
     adw, gtk, factory::{FactoryComponent, FactorySender, FactoryVecDeque, DynamicIndex},
@@ -9,22 +10,24 @@ use relm4::{
 
 
 
+
 #[derive(Debug)]
 pub enum Input {
     AdapterInit,
     ScanToggled,
+    ScanFailed,
     DeviceInfoReady(DeviceInfo),
     DeviceAdded(bluer::Address),
     DeviceRemoved(bluer::Address),
+    DeviceDisconnected(bluer::Address),
     DeviceSelected(i32),
-    DeviceConnected(Arc<bluer::Device>),
-    DeviceDisconnected(Arc<bluer::Device>),
+    DeviceManuallyConnected(Arc<bluer::Device>),
+    DeviceManuallyDisconnected(Arc<bluer::Device>),
 }
 
 #[derive(Debug)]
 pub enum Output {
     DeviceConnected(Arc<bluer::Device>),
-    DeviceDisconnected(Arc<bluer::Device>),
     Toast(&'static str),
     SetView(super::View),
 }
@@ -40,8 +43,38 @@ pub struct Model {
     devices: FactoryVecDeque<DeviceInfo>,
     adapter: Option<Arc<bluer::Adapter>>,
     gatt_server: Option<ApplicationHandle>,
-    scan_handle: Option<JoinHandle<()>>,
+    scan_task: Option<JoinHandle<()>>,
 }
+
+impl Model {
+    async fn init_adapter() -> Result<Adapter> {
+        let session = Session::new().await?;
+        let adapter = session.default_adapter().await?;
+        adapter.set_powered(true).await?;
+        Ok(adapter)
+    }
+
+    async fn run_scanner(adapter: Arc<Adapter>, sender: ComponentSender<Self>) {
+        match adapter.discover_devices().await {
+            Ok(stream) => {
+                pin_mut!(stream);
+                loop {
+                    match stream.next().await {
+                        Some(bluer::AdapterEvent::DeviceAdded(address)) => {
+                            sender.input(Input::DeviceAdded(address));
+                        }
+                        Some(bluer::AdapterEvent::DeviceRemoved(address)) => {
+                            sender.input(Input::DeviceRemoved(address));
+                        }
+                        _ => (),
+                    }
+                }
+            }
+            Err(_) => sender.input(Input::ScanFailed),
+        }
+    }
+}
+
 
 #[relm4::component(pub)]
 impl Component for Model {
@@ -98,13 +131,13 @@ impl Component for Model {
 
                         gtk::Spinner {
                             #[watch]
-                            set_visible: model.scan_handle.is_some(),
+                            set_visible: model.scan_task.is_some(),
                             set_spinning: true,
                         },
 
                         gtk::Button {
                             #[watch]
-                            set_label: if model.scan_handle.is_some() {
+                            set_label: if model.scan_task.is_some() {
                                 "Stop Scanning"
                             } else {
                                 "Start Scanning"
@@ -145,7 +178,7 @@ impl Component for Model {
             devices: FactoryVecDeque::new(gtk::ListBox::new(), &sender.input_sender()),
             adapter: None,
             gatt_server: None,
-            scan_handle: None,
+            scan_task: None,
         };
 
         let factory_widget = model.devices.widget();
@@ -160,30 +193,23 @@ impl Component for Model {
         match msg {
             Input::AdapterInit => {
                 sender.oneshot_command(async move {
-                    CommandOutput::AdapterInitResult(bt::init_adapter().await)
+                    CommandOutput::AdapterInitResult(Self::init_adapter().await)
                 });
             }
 
             Input::ScanToggled => {
-                if self.scan_handle.is_some() {
-                    self.scan_handle.take().unwrap().abort();
+                if self.scan_task.is_some() {
+                    self.scan_task.take().unwrap().abort();
                 } else {
                     if let Some(adapter) = self.adapter.clone() {
-                        let callback = move |event| {
-                            match event {
-                                bluer::AdapterEvent::DeviceAdded(address) => {
-                                    sender.input(Input::DeviceAdded(address));
-                                }
-                                bluer::AdapterEvent::DeviceRemoved(address) => {
-                                    sender.input(Input::DeviceRemoved(address));
-                                }
-                                _ => (),
-                            }
-                        };
                         self.devices.guard().clear();
-                        self.scan_handle = Some(relm4::spawn(bt::scan(adapter, callback)));
+                        self.scan_task = Some(relm4::spawn(Self::run_scanner(adapter, sender)));
                     }
                 }
+            }
+
+            Input::ScanFailed => {
+                self.scan_task = None;
             }
 
             Input::DeviceInfoReady(info) => {
@@ -217,18 +243,23 @@ impl Component for Model {
                 }
             }
 
+            Input::DeviceDisconnected(address) => {
+                let device = self.devices.iter().enumerate().find(|(_,d)| d.address == address);
+                if let Some((idx, _)) = device {
+                    self.devices.send(idx, DeviceInput::StateUpdated(DeviceState::Disconnected));
+                }
+            }
+
             Input::DeviceSelected(index) => {
-                self.scan_handle.take().map(|h| h.abort());
+                self.scan_task.take().map(|h| h.abort());
                 self.devices.send(index as usize, DeviceInput::Connect);
             }
 
-            Input::DeviceConnected(device) => {
+            Input::DeviceManuallyConnected(device) => {
                 sender.output(Output::DeviceConnected(device)).unwrap();
             }
 
-            Input::DeviceDisconnected(device) => {
-                sender.output(Output::DeviceDisconnected(device)).unwrap();
-            }
+            Input::DeviceManuallyDisconnected(device) => {}
         }
     }
 
@@ -420,8 +451,8 @@ impl FactoryComponent for DeviceInfo {
 
     fn output_to_parent_input(output: Self::Output) -> Option<Input> {
         Some(match output {
-            DeviceOutput::Connected(device) => Input::DeviceConnected(device),
-            DeviceOutput::Disconnected(device) => Input::DeviceDisconnected(device),
+            DeviceOutput::Connected(device) => Input::DeviceManuallyConnected(device),
+            DeviceOutput::Disconnected(device) => Input::DeviceManuallyDisconnected(device),
         })
     }
 
@@ -490,5 +521,3 @@ impl FactoryComponent for DeviceInfo {
         }
     }
 }
-
-
