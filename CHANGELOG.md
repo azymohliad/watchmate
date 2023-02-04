@@ -1,11 +1,16 @@
 # Changelog
 
-## Unreleased
+## v0.4.0 - 2022-09-01
 
 - Updated dependencies
 - Added basic desktop notifications propagation
 - Added external resources support
 - Added step count reading
+- Battery level now updates automatically, instead of at startup only
+- Implemented proper PineTime disconnection handling
+- Removed scanning toggle button, discovery is more automatic now
+- Various minor fixes and improvements
+
 
 ## v0.3.0 - 2022-09-01
 

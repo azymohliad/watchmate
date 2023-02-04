@@ -4,7 +4,7 @@ Companion app for [InfiniTime](https://github.com/InfiniTimeOrg/InfiniTime/)-pow
 
 Visually optimized for GNOME, adaptive for phone and desktop, Linux only.
 
-![collage_2022-08-14_readme](/uploads/8dbf136bec813c09d44fac6d0b22b54c/collage_2022-08-14_readme.png)
+![watchmate_v0.4.0](https://user-images.githubusercontent.com/4020369/216776553-59d2081e-9729-4997-8021-0882296621a4.png)
 
 ## Install
 

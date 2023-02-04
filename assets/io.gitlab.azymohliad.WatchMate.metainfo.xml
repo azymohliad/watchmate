@@ -12,11 +12,12 @@
     <p>Visually optimized for GNOME, adaptive for Linux phone and desktop.</p>
     <p>Features:</p>
     <ul>
-      <li>Serve current time to the watch</li>
-      <li>Read various data form the watch</li>
-      <li>Perform OTA firmware update</li>
+      <li>Set time</li>
+      <li>Read various data from PineTime</li>
+      <li>OTA firmware and resources update</li>
       <li>Automatically check for available firmware updates</li>
       <li>Media player control</li>
+      <li>Forward desktop notifications</li>
     </ul>
   </description>
 
@@ -28,17 +29,13 @@
 
   <screenshots>
     <screenshot type="default">
-      <image>https://gitlab.com/azymohliad/watchmate/uploads/a2b49a69432d3b757fef9d5858c8e787/collage_2022-08-14.png</image>
+      <image>https://user-images.githubusercontent.com/4020369/216776553-59d2081e-9729-4997-8021-0882296621a4.png</image>
       <caption>Collage</caption>
-    </screenshot>
-    <screenshot>
-      <image>https://gitlab.com/azymohliad/watchmate/uploads/db3afec736de83de622ac88ab79ea0c0/dashboard_2022-08-14.png</image>
-      <caption>Dashboard</caption>
     </screenshot>
   </screenshots>
 
-  <url type="homepage">https://gitlab.com/azymohliad/watchmate</url>
-  <url type="bugtracker">https://gitlab.com/azymohliad/watchmate/issues</url>
+  <url type="homepage">https://github.com/azymohliad/watchmate</url>
+  <url type="bugtracker">https://github.com/azymohliad/watchmate/issues</url>
   <content_rating type="oars-1.0" />
 
   <provides>
@@ -56,6 +53,20 @@
   </recommends>
 
   <releases>
+    <release version="0.4.0" date="2023-02-04">
+      <description>
+        <ul>
+          <li>Updated dependencies</li>
+          <li>Added basic desktop notifications propagation</li>
+          <li>Added external resources support</li>
+          <li>Added step count reading</li>
+          <li>Battery level now updates automatically, instead of at startup only</li>
+          <li>Implemented proper PineTime disconnection handling</li>
+          <li>Removed scanning toggle button, discovery is more automatic now</li>
+          <li>Various minor fixes and improvements</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.3.0" date="2022-09-01">
       <description>
         <ul>
