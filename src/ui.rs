@@ -22,6 +22,7 @@ enum Input {
     DeviceConnected(Arc<bluer::Device>),
     DeviceDisconnected,
     DeviceReady(Arc<bt::InfiniTime>),
+    DeviceRejected,
     FlashAssetFromFile(PathBuf, AssetType),
     FlashAssetFromUrl(String, AssetType),
     Toast(&'static str),
@@ -135,9 +136,18 @@ impl Component for Model {
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, _root: &Self::Root) {
         match msg {
             Input::SetView(view) => {
-                self.active_view = view;
+                if self.active_view != view {
+                    if self.active_view == View::Devices {
+                        self.devices.emit(devices::Input::StopDiscovery);
+                    }
+                    if view == View::Devices {
+                        self.devices.emit(devices::Input::StartDiscovery);
+                    }
+                    self.active_view = view;
+                }
             }
             Input::DeviceConnected(device) => {
+                log::info!("Device connected: {}", device.address());
                 self.is_connected = true;
                 relm4::spawn(async move {
                     match bt::InfiniTime::new(device).await {
@@ -145,6 +155,7 @@ impl Component for Model {
                             sender.input(Input::DeviceReady(Arc::new(infinitime)));
                         }
                         Err(error) => {
+                            sender.input(Input::DeviceRejected);
                             log::error!("Device is rejected: {}", error);
                             sender.input(Input::Toast("Device is rejected by the app"));
                         }
@@ -152,6 +163,7 @@ impl Component for Model {
                 });
             }
             Input::DeviceDisconnected => {
+                log::info!("PineTime disconnected");
                 if let Some(infinitime) = self.infinitime.take() {
                     self.devices.emit(devices::Input::DeviceDisconnected(infinitime.device().address()));
                 }
@@ -160,6 +172,7 @@ impl Component for Model {
                 sender.input(Input::SetView(View::Devices));
             }
             Input::DeviceReady(infinitime) => {
+                log::info!("PineTime recognized");
                 self.infinitime = Some(infinitime.clone());
                 self.active_view = View::Dashboard;
                 self.dashboard.emit(dashboard::Input::Connected(infinitime.clone()));
@@ -178,6 +191,9 @@ impl Component for Model {
                     }
                     sender.input(Input::DeviceDisconnected);
                 });
+            }
+            Input::DeviceRejected => {
+                self.devices.emit(devices::Input::StartDiscovery);
             }
             Input::FlashAssetFromFile(file, atype) => {
                 self.fwupd.emit(firmware_update::Input::FlashAssetFromFile(file, atype));
