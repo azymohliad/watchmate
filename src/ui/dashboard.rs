@@ -395,7 +395,9 @@ impl Component for Model {
 
         let notifications_panel = notifications::Model::builder()
             .launch(())
-            .detach();
+            .forward(&sender.input_sender(), |message| match message {
+                notifications::Output::Toast(n) => Input::Toast(n),
+            });
 
         let firmware_panel = firmware_panel::Model::builder()
             .launch(main_window)

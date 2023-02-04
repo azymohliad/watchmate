@@ -7,12 +7,13 @@ use relm4::{gtk, ComponentParts, ComponentSender, Component, JoinHandle, RelmWid
 #[derive(Debug)]
 pub enum Input {
     Device(Option<Arc<bt::InfiniTime>>),
-    SwitchProxy(bool),
-    SessionEnded,
+    SetNotificationSession(bool),
+    NotificationSessionEnded,
 }
 
 #[derive(Debug)]
 pub enum Output {
+    Toast(&'static str),
 }
 
 #[derive(Default)]
@@ -23,21 +24,35 @@ pub struct Model {
 }
 
 impl Model {
-    fn start_proxy_task(&mut self, sender: ComponentSender<Self>) {
+    fn start_notifications_task(&mut self, sender: ComponentSender<Self>) {
         if let Some(infinitime) = self.infinitime.clone() {
-            self.stop_proxy_task();
+            self.stop_notifications_task();
             log::info!("Notification session started");
             let infinitime = infinitime.clone();
             self.task = Some(relm4::spawn(async move {
                 if let Err(error) = notifications::run_notification_session(&infinitime).await {
-                    log::error!("Notifications session error: {error}");
+                    if let Some(zbus::fdo::Error::AccessDenied(_)) = error.downcast_ref() {
+                        log::warn!(
+                            "Notification session failed: the app doesn't have permissions to monitor \
+                            D-Bus session bus. If you're running it from flatpak, you can grant access with \
+                            command: `flatpak override --socket=session-bus io.gitlab.azymohliad.WatchMate`, \
+                            or via Flatseal"
+                        );
+                        _ = sender.output(Output::Toast(
+                            "Notifications require full D-Bus session bus access.\n\
+                            Please grant it via Flatseal or `flatpak override`"
+                        ));
+                    } else {
+                        log::warn!("Notifications session failed: {error}");
+                        _ = sender.output(Output::Toast("Notification session failed"));
+                    }
                 }
-                sender.input(Input::SessionEnded);
+                sender.input(Input::NotificationSessionEnded);
             }));
         }
     }
 
-    fn stop_proxy_task(&mut self) {
+    fn stop_notifications_task(&mut self) {
         // TODO: Is it safe to abort, or does it makes sense to
         // hook up a message channel to finish gracefully?
         if self.task.take().map(|h| h.abort()).is_some() {
@@ -67,19 +82,20 @@ impl Component for Model {
             },
 
             gtk::Switch {
-                set_state: model.is_enabled,
+                #[watch]
+                set_state: model.is_enabled && model.task.is_some(),
                 set_halign: gtk::Align::End,
                 set_hexpand: true,
                 connect_active_notify[sender] => move |switch| {
                     let state = switch.is_active();
-                    sender.input(Input::SwitchProxy(state));
+                    sender.input(Input::SetNotificationSession(state));
                 }
             }
         }
     }
 
     fn init(_: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
-        let model = Self { is_enabled: true, ..Default::default() };
+        let model = Self { is_enabled: false, ..Default::default() };
         let widgets = view_output!();
         ComponentParts { model, widgets }
     }
@@ -89,19 +105,19 @@ impl Component for Model {
             Input::Device(infinitime) => {
                 self.infinitime = infinitime;
                 match self.infinitime {
-                    Some(_) if self.is_enabled => self.start_proxy_task(sender),
+                    Some(_) if self.is_enabled => self.start_notifications_task(sender),
                     Some(_) => {},
-                    None => self.stop_proxy_task(),
+                    None => self.stop_notifications_task(),
                 }
             }
-            Input::SwitchProxy(state) => {
+            Input::SetNotificationSession(state) => {
                 self.is_enabled = state;
                 match state {
-                    true => self.start_proxy_task(sender),
-                    false => self.stop_proxy_task(),
+                    true => self.start_notifications_task(sender),
+                    false => self.stop_notifications_task(),
                 }
             }
-            Input::SessionEnded => {
+            Input::NotificationSessionEnded => {
                 self.task = None;
             }
         }
