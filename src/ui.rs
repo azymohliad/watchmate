@@ -1,5 +1,6 @@
 use crate::inft::bt;
 use std::{sync::Arc, path::PathBuf};
+use futures::{pin_mut, StreamExt};
 use gtk::prelude::{BoxExt, GtkWindowExt};
 use relm4::{
     adw, gtk, Component, ComponentController, ComponentParts, ComponentSender, Controller, RelmApp
@@ -19,7 +20,7 @@ use firmware_update::AssetType;
 enum Input {
     SetView(View),
     DeviceConnected(Arc<bluer::Device>),
-    DeviceDisconnected(Arc<bluer::Device>),
+    DeviceDisconnected,
     DeviceReady(Arc<bt::InfiniTime>),
     FlashAssetFromFile(PathBuf, AssetType),
     FlashAssetFromUrl(String, AssetType),
@@ -100,7 +101,6 @@ impl Component for Model {
             .launch(())
             .forward(&sender.input_sender(), |message| match message {
                 devices::Output::DeviceConnected(device) => Input::DeviceConnected(device),
-                devices::Output::DeviceDisconnected(device) => Input::DeviceDisconnected(device),
                 devices::Output::Toast(text) => Input::Toast(text),
                 devices::Output::SetView(view) => Input::SetView(view),
             });
@@ -151,20 +151,33 @@ impl Component for Model {
                     }
                 });
             }
-            Input::DeviceDisconnected(device) => {
-                if self.infinitime.as_ref().map_or(false, |i| i.device().address() == device.address()) {
-                // Use this once is_some_and is stabilized:
-                // if self.infinitime.is_some_and(|i| i.device().address() == device.address()) {
-                    self.infinitime = None;
+            Input::DeviceDisconnected => {
+                if let Some(infinitime) = self.infinitime.take() {
+                    self.devices.emit(devices::Input::DeviceDisconnected(infinitime.device().address()));
                 }
                 self.dashboard.emit(dashboard::Input::Disconnected);
                 self.fwupd.emit(firmware_update::Input::Disconnected);
+                sender.input(Input::SetView(View::Devices));
             }
             Input::DeviceReady(infinitime) => {
                 self.infinitime = Some(infinitime.clone());
                 self.active_view = View::Dashboard;
                 self.dashboard.emit(dashboard::Input::Connected(infinitime.clone()));
                 self.fwupd.emit(firmware_update::Input::Connected(infinitime.clone()));
+                // Handle disconnection
+                relm4::spawn(async move {
+                    match infinitime.get_property_stream().await {
+                        Ok(stream) => {
+                            pin_mut!(stream);
+                            // Wait for the event stream to end
+                            stream.count().await;
+                        }
+                        Err(error) => {
+                            log::error!("Failed to get property stream: {}", error);
+                        }
+                    }
+                    sender.input(Input::DeviceDisconnected);
+                });
             }
             Input::FlashAssetFromFile(file, atype) => {
                 self.fwupd.emit(firmware_update::Input::FlashAssetFromFile(file, atype));

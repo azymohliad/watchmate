@@ -19,15 +19,15 @@ pub enum Input {
     DeviceInfoReady(DeviceInfo),
     DeviceAdded(bluer::Address),
     DeviceRemoved(bluer::Address),
+    DeviceDisconnected(bluer::Address),
     DeviceSelected(i32),
-    DeviceConnected(Arc<bluer::Device>),
-    DeviceDisconnected(Arc<bluer::Device>),
+    DeviceManuallyConnected(Arc<bluer::Device>),
+    DeviceManuallyDisconnected(Arc<bluer::Device>),
 }
 
 #[derive(Debug)]
 pub enum Output {
     DeviceConnected(Arc<bluer::Device>),
-    DeviceDisconnected(Arc<bluer::Device>),
     Toast(&'static str),
     SetView(super::View),
 }
@@ -243,18 +243,23 @@ impl Component for Model {
                 }
             }
 
+            Input::DeviceDisconnected(address) => {
+                let device = self.devices.iter().enumerate().find(|(_,d)| d.address == address);
+                if let Some((idx, _)) = device {
+                    self.devices.send(idx, DeviceInput::StateUpdated(DeviceState::Disconnected));
+                }
+            }
+
             Input::DeviceSelected(index) => {
                 self.scan_task.take().map(|h| h.abort());
                 self.devices.send(index as usize, DeviceInput::Connect);
             }
 
-            Input::DeviceConnected(device) => {
+            Input::DeviceManuallyConnected(device) => {
                 sender.output(Output::DeviceConnected(device)).unwrap();
             }
 
-            Input::DeviceDisconnected(device) => {
-                sender.output(Output::DeviceDisconnected(device)).unwrap();
-            }
+            Input::DeviceManuallyDisconnected(device) => {}
         }
     }
 
@@ -446,8 +451,8 @@ impl FactoryComponent for DeviceInfo {
 
     fn output_to_parent_input(output: Self::Output) -> Option<Input> {
         Some(match output {
-            DeviceOutput::Connected(device) => Input::DeviceConnected(device),
-            DeviceOutput::Disconnected(device) => Input::DeviceDisconnected(device),
+            DeviceOutput::Connected(device) => Input::DeviceManuallyConnected(device),
+            DeviceOutput::Disconnected(device) => Input::DeviceManuallyDisconnected(device),
         })
     }
 

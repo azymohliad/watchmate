@@ -81,6 +81,13 @@ impl InfiniTime {
         }))
     }
 
+    pub async fn get_property_stream(&self) -> Result<impl Stream<Item = bluer::DeviceProperty>> {
+        Ok(self.device.events().await?.map(|event| {
+            let bluer::DeviceEvent::PropertyChanged(property) = event;
+            property
+        }))
+    }
+
     // -- Firmware upgrade --
 
     pub fn is_upgrading_firmware(&self) -> bool {
