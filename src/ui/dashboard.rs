@@ -236,7 +236,7 @@ impl Component for Model {
                             },
 
                             gtk::Label {
-                                set_label: "Companion Integration",
+                                set_label: "Host Integration",
                                 set_halign: gtk::Align::Start,
                                 set_margin_top: 20,
                             },
