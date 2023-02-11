@@ -1,6 +1,11 @@
 # Changelog
 
-## v0.4.0 - 2022-09-01
+## Unreleased
+
+- Fix minimum window width being affected by selected firmware version length
+
+
+## v0.4.0 - 2023-02-04
 
 - Updated dependencies
 - Added basic desktop notifications propagation
