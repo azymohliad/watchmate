@@ -1,8 +1,11 @@
 use crate::inft::gh;
 use super::AssetType;
 use std::path::PathBuf;
-use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, WidgetExt};
-use relm4::{adw, gtk, ComponentController, ComponentParts, ComponentSender, Component, Controller, JoinHandle, RelmWidgetExt};
+use relm4::{
+    adw, gtk,
+    gtk::prelude::{BoxExt, ButtonExt, OrientableExt, WidgetExt, GObjectPropertyExpressionExt},
+    ComponentController, ComponentParts, ComponentSender, Component, Controller, JoinHandle, RelmWidgetExt
+};
 use relm4_components::{open_dialog::*, save_dialog::*};
 use anyhow::Result;
 
@@ -134,6 +137,20 @@ impl Component for Model {
                     set_visible: model.releases.is_some(),
                     #[watch]
                     set_model: model.tags.as_ref(),
+                    #[wrap(Some)]
+                    set_factory = &gtk::SignalListItemFactory {
+                        connect_setup => |_, item| {
+                            let label = gtk::Label::new(None);
+                            let scroll_view = gtk::ScrolledWindow::builder()
+                                .vscrollbar_policy(gtk::PolicyType::Never)
+                                .child(&label)
+                                .build();
+                            item.property_expression("item")
+                                .chain_property::<gtk::StringObject>("string")
+                                .bind(&label, "label", gtk::Widget::NONE);
+                            item.set_child(Some(&scroll_view));
+                        }
+                    },
                 },
 
                 adw::SplitButton {
