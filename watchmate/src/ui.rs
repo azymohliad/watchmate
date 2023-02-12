@@ -1,4 +1,4 @@
-use crate::inft::bt;
+use infinitime::{bluer, bt};
 use std::{sync::Arc, path::PathBuf};
 use futures::{pin_mut, StreamExt};
 use gtk::prelude::{BoxExt, GtkWindowExt};

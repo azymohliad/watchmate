@@ -1,30 +1,5 @@
-[package]
-name = "watchmate"
-version = "0.1.0"
-edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-relm4 = { version = "0.5.0-rc.1", features = ["libadwaita"] }
-relm4-components = { version = "0.5.0-rc.1" }
-bluer = { version = "0.15", features = ["bluetoothd"] }
-tokio = { version = "1.20", features = ["rt-multi-thread", "fs"] }
-reqwest = { version = "0.11", features = [ "json" ] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "*"
-futures = "0.3"
-uuid = "1.2"
-anyhow = "1.0"
-chrono = "0.4"
-zip = "0.6"
-version-compare = "0.1"
-mpris2-zbus = { git = "https://github.com/pop-os/mpris2-zbus" }
-zbus = { version = "3.7", default-features = false, features = ["tokio"] }
-log = "0.4"
-env_logger = "0.10"
-
-[profile.release]
-opt-level = "s"
-lto = true
-codegen-units = 1
+[workspace]
+members = [
+    "watchmate",
+    "infinitime-rs"
+]

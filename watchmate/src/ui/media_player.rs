@@ -1,10 +1,11 @@
-use crate::inft::{bt, fdo::mpris};
+use infinitime::{
+    zbus, mpris2_zbus::media_player::MediaPlayer,
+    bt, fdo::mpris
+};
 use std::sync::Arc;
 use futures::StreamExt;
 use gtk::prelude::{BoxExt, OrientableExt, WidgetExt};
 use relm4::{gtk, ComponentParts, ComponentSender, Component, JoinHandle, RelmWidgetExt};
-use mpris2_zbus::media_player::MediaPlayer;
-use zbus::names::OwnedBusName;
 
 
 #[derive(Debug)]
@@ -15,7 +16,7 @@ pub enum Input {
     PlayerUpdateSessionStart,
     PlayerUpdateSessionEnded,
     PlayerAdded(MediaPlayer),
-    PlayerRemoved(OwnedBusName),
+    PlayerRemoved(zbus::names::OwnedBusName),
 }
 
 #[derive(Debug)]
