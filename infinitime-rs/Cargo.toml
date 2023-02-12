@@ -3,20 +3,23 @@ name = "infinitime"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 futures = "0.3"
 bluer = { version = "0.15", features = ["bluetoothd"] }
 tokio = { version = "1.20", features = ["rt-multi-thread", "fs"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "*"
-reqwest = { version = "0.11", features = [ "json" ] }
-zbus = { version = "3.7", default-features = false, features = ["tokio"] }
-mpris2-zbus = { git = "https://github.com/pop-os/mpris2-zbus" }
 uuid = "1.2"
 anyhow = "1.0"
 chrono = "0.4"
 zip = "0.6"
 log = "0.4"
 version-compare = "0.1"
+reqwest = { version = "0.11", features = [ "json" ], optional = true }
+zbus = { version = "3.7", default-features = false, features = ["tokio"], optional = true }
+mpris2-zbus = { git = "https://github.com/pop-os/mpris2-zbus", optional = true }
+
+[features]
+default = []
+freedesktop = ["dep:zbus", "dep:mpris2-zbus"]
+github = ["dep:reqwest"]

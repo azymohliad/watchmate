@@ -1,13 +1,21 @@
 pub mod bluetooth;
-pub mod freedesktop;
-pub mod github;
-mod utils;
-
 pub use bluetooth as bt;
+
+#[cfg(feature = "freedesktop")]
+pub mod freedesktop;
+#[cfg(feature = "freedesktop")]
 pub use freedesktop as fdo;
+
+#[cfg(feature = "github")]
+pub mod github;
+#[cfg(feature = "github")]
 pub use github as gh;
 
-// Reexports
+mod utils;
+
+
+// Dependency reexports
 pub use bluer;
 pub use tokio;
+#[cfg(feature = "freedesktop")]
 pub use zbus;
