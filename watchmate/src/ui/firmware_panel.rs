@@ -323,7 +323,7 @@ impl Component for Model {
             }
             Input::ReleaseNotes(index) => {
                 if let FirmwareReleasesState::Some(releases) = &self.releases {
-                    gtk::show_uri(None as Option<&adw::ApplicationWindow>, &releases[index as usize].url, 0);
+                    gtk::show_uri(adw::ApplicationWindow::NONE, &releases[index as usize].url, 0);
                 }
             }
             Input::DownloadFirmware(index) => {
