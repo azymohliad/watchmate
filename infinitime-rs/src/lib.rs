@@ -11,4 +11,3 @@ pub use github as gh;
 pub use bluer;
 pub use tokio;
 pub use zbus;
-pub use mpris2_zbus;

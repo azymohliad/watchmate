@@ -1,6 +1,5 @@
 use infinitime::{
-    zbus, mpris2_zbus::media_player::MediaPlayer,
-    bt, fdo::mpris
+    zbus, bt, fdo::mpris
 };
 use std::sync::Arc;
 use futures::StreamExt;
@@ -15,7 +14,7 @@ pub enum Input {
     PlayerControlSessionEnded,
     PlayerUpdateSessionStart,
     PlayerUpdateSessionEnded,
-    PlayerAdded(MediaPlayer),
+    PlayerAdded(mpris::MediaPlayer),
     PlayerRemoved(zbus::names::OwnedBusName),
 }
 
@@ -31,7 +30,7 @@ pub enum CommandOutput {
 
 #[derive(Default)]
 pub struct Model {
-    player_handles: Vec<Arc<MediaPlayer>>,
+    player_handles: Vec<Arc<mpris::MediaPlayer>>,
     player_names: gtk::StringList,
     infinitime: Option<Arc<bt::InfiniTime>>,
     control_task: Option<JoinHandle<()>>,
@@ -157,7 +156,7 @@ impl Component for Model {
                                 async move {
                                     match event {
                                         mpris::PlayersListEvent::PlayerAdded(bus) => {
-                                            if let Ok(player) = MediaPlayer::new(&dbus_session_, bus).await {
+                                            if let Ok(player) = mpris::MediaPlayer::new(&dbus_session_, bus).await {
                                                 let _ = player.identity().await; // Cache player name
                                                 sender_.input(Input::PlayerAdded(player));
                                             }
