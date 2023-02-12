@@ -1,0 +1,16 @@
+[package]
+name = "watchmate"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+infinitime = { path = "../infinitime-rs", features = ["freedesktop", "github"] }
+relm4 = { version = "0.5.0-rc.1", features = ["libadwaita"] }
+relm4-components = { version = "0.5.0-rc.1" }
+futures = "0.3"
+anyhow = "1.0"
+version-compare = "0.1"
+log = "0.4"
+env_logger = "0.10"

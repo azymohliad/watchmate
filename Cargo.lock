@@ -1248,6 +1248,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "infinitime"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bluer",
+ "chrono",
+ "futures",
+ "log",
+ "mpris2-zbus",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "uuid",
+ "version-compare",
+ "zbus",
+ "zip",
+]
+
+[[package]]
 name = "instant"
 version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2704,22 +2724,13 @@ name = "watchmate"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "bluer",
- "chrono",
  "env_logger",
  "futures",
+ "infinitime",
  "log",
- "mpris2-zbus",
  "relm4",
  "relm4-components",
- "reqwest",
- "serde",
- "serde_json",
- "tokio",
- "uuid",
  "version-compare",
- "zbus",
- "zip",
 ]
 
 [[package]]

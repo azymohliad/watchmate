@@ -1,5 +1,6 @@
-use crate::inft::bt;
 use super::{media_player, firmware_panel, notifications, AssetType};
+use infinitime::{tokio, bt};
+
 use std::{sync::Arc, path::PathBuf};
 use futures::{pin_mut, StreamExt};
 use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, ListBoxRowExt, WidgetExt};

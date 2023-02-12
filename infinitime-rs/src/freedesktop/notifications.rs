@@ -4,7 +4,7 @@ use serde::Deserialize;
 use anyhow::Result;
 use futures::TryStreamExt;
 
-use crate::inft::bt;
+use crate::bt;
 
 #[allow(unused)]
 #[derive(Debug, Deserialize, Type)]

@@ -1,4 +1,4 @@
-use crate::inft::{bt, fdo::notifications};
+use infinitime::{zbus, bt, fdo::notifications};
 use std::sync::Arc;
 use gtk::prelude::{BoxExt, OrientableExt, WidgetExt};
 use relm4::{gtk, ComponentParts, ComponentSender, Component, JoinHandle, RelmWidgetExt};

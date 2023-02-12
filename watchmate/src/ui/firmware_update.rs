@@ -1,6 +1,9 @@
-use crate::inft::{bt::{self, ProgressEvent, InfiniTime}, gh};
+use infinitime::{
+    tokio::{self, io::AsyncReadExt},
+    bt::{self, ProgressEvent, InfiniTime}, gh
+};
+
 use std::{sync::Arc, path::PathBuf};
-use tokio::{fs::File, io::AsyncReadExt};
 use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, WidgetExt};
 use relm4::{adw, gtk, ComponentParts, ComponentSender, Component, JoinHandle, RelmWidgetExt};
 
@@ -82,7 +85,7 @@ impl Model {
 
     fn read_asset_file(filepath: Arc<PathBuf>, sender: ComponentSender<Self>) -> JoinHandle<()> {
         relm4::spawn(async move {
-            match File::open(filepath.as_path()).await {
+            match tokio::fs::File::open(filepath.as_path()).await {
                 Ok(mut file) => {
                     let mut content = Vec::new();
                     match file.read_to_end(&mut content).await {

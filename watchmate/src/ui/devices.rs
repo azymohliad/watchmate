@@ -1,7 +1,6 @@
-use crate::inft::bt;
+use infinitime::{ bluer, bt };
 use std::sync::Arc;
 use futures::{pin_mut, StreamExt};
-use bluer::{gatt::local::ApplicationHandle, Adapter, Result, Session};
 use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, ListBoxRowExt, WidgetExt};
 use relm4::{
     adw, gtk, factory::{FactoryComponent, FactorySender, FactoryVecDeque, DynamicIndex},
@@ -37,26 +36,26 @@ pub enum Output {
 #[derive(Debug)]
 pub enum CommandOutput {
     InitAdapterResult(bluer::Result<bluer::Adapter>),
-    GattServicesResult(bluer::Result<ApplicationHandle>),
+    GattServicesResult(bluer::Result<bluer::gatt::local::ApplicationHandle>),
     KnownDevices(Vec<DeviceInfo>),
 }
 
 pub struct Model {
     devices: FactoryVecDeque<DeviceInfo>,
     adapter: Option<Arc<bluer::Adapter>>,
-    gatt_server: Option<ApplicationHandle>,
+    gatt_server: Option<bluer::gatt::local::ApplicationHandle>,
     discovery_task: Option<JoinHandle<()>>,
 }
 
 impl Model {
-    async fn init_adapter() -> Result<Adapter> {
-        let session = Session::new().await?;
+    async fn init_adapter() -> bluer::Result<bluer::Adapter> {
+        let session = bluer::Session::new().await?;
         let adapter = session.default_adapter().await?;
         adapter.set_powered(true).await?;
         Ok(adapter)
     }
 
-    async fn run_discovery(adapter: Arc<Adapter>, sender: ComponentSender<Self>) {
+    async fn run_discovery(adapter: Arc<bluer::Adapter>, sender: ComponentSender<Self>) {
         match adapter.discover_devices().await {
             Ok(stream) => {
                 pin_mut!(stream);

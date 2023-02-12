@@ -1,5 +1,6 @@
-use crate::inft::gh;
 use super::AssetType;
+use infinitime::gh;
+
 use std::path::PathBuf;
 use relm4::{
     adw, gtk,

@@ -1,7 +1,4 @@
 mod ui;
-mod infinitime;
-
-use infinitime as inft;
 
 fn main() {
     env_logger::Builder::new()

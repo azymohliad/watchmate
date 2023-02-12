@@ -3,7 +3,9 @@ use std::str::FromStr;
 use futures::{pin_mut, stream, Stream, StreamExt};
 use anyhow::Result;
 use zbus::{fdo::DBusProxy, Connection, names::OwnedBusName};
-use mpris2_zbus::{media_player::MediaPlayer, player::{Player, PlaybackStatus, LoopStatus}, metadata::Metadata};
+use mpris2_zbus::{player::{Player, PlaybackStatus, LoopStatus}, metadata::Metadata};
+
+pub use mpris2_zbus::media_player::MediaPlayer;
 
 const VOLUME_STEP: f64 = 0.1;
 
@@ -17,7 +19,7 @@ pub async fn get_players_update_stream(connection: &Connection) -> Result<impl S
     let known_players = MediaPlayer::available_players(&connection).await?;
     let known_players_events = stream::iter(known_players)
         .map(PlayersListEvent::PlayerAdded);
-    
+
     let new_events = DBusProxy::new(connection).await?
         .receive_name_owner_changed().await?
         // .filter_map(|msg| future::ready(msg.args().ok()))
@@ -42,8 +44,8 @@ pub async fn get_players_update_stream(connection: &Connection) -> Result<impl S
                 }
             })
         });
-    
-    Ok(known_players_events.chain(new_events))    
+
+    Ok(known_players_events.chain(new_events))
 }
 
 pub async fn update_track_metadata(metadata: &Metadata, infinitime: &bt::InfiniTime) -> Result<()> {
