@@ -53,6 +53,13 @@
   </recommends>
 
   <releases>
+    <release version="0.4.1" date="2023-02-11">
+      <description>
+        <ul>
+          <li>Fix minimum window width issue</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.4.0" date="2023-02-04">
       <description>
         <ul>
