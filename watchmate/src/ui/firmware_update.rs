@@ -212,14 +212,14 @@ impl Component for Model {
                             add_css_class:"destructive-action",
                             #[watch]
                             set_visible: model.state == State::InProgress,
-                            connect_clicked[sender] => move |_| sender.input(Input::Abort),
+                            connect_clicked => Input::Abort,
                         },
 
                         gtk::Button {
                             set_label: "Retry",
                             #[watch]
                             set_visible: model.state == State::Aborted,
-                            connect_clicked[sender] => move |_| sender.input(Input::Retry),
+                            connect_clicked => Input::Retry,
                         },
 
                         gtk::Button {

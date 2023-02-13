@@ -86,9 +86,7 @@ impl Component for Model {
                     set_hexpand: true,
                     #[watch]
                     set_model: Some(&model.player_names),
-                    connect_selected_notify[sender] => move |_| {
-                        sender.input(Input::PlayerControlSessionStart);
-                    }
+                    connect_selected_notify => Input::PlayerControlSessionStart,
                 }
             }
         }

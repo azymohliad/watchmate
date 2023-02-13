@@ -221,9 +221,7 @@ impl Component for Model {
                     gtk::Button {
                         set_tooltip_text: Some("Refresh releases list"),
                         set_icon_name: "view-refresh-symbolic",
-                        connect_clicked[sender] => move |_| {
-                            sender.input(Input::RequestReleases);
-                        },
+                        connect_clicked => Input::RequestReleases,
                     }
                 }
             },
@@ -244,17 +242,13 @@ impl Component for Model {
                 gtk::Button {
                     set_label: "Firmware",
                     set_hexpand: true,
-                    connect_clicked[sender] => move |_| {
-                        sender.input(Input::OpenFirmwareFileDialog);
-                    },
+                    connect_clicked => Input::OpenFirmwareFileDialog,
                 },
 
                 gtk::Button {
                     set_label: "Resources",
                     set_hexpand: true,
-                    connect_clicked[sender] => move |_| {
-                        sender.input(Input::OpenResourcesFileDialog);
-                    },
+                    connect_clicked => Input::OpenResourcesFileDialog,
                 },
             }
         }

@@ -155,9 +155,7 @@ impl Component for Model {
                         gtk::Button {
                             set_label: "Retry",
                             set_halign: gtk::Align::Center,
-                            connect_clicked[sender] => move |_| {
-                                sender.input(Input::InitAdapter)
-                            }
+                            connect_clicked => Input::InitAdapter,
                         },
                     }
                 }
@@ -442,9 +440,7 @@ impl FactoryComponent for DeviceInfo {
                     add_css_class: "flat",
                     #[watch]
                     set_visible: self.state == DeviceState::Connected,
-                    connect_clicked[sender] => move |_| {
-                        sender.input(DeviceInput::Disconnect);
-                    }
+                    connect_clicked => DeviceInput::Disconnect,
                 },
 
                 gtk::Spinner {
