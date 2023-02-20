@@ -14,6 +14,11 @@ pub enum Input {
 #[derive(Debug)]
 pub enum Output {
     Toast(&'static str),
+    ToastWithLink {
+        message: &'static str,
+        label: &'static str,
+        url: &'static str,
+    },
 }
 
 #[derive(Default)]
@@ -38,7 +43,11 @@ impl Model {
                             command: `flatpak override --socket=session-bus io.gitlab.azymohliad.WatchMate`, \
                             or via Flatseal"
                         );
-                        _ = sender.output(Output::Toast("Notifications require D-Bus session bus permission"));
+                        _ = sender.output(Output::ToastWithLink {
+                                message: "Session bus permission is needed here",
+                                label: "Details",
+                                url: "https://github.com/azymohliad/watchmate/issues/6",
+                            });
                     } else {
                         log::warn!("Notifications session failed: {error}");
                         _ = sender.output(Output::Toast("Notification session failed"));

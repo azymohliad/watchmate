@@ -18,6 +18,11 @@ pub enum Input {
     FlashAssetFromFile(PathBuf, AssetType),
     FlashAssetFromUrl(String, AssetType),
     Toast(&'static str),
+    ToastWithLink {
+        message: &'static str,
+        label: &'static str,
+        url: &'static str,
+    },
     BatteryLevel(u8),
     HeartRate(u8),
     StepCount(u32),
@@ -30,8 +35,13 @@ pub enum Input {
 pub enum Output {
     FlashAssetFromFile(PathBuf, AssetType),
     FlashAssetFromUrl(String, AssetType),
-    Toast(&'static str),
     SetView(super::View),
+    Toast(&'static str),
+    ToastWithLink {
+        message: &'static str,
+        label: &'static str,
+        url: &'static str,
+    },
 }
 
 pub struct Model {
@@ -398,6 +408,7 @@ impl Component for Model {
             .launch(())
             .forward(&sender.input_sender(), |message| match message {
                 notifications::Output::Toast(n) => Input::Toast(n),
+                notifications::Output::ToastWithLink { message, label, url} => Input::ToastWithLink { message, label, url},
             });
 
         let firmware_panel = firmware_panel::Model::builder()
@@ -481,6 +492,9 @@ impl Component for Model {
             }
             Input::Toast(n) => {
                 sender.output(Output::Toast(n)).unwrap();
+            }
+            Input::ToastWithLink { message, label, url } => {
+                sender.output(Output::ToastWithLink { message, label, url }).unwrap();
             }
             // -- Watch data --
             Input::BatteryLevel(soc) => {

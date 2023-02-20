@@ -15,7 +15,6 @@ mod notifications;
 
 use firmware_update::AssetType;
 
-
 #[derive(Debug)]
 enum Input {
     SetView(View),
@@ -26,6 +25,11 @@ enum Input {
     FlashAssetFromFile(PathBuf, AssetType),
     FlashAssetFromUrl(String, AssetType),
     Toast(&'static str),
+    ToastWithLink {
+        message: &'static str,
+        label: &'static str,
+        url: &'static str,
+    },
 }
 
 struct Model {
@@ -39,12 +43,6 @@ struct Model {
     // Other
     infinitime: Option<Arc<bt::InfiniTime>>,
     toast_overlay: adw::ToastOverlay,
-}
-
-impl Model {
-    fn notify(&self, message: &str) {
-        self.toast_overlay.add_toast(&adw::Toast::new(message));
-    }
 }
 
 #[relm4::component]
@@ -95,6 +93,7 @@ impl Component for Model {
                 dashboard::Output::FlashAssetFromFile(file, atype) => Input::FlashAssetFromFile(file, atype),
                 dashboard::Output::FlashAssetFromUrl(url, atype) => Input::FlashAssetFromUrl(url, atype),
                 dashboard::Output::Toast(text) => Input::Toast(text),
+                dashboard::Output::ToastWithLink { message, label, url } => Input::ToastWithLink { message, label, url },
                 dashboard::Output::SetView(view) => Input::SetView(view),
             });
 
@@ -133,7 +132,7 @@ impl Component for Model {
     }
 
 
-    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, _root: &Self::Root) {
+    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, root: &Self::Root) {
         match msg {
             Input::SetView(view) => {
                 if self.active_view != view {
@@ -204,7 +203,16 @@ impl Component for Model {
                 sender.input(Input::SetView(View::FirmwareUpdate));
             }
             Input::Toast(message) => {
-                self.notify(message);
+                self.toast_overlay.add_toast(&adw::Toast::new(message));
+            }
+            Input::ToastWithLink { message, label, url } => {
+                let toast = adw::Toast::new(message);
+                let root = root.clone();
+                toast.set_button_label(Some(label));
+                toast.connect_button_clicked(move |_| {
+                    gtk::show_uri(Some(&root), url, 0);
+                });
+                self.toast_overlay.add_toast(&toast);
             }
         }
     }

@@ -4,7 +4,7 @@ use infinitime::gh;
 use std::path::PathBuf;
 use relm4::{
     adw, gtk,
-    gtk::prelude::{BoxExt, ButtonExt, OrientableExt, WidgetExt, GObjectPropertyExpressionExt},
+    gtk::prelude::*,
     ComponentController, ComponentParts, ComponentSender, Component, Controller, JoinHandle, RelmWidgetExt
 };
 use relm4_components::{open_dialog::*, save_dialog::*};
@@ -141,6 +141,7 @@ impl Component for Model {
                     #[wrap(Some)]
                     set_factory = &gtk::SignalListItemFactory {
                         connect_setup => |_, item| {
+                            let item = item.downcast_ref::<gtk::ListItem>().unwrap();
                             let label = gtk::Label::new(None);
                             let scroll_view = gtk::ScrolledWindow::builder()
                                 .vscrollbar_policy(gtk::PolicyType::Never)
