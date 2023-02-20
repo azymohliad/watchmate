@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.2 = 2023-02-20
+
+- Improve notifications permission error message
+
 ## v0.4.1 - 2023-02-11
 
 - Fix minimum window width being affected by selected firmware version length

@@ -53,6 +53,13 @@
   </recommends>
 
   <releases>
+    <release version="0.4.2" date="2023-02-20">
+      <description>
+        <ul>
+          <li>Improve notifications permission error message</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.4.1" date="2023-02-11">
       <description>
         <ul>
