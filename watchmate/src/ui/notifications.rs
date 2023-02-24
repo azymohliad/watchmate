@@ -1,24 +1,14 @@
+use crate::ui;
 use infinitime::{zbus, bt, fdo::notifications};
 use std::sync::Arc;
 use gtk::prelude::{BoxExt, OrientableExt, WidgetExt};
 use relm4::{gtk, ComponentParts, ComponentSender, Component, JoinHandle, RelmWidgetExt};
-
 
 #[derive(Debug)]
 pub enum Input {
     Device(Option<Arc<bt::InfiniTime>>),
     SetNotificationSession(bool),
     NotificationSessionEnded,
-}
-
-#[derive(Debug)]
-pub enum Output {
-    Toast(&'static str),
-    ToastWithLink {
-        message: &'static str,
-        label: &'static str,
-        url: &'static str,
-    },
 }
 
 #[derive(Default)]
@@ -43,14 +33,14 @@ impl Model {
                             command: `flatpak override --socket=session-bus io.gitlab.azymohliad.WatchMate`, \
                             or via Flatseal"
                         );
-                        _ = sender.output(Output::ToastWithLink {
+                        _ = ui::BROKER.send(ui::Input::ToastWithLink {
                                 message: "Session bus permission is needed here",
                                 label: "Details",
                                 url: "https://github.com/azymohliad/watchmate/issues/6",
                             });
                     } else {
                         log::warn!("Notifications session failed: {error}");
-                        _ = sender.output(Output::Toast("Notification session failed"));
+                        _ = ui::BROKER.send(ui::Input::Toast("Notification session failed"));
                     }
                 }
                 sender.input(Input::NotificationSessionEnded);
@@ -73,7 +63,7 @@ impl Component for Model {
     type CommandOutput = ();
     type Init = ();
     type Input = Input;
-    type Output = Output;
+    type Output = ();
     type Widgets = Widgets;
 
     view! {
