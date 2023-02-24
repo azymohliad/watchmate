@@ -1,3 +1,4 @@
+use crate::ui;
 use infinitime::{ bluer, bt };
 use std::sync::Arc;
 use futures::{pin_mut, StreamExt};
@@ -29,8 +30,6 @@ pub enum Input {
 #[derive(Debug)]
 pub enum Output {
     DeviceConnected(Arc<bluer::Device>),
-    Toast(&'static str),
-    SetView(super::View),
 }
 
 #[derive(Debug)]
@@ -110,8 +109,8 @@ impl Component for Model {
                 pack_start = &gtk::Button {
                     set_tooltip_text: Some("Back"),
                     set_icon_name: "go-previous-symbolic",
-                    connect_clicked[sender] => move |_| {
-                        sender.output(Output::SetView(super::View::Dashboard)).unwrap();
+                    connect_clicked => |_| {
+                        ui::BROKER.send(ui::Input::SetView(super::View::Dashboard));
                     },
                 },
             },
@@ -302,7 +301,7 @@ impl Component for Model {
                 }
                 Err(error) => {
                     log::error!("Failed to start GATT server: {error}");
-                    sender.output(Output::Toast("Failed to start GATT server")).unwrap();
+                    ui::BROKER.send(ui::Input::Toast("Failed to start GATT server"));
                 }
             }
 

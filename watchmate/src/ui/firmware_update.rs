@@ -1,3 +1,4 @@
+use crate::ui;
 use infinitime::{
     tokio::{self, io::AsyncReadExt},
     bt::{self, ProgressEvent, InfiniTime}, gh
@@ -23,11 +24,6 @@ pub enum Input {
 
     Retry,
     Abort,
-}
-
-#[derive(Debug)]
-pub enum Output {
-    SetView(super::View),
 }
 
 pub enum Source {
@@ -137,7 +133,7 @@ impl Component for Model {
     type CommandOutput = ();
     type Init = ();
     type Input = Input;
-    type Output = Output;
+    type Output = ();
     type Widgets = Widgets;
 
     view! {
@@ -156,8 +152,8 @@ impl Component for Model {
                     set_icon_name: "go-previous-symbolic",
                     #[watch]
                     set_visible: model.state != State::InProgress,
-                    connect_clicked[sender] => move |_| {
-                        sender.output(Output::SetView(super::View::Dashboard)).unwrap();
+                    connect_clicked => |_| {
+                        ui::BROKER.send(ui::Input::SetView(ui::View::Dashboard));
                     },
                 },
             },
@@ -226,8 +222,8 @@ impl Component for Model {
                             set_label: "Back",
                             #[watch]
                             set_visible: model.state != State::InProgress,
-                            connect_clicked[sender] => move |_| {
-                                sender.output(Output::SetView(super::View::Dashboard)).unwrap();
+                            connect_clicked => |_| {
+                                ui::BROKER.send(ui::Input::SetView(ui::View::Dashboard));
                             },
                         },
                     }

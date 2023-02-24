@@ -1,3 +1,4 @@
+use crate::ui;
 use super::AssetType;
 use infinitime::gh;
 
@@ -38,7 +39,6 @@ pub enum Output {
     FlashAssetFromFile(PathBuf, AssetType),
     FlashAssetFromUrl(String, AssetType),
     LatestFirmwareVersion(Option<String>),
-    Toast(&'static str),
 }
 
 #[derive(Debug)]
@@ -328,7 +328,7 @@ impl Component for Model {
                             sender.input(Input::DownloadAsset(asset.clone()));
                         }
                         None => {
-                            sender.output(Output::Toast("DFU file not found")).unwrap();
+                            ui::BROKER.send(ui::Input::Toast("DFU file not found"));
                         }
                     }
                 }
@@ -340,7 +340,7 @@ impl Component for Model {
                             sender.input(Input::DownloadAsset(asset.clone()));
                         }
                         None => {
-                            sender.output(Output::Toast("Resources file not found")).unwrap();
+                            ui::BROKER.send(ui::Input::Toast("Resources file not found"));
                         }
                     }
                 }
@@ -371,7 +371,7 @@ impl Component for Model {
                     Err(error) => {
                         self.download_content = None;
                         log::error!("Failed to download DFU file: {}", error);
-                        sender.output(Output::Toast("Failed to download DFU file")).unwrap();
+                        ui::BROKER.send(ui::Input::Toast("Failed to download DFU file"));
                     }
                 }
             }
@@ -394,7 +394,7 @@ impl Component for Model {
                             sender.output(Output::FlashAssetFromUrl(url, atype)).unwrap();
                         }
                         None => {
-                            sender.output(Output::Toast("DFU file not found")).unwrap();
+                            ui::BROKER.send(ui::Input::Toast("DFU file not found"));
                         }
                     }
                 }
@@ -412,7 +412,7 @@ impl Component for Model {
                             sender.output(Output::FlashAssetFromUrl(url, atype)).unwrap();
                         }
                         None => {
-                            sender.output(Output::Toast("DFU file not found")).unwrap();
+                            ui::BROKER.send(ui::Input::Toast("DFU file not found"));
                         }
                     }
                 }
@@ -443,11 +443,11 @@ impl Component for Model {
             }
             CommandOutput::SaveFileResponse(response) => match response {
                 Ok(()) => {
-                    sender.output(Output::Toast("Firmware downloaded")).unwrap();
+                    ui::BROKER.send(ui::Input::Toast("Firmware downloaded"));
                 }
                 Err(error) => {
                     log::error!("Failed to save firmware file: {error}");
-                    sender.output(Output::Toast("Failed to save DFU file")).unwrap();
+                    ui::BROKER.send(ui::Input::Toast("Failed to save DFU file"));
                 }
             }
         }

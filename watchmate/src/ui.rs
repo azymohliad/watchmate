@@ -3,7 +3,7 @@ use std::{sync::Arc, path::PathBuf};
 use futures::{pin_mut, StreamExt};
 use gtk::prelude::{BoxExt, GtkWindowExt};
 use relm4::{
-    adw, gtk, Component, ComponentController, ComponentParts, ComponentSender, Controller, RelmApp
+    adw, gtk, Component, ComponentController, ComponentParts, ComponentSender, Controller, RelmApp, MessageBroker
 };
 
 mod dashboard;
@@ -14,6 +14,8 @@ mod media_player;
 mod notifications;
 
 use firmware_update::AssetType;
+
+static BROKER: relm4::MessageBroker<Input> = MessageBroker::new();
 
 #[derive(Debug)]
 enum Input {
@@ -92,24 +94,17 @@ impl Component for Model {
             .forward(&sender.input_sender(), |message| match message {
                 dashboard::Output::FlashAssetFromFile(file, atype) => Input::FlashAssetFromFile(file, atype),
                 dashboard::Output::FlashAssetFromUrl(url, atype) => Input::FlashAssetFromUrl(url, atype),
-                dashboard::Output::Toast(text) => Input::Toast(text),
-                dashboard::Output::ToastWithLink { message, label, url } => Input::ToastWithLink { message, label, url },
-                dashboard::Output::SetView(view) => Input::SetView(view),
             });
 
         let devices = devices::Model::builder()
             .launch(())
             .forward(&sender.input_sender(), |message| match message {
                 devices::Output::DeviceConnected(device) => Input::DeviceConnected(device),
-                devices::Output::Toast(text) => Input::Toast(text),
-                devices::Output::SetView(view) => Input::SetView(view),
             });
 
         let fwupd = firmware_update::Model::builder()
             .launch(())
-            .forward(&sender.input_sender(), |message| match message {
-                firmware_update::Output::SetView(view) => Input::SetView(view),
-            });
+            .detach();
 
         let toast_overlay = adw::ToastOverlay::new();
 
@@ -203,7 +198,7 @@ impl Component for Model {
                 sender.input(Input::SetView(View::FirmwareUpdate));
             }
             Input::Toast(message) => {
-                self.toast_overlay.add_toast(&adw::Toast::new(message));
+                self.toast_overlay.add_toast(adw::Toast::new(message));
             }
             Input::ToastWithLink { message, label, url } => {
                 let toast = adw::Toast::new(message);
@@ -212,7 +207,7 @@ impl Component for Model {
                 toast.connect_button_clicked(move |_| {
                     gtk::show_uri(Some(&root), url, 0);
                 });
-                self.toast_overlay.add_toast(&toast);
+                self.toast_overlay.add_toast(toast);
             }
         }
     }
@@ -233,6 +228,7 @@ pub fn run() {
     gtk::init().unwrap();
 
     // Run app
-    let app = RelmApp::new("io.gitlab.azymohliad.WatchMate");
-    app.run::<Model>(());
+    RelmApp::new("io.gitlab.azymohliad.WatchMate")
+        .with_broker(&BROKER)
+        .run::<Model>(());
 }

@@ -1,4 +1,5 @@
-use super::{media_player, firmware_panel, notifications, AssetType};
+use crate::ui;
+use ui::{media_player, firmware_panel, notifications, AssetType};
 use infinitime::{tokio, bt};
 
 use std::{sync::Arc, path::PathBuf};
@@ -17,12 +18,6 @@ pub enum Input {
     LatestFirmwareVersion(Option<String>),
     FlashAssetFromFile(PathBuf, AssetType),
     FlashAssetFromUrl(String, AssetType),
-    Toast(&'static str),
-    ToastWithLink {
-        message: &'static str,
-        label: &'static str,
-        url: &'static str,
-    },
     BatteryLevel(u8),
     HeartRate(u8),
     StepCount(u32),
@@ -35,13 +30,6 @@ pub enum Input {
 pub enum Output {
     FlashAssetFromFile(PathBuf, AssetType),
     FlashAssetFromUrl(String, AssetType),
-    SetView(super::View),
-    Toast(&'static str),
-    ToastWithLink {
-        message: &'static str,
-        label: &'static str,
-        url: &'static str,
-    },
 }
 
 pub struct Model {
@@ -127,8 +115,8 @@ impl Component for Model {
                 pack_start = &gtk::Button {
                     set_tooltip_text: Some("Devices"),
                     set_icon_name: "open-menu-symbolic",
-                    connect_clicked[sender] => move |_| {
-                        sender.output(Output::SetView(super::View::Devices)).unwrap();
+                    connect_clicked => |_| {
+                        ui::BROKER.send(ui::Input::SetView(ui::View::Devices));
                     },
                 },
             },
@@ -387,8 +375,8 @@ impl Component for Model {
                                 set_label: "Devices",
                                 set_halign: gtk::Align::Center,
 
-                                connect_clicked[sender] => move |_| {
-                                    sender.output(Output::SetView(super::View::Devices)).unwrap();
+                                connect_clicked => |_| {
+                                    ui::BROKER.send(ui::Input::SetView(ui::View::Devices));
                                 },
                             },
                         }
@@ -406,10 +394,7 @@ impl Component for Model {
 
         let notifications_panel = notifications::Model::builder()
             .launch(())
-            .forward(&sender.input_sender(), |message| match message {
-                notifications::Output::Toast(n) => Input::Toast(n),
-                notifications::Output::ToastWithLink { message, label, url} => Input::ToastWithLink { message, label, url},
-            });
+            .detach();
 
         let firmware_panel = firmware_panel::Model::builder()
             .launch(main_window)
@@ -417,7 +402,6 @@ impl Component for Model {
                 firmware_panel::Output::LatestFirmwareVersion(f) => Input::LatestFirmwareVersion(f),
                 firmware_panel::Output::FlashAssetFromFile(f, t) => Input::FlashAssetFromFile(f, t),
                 firmware_panel::Output::FlashAssetFromUrl(u, t) => Input::FlashAssetFromUrl(u, t),
-                firmware_panel::Output::Toast(n) => Input::Toast(n),
             });
 
         let model = Model {
@@ -457,7 +441,7 @@ impl Component for Model {
                     // Read initial values
                     if let Err(error) = Self::read_info(infinitime.clone(), sender.clone()).await {
                         log::error!("Failed to read data: {}", error);
-                        sender.input(Input::Toast("Failed to read data"));
+                        ui::BROKER.send(ui::Input::Toast("Failed to read data"));
                     }
                     // Run data update task
                     if let Err(error) = Self::run_info_listener(infinitime, sender).await {
@@ -489,12 +473,6 @@ impl Component for Model {
             }
             Input::FlashAssetFromUrl(u, t) => {
                 sender.output(Output::FlashAssetFromUrl(u, t)).unwrap();
-            }
-            Input::Toast(n) => {
-                sender.output(Output::Toast(n)).unwrap();
-            }
-            Input::ToastWithLink { message, label, url } => {
-                sender.output(Output::ToastWithLink { message, label, url }).unwrap();
             }
             // -- Watch data --
             Input::BatteryLevel(soc) => {

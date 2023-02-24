@@ -19,10 +19,6 @@ pub enum Input {
 }
 
 #[derive(Debug)]
-pub enum Output {
-}
-
-#[derive(Debug)]
 pub enum CommandOutput {
     None,
     DBusConnection(zbus::Connection),
@@ -59,7 +55,7 @@ impl Component for Model {
     type CommandOutput = CommandOutput;
     type Init = ();
     type Input = Input;
-    type Output = Output;
+    type Output = ();
     type Widgets = Widgets;
 
     view! {
