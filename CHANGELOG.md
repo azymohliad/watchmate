@@ -1,6 +1,11 @@
 # Changelog
 
-## v0.4.2 = 2023-02-20
+## Unreleased
+
+- Warn when trying to flash unsupported firmware release or mismatching resource version
+- Disable resource flash and download buttons for releases without resources
+
+## v0.4.2 - 2023-02-20
 
 - Improve notifications permission error message
 
