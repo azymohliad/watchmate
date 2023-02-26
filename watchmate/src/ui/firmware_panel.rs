@@ -10,7 +10,7 @@ use relm4::{
 };
 use relm4_components::{open_dialog::*, save_dialog::*, alert::*};
 use anyhow::Result;
-use version_compare::Version;
+use version_compare as vercomp;
 
 
 const MIN_FW_VERSION: &'static str = "1.7.0";
@@ -18,6 +18,7 @@ const MIN_FW_VERSION: &'static str = "1.7.0";
 #[derive(Debug)]
 pub enum Input {
     None,
+    CurrentFirmwareVersion(String),
     RequestReleases,
     SelectedRelease(u32),
     ReleaseNotes,
@@ -36,6 +37,7 @@ pub enum Input {
     FlashFirmwareFromRelease,
     FlashFirmwareFromFile(PathBuf),
     OpenResourcesFileDialog,
+    FlashResourcesFromReleaseClicked,
     FlashResourcesFromRelease,
     FlashResourcesFromFile(PathBuf),
 }
@@ -92,6 +94,7 @@ pub struct Model {
     releases: FirmwareReleasesState,
     tags: Option<gtk::StringList>,
     selected_index: u32,
+    current_version: String,
     // Firmware download state
     download_task: Option<JoinHandle<()>>,
     download_content: Option<Vec<u8>>,
@@ -100,7 +103,8 @@ pub struct Model {
     dfu_open_dialog: Controller<OpenDialog>,
     res_open_dialog: Controller<OpenDialog>,
     save_dialog: Controller<SaveDialog>,
-    confirm_dialog: Controller<Alert>,
+    unsupported_firmware_warning: Controller<Alert>,
+    resource_mismatch_warning: Controller<Alert>,
 }
 
 impl Model {
@@ -188,7 +192,7 @@ impl Component for Model {
 
                             gtk::Button {
                                 set_label: "Flash Resources",
-                                connect_clicked => Input::FlashResourcesFromRelease,
+                                connect_clicked => Input::FlashResourcesFromReleaseClicked,
                             },
 
                             gtk::Button {
@@ -299,7 +303,7 @@ impl Component for Model {
                 SaveDialogResponse::Cancel => Input::CancelDownloading,
             });
 
-        let confirm_dialog = Alert::builder()
+        let unsupported_firmware_warning = Alert::builder()
             .transient_for(&main_window)
             .launch(AlertSettings {
                 text: String::from("Warning: old firmware!"),
@@ -316,17 +320,36 @@ impl Component for Model {
                 AlertResponse::Option => Input::None,
             });
 
+        let resource_mismatch_warning = Alert::builder()
+            .transient_for(&main_window)
+            .launch(AlertSettings {
+                text: String::from("Warning: version mismatch!"),
+                secondary_text: Some(String::from("Selected resources do not match the current firmware version")),
+                confirm_label: String::from("Proceed"),
+                cancel_label: String::from("Cancel"),
+                option_label: None,
+                is_modal: true,
+                destructive_accept: true,
+            })
+            .forward(sender.input_sender(), |message| match message {
+                AlertResponse::Confirm => Input::FlashResourcesFromRelease,
+                AlertResponse::Cancel => Input::None,
+                AlertResponse::Option => Input::None,
+            });
+
         let model = Model {
             releases: FirmwareReleasesState::default(),
             tags: None,
             selected_index: 0,
+            current_version: String::new(),
             download_task: None,
             download_content: None,
             download_filepath: None,
             dfu_open_dialog,
             res_open_dialog,
             save_dialog,
-            confirm_dialog,
+            unsupported_firmware_warning,
+            resource_mismatch_warning,
         };
 
         let widgets = view_output!();
@@ -337,6 +360,9 @@ impl Component for Model {
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, _root: &Self::Root) {
         match msg {
             Input::None => {}
+            Input::CurrentFirmwareVersion(version) => {
+                self.current_version = version;
+            }
             Input::RequestReleases => {
                 self.releases = FirmwareReleasesState::Requested;
                 sender.oneshot_command(async move {
@@ -417,11 +443,11 @@ impl Component for Model {
             }
             Input::FlashFirmwareFromReleaseClicked => {
                 if let Some(release) = self.selected_release_info() {
-                    let selected = Version::from(&release.tag);
-                    let minimum = Version::from(MIN_FW_VERSION);
+                    let selected = vercomp::Version::from(&release.tag);
+                    let minimum = vercomp::Version::from(MIN_FW_VERSION);
                     if let (Some(selected), Some(minimum)) = (selected, minimum) {
                         if selected < minimum {
-                            self.confirm_dialog.emit(AlertMsg::Show);
+                            self.unsupported_firmware_warning.emit(AlertMsg::Show);
                         } else {
                             sender.input(Input::FlashFirmwareFromRelease);
                         }
@@ -448,6 +474,22 @@ impl Component for Model {
                 let atype = AssetType::Firmware;
                 sender.output(Output::FlashAssetFromFile(filepath, atype)).unwrap();
             }
+            Input::FlashResourcesFromReleaseClicked => {
+                if let Some(release) = self.selected_release_info() {
+                    let manifest = vercomp::Manifest { ignore_text: true, ..Default::default() };
+                    let selected = vercomp::Version::from_manifest(&release.tag, &manifest);
+                    let current = vercomp::Version::from_manifest(&self.current_version, &manifest);
+                    if let (Some(selected), Some(current)) = (selected, current) {
+                        if selected != current {
+                            self.resource_mismatch_warning.emit(AlertMsg::Show);
+                        } else {
+                            sender.input(Input::FlashResourcesFromRelease);
+                        }
+                    } else {
+                        sender.input(Input::FlashResourcesFromRelease);
+                    }
+                }
+            }
             Input::FlashResourcesFromRelease => {
                 if let Some(release) = self.selected_release_info() {
                     match release.get_resources_asset() {
@@ -457,7 +499,7 @@ impl Component for Model {
                             sender.output(Output::FlashAssetFromUrl(url, atype)).unwrap();
                         }
                         None => {
-                            ui::BROKER.send(ui::Input::Toast("DFU file not found"));
+                            ui::BROKER.send(ui::Input::Toast("Resources asset not found"));
                         }
                     }
                 }
