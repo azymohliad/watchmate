@@ -94,6 +94,7 @@ pub struct Model {
     releases: FirmwareReleasesState,
     tags: Option<gtk::StringList>,
     selected_index: u32,
+    resources_available: bool,
     current_version: String,
     // Firmware download state
     download_task: Option<JoinHandle<()>>,
@@ -191,17 +192,21 @@ impl Component for Model {
                             set_orientation: gtk::Orientation::Vertical,
 
                             gtk::Button {
-                                set_label: "Flash Resources",
-                                connect_clicked => Input::FlashResourcesFromReleaseClicked,
-                            },
-
-                            gtk::Button {
                                 set_label: "Download",
                                 connect_clicked => Input::DownloadFirmware,
                             },
 
                             gtk::Button {
+                                set_label: "Flash Resources",
+                                #[watch]
+                                set_sensitive: model.resources_available,
+                                connect_clicked => Input::FlashResourcesFromReleaseClicked,
+                            },
+
+                            gtk::Button {
                                 set_label: "Download Resources",
+                                #[watch]
+                                set_sensitive: model.resources_available,
                                 connect_clicked => Input::DownloadResources,
                             },
 
@@ -341,6 +346,7 @@ impl Component for Model {
             releases: FirmwareReleasesState::default(),
             tags: None,
             selected_index: 0,
+            resources_available: false,
             current_version: String::new(),
             download_task: None,
             download_content: None,
@@ -371,6 +377,9 @@ impl Component for Model {
             }
             Input::SelectedRelease(index) => {
                 self.selected_index = index;
+                if let Some(release) = self.selected_release_info() {
+                    self.resources_available = release.get_resources_asset().is_some();
+                }
             }
             Input::ReleaseNotes => {
                 if let Some(release) = self.selected_release_info() {
