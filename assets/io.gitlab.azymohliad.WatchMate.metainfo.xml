@@ -5,11 +5,11 @@
   <metadata_license>CC0</metadata_license>
   <project_license>GPL-3.0</project_license>
   <name>WatchMate</name>
-  <summary>Sync and integrate with PineTime smart watch</summary>
+  <summary>Manage your PineTime</summary>
 
   <description>
-    <p>Companion app for PineTime smart watch running InfiniTime firmware.</p>
-    <p>Visually optimized for GNOME, adaptive for Linux phone and desktop.</p>
+    <p>Companion app for InfiniTime-powered PineTime smart watch.</p>
+    <p>Visually optimized for GNOME, adaptive for phone and desktop, Linux only.</p>
     <p>Features:</p>
     <ul>
       <li>Set time</li>
