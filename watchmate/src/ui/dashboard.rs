@@ -491,6 +491,9 @@ impl Component for Model {
                 self.address = Some(address);
             }
             Input::FirmwareVersion(version) => {
+                self.firmware_panel.emit(
+                    firmware_panel::Input::CurrentFirmwareVersion(version.clone())
+                );
                 self.fw_version = Some(version);
                 self.check_fw_update_available();
             }

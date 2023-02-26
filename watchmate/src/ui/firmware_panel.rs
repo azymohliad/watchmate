@@ -8,18 +8,24 @@ use relm4::{
     gtk::prelude::*,
     ComponentController, ComponentParts, ComponentSender, Component, Controller, JoinHandle, RelmWidgetExt
 };
-use relm4_components::{open_dialog::*, save_dialog::*};
+use relm4_components::{open_dialog::*, save_dialog::*, alert::*};
 use anyhow::Result;
+use version_compare as vercomp;
+
+
+const MIN_FW_VERSION: &'static str = "1.7.0";
 
 #[derive(Debug)]
 pub enum Input {
     None,
+    CurrentFirmwareVersion(String),
     RequestReleases,
-    ReleaseNotes(u32),
+    SelectedRelease(u32),
+    ReleaseNotes,
 
     // Firmware & Resources Download
-    DownloadFirmware(u32),
-    DownloadResources(u32),
+    DownloadFirmware,
+    DownloadResources,
     DownloadAsset(gh::Asset),
     CancelDownloading,
     FinishedDownloading(Result<Vec<u8>>),
@@ -27,10 +33,12 @@ pub enum Input {
 
     // Firmware & Resources Update
     OpenFirmwareFileDialog,
-    FlashFirmwareFromRelease(u32),
+    FlashFirmwareFromReleaseClicked,
+    FlashFirmwareFromRelease,
     FlashFirmwareFromFile(PathBuf),
     OpenResourcesFileDialog,
-    FlashResourcesFromRelease(u32),
+    FlashResourcesFromReleaseClicked,
+    FlashResourcesFromRelease,
     FlashResourcesFromFile(PathBuf),
 }
 
@@ -85,6 +93,9 @@ pub struct Model {
     // UI state
     releases: FirmwareReleasesState,
     tags: Option<gtk::StringList>,
+    selected_index: u32,
+    resources_available: bool,
+    current_version: String,
     // Firmware download state
     download_task: Option<JoinHandle<()>>,
     download_content: Option<Vec<u8>>,
@@ -93,6 +104,8 @@ pub struct Model {
     dfu_open_dialog: Controller<OpenDialog>,
     res_open_dialog: Controller<OpenDialog>,
     save_dialog: Controller<SaveDialog>,
+    unsupported_firmware_warning: Controller<Alert>,
+    resource_mismatch_warning: Controller<Alert>,
 }
 
 impl Model {
@@ -105,6 +118,14 @@ impl Model {
                     gh::save_file(&content, filepath).await
                 )
             });
+        }
+    }
+
+    fn selected_release_info(&self) -> Option<&gh::ReleaseInfo> {
+        if let FirmwareReleasesState::Some(releases) = &self.releases {
+            releases.get(self.selected_index as usize)
+        } else {
+            None
         }
     }
 }
@@ -131,7 +152,6 @@ impl Component for Model {
             gtk::Box {
                 set_spacing: 10,
 
-                #[name(releases_dropdown)]
                 gtk::DropDown {
                     set_hexpand: true,
                     #[watch]
@@ -153,6 +173,9 @@ impl Component for Model {
                             item.set_child(Some(&scroll_view));
                         }
                     },
+                    connect_selected_notify[sender] => move |wgt| {
+                        sender.input(Input::SelectedRelease(wgt.selected()));
+                    }
                 },
 
                 adw::SplitButton {
@@ -161,9 +184,7 @@ impl Component for Model {
                     #[watch]
                     set_sensitive: !model.download_task.is_some(),
                     set_label: "Flash",
-                    connect_clicked[sender, releases_dropdown] => move |_| {
-                        sender.input(Input::FlashFirmwareFromRelease(releases_dropdown.selected()));
-                    },
+                    connect_clicked => Input::FlashFirmwareFromReleaseClicked,
                     #[wrap(Some)]
                     set_popover = &gtk::Popover {
                         gtk::Box {
@@ -171,31 +192,27 @@ impl Component for Model {
                             set_orientation: gtk::Orientation::Vertical,
 
                             gtk::Button {
-                                set_label: "Flash Resources",
-                                connect_clicked[sender, releases_dropdown] => move |_| {
-                                    sender.input(Input::FlashResourcesFromRelease(releases_dropdown.selected()));
-                                },
+                                set_label: "Download",
+                                connect_clicked => Input::DownloadFirmware,
                             },
 
                             gtk::Button {
-                                set_label: "Download",
-                                connect_clicked[sender, releases_dropdown] => move |_| {
-                                    sender.input(Input::DownloadFirmware(releases_dropdown.selected()));
-                                },
+                                set_label: "Flash Resources",
+                                #[watch]
+                                set_sensitive: model.resources_available,
+                                connect_clicked => Input::FlashResourcesFromReleaseClicked,
                             },
 
                             gtk::Button {
                                 set_label: "Download Resources",
-                                connect_clicked[sender, releases_dropdown] => move |_| {
-                                    sender.input(Input::DownloadResources(releases_dropdown.selected()));
-                                },
+                                #[watch]
+                                set_sensitive: model.resources_available,
+                                connect_clicked => Input::DownloadResources,
                             },
 
                             gtk::Button {
                                 set_label: "Release Notes",
-                                connect_clicked[sender, releases_dropdown] => move |_| {
-                                    sender.input(Input::ReleaseNotes(releases_dropdown.selected()));
-                                },
+                                connect_clicked => Input::ReleaseNotes,
                             },
                         },
                     },
@@ -291,15 +308,54 @@ impl Component for Model {
                 SaveDialogResponse::Cancel => Input::CancelDownloading,
             });
 
+        let unsupported_firmware_warning = Alert::builder()
+            .transient_for(&main_window)
+            .launch(AlertSettings {
+                text: String::from("Warning: old firmware!"),
+                secondary_text: Some(format!("WatchMate might not work with InfiniTime below v{}", MIN_FW_VERSION)),
+                confirm_label: String::from("Proceed"),
+                cancel_label: String::from("Cancel"),
+                option_label: None,
+                is_modal: true,
+                destructive_accept: true,
+            })
+            .forward(sender.input_sender(), |message| match message {
+                AlertResponse::Confirm => Input::FlashFirmwareFromRelease,
+                AlertResponse::Cancel => Input::None,
+                AlertResponse::Option => Input::None,
+            });
+
+        let resource_mismatch_warning = Alert::builder()
+            .transient_for(&main_window)
+            .launch(AlertSettings {
+                text: String::from("Warning: version mismatch!"),
+                secondary_text: Some(String::from("Selected resources do not match the current firmware version")),
+                confirm_label: String::from("Proceed"),
+                cancel_label: String::from("Cancel"),
+                option_label: None,
+                is_modal: true,
+                destructive_accept: true,
+            })
+            .forward(sender.input_sender(), |message| match message {
+                AlertResponse::Confirm => Input::FlashResourcesFromRelease,
+                AlertResponse::Cancel => Input::None,
+                AlertResponse::Option => Input::None,
+            });
+
         let model = Model {
             releases: FirmwareReleasesState::default(),
             tags: None,
+            selected_index: 0,
+            resources_available: false,
+            current_version: String::new(),
             download_task: None,
             download_content: None,
             download_filepath: None,
             dfu_open_dialog,
             res_open_dialog,
             save_dialog,
+            unsupported_firmware_warning,
+            resource_mismatch_warning,
         };
 
         let widgets = view_output!();
@@ -310,20 +366,29 @@ impl Component for Model {
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, _root: &Self::Root) {
         match msg {
             Input::None => {}
+            Input::CurrentFirmwareVersion(version) => {
+                self.current_version = version;
+            }
             Input::RequestReleases => {
                 self.releases = FirmwareReleasesState::Requested;
                 sender.oneshot_command(async move {
                     CommandOutput::FirmwareReleasesResponse(gh::list_releases().await)
                 });
             }
-            Input::ReleaseNotes(index) => {
-                if let FirmwareReleasesState::Some(releases) = &self.releases {
-                    gtk::show_uri(adw::ApplicationWindow::NONE, &releases[index as usize].url, 0);
+            Input::SelectedRelease(index) => {
+                self.selected_index = index;
+                if let Some(release) = self.selected_release_info() {
+                    self.resources_available = release.get_resources_asset().is_some();
                 }
             }
-            Input::DownloadFirmware(index) => {
-                if let FirmwareReleasesState::Some(releases) = &self.releases {
-                    match releases[index as usize].get_dfu_asset() {
+            Input::ReleaseNotes => {
+                if let Some(release) = self.selected_release_info() {
+                    gtk::show_uri(adw::ApplicationWindow::NONE, &release.url, 0);
+                }
+            }
+            Input::DownloadFirmware => {
+                if let Some(release) = self.selected_release_info() {
+                    match release.get_dfu_asset() {
                         Some(asset) => {
                             sender.input(Input::DownloadAsset(asset.clone()));
                         }
@@ -333,9 +398,9 @@ impl Component for Model {
                     }
                 }
             }
-            Input::DownloadResources(index) => {
-                if let FirmwareReleasesState::Some(releases) = &self.releases {
-                    match releases[index as usize].get_resources_asset() {
+            Input::DownloadResources => {
+                if let Some(release) = self.selected_release_info() {
+                    match release.get_resources_asset() {
                         Some(asset) => {
                             sender.input(Input::DownloadAsset(asset.clone()));
                         }
@@ -385,9 +450,24 @@ impl Component for Model {
             Input::OpenResourcesFileDialog => {
                 self.res_open_dialog.emit(OpenDialogMsg::Open);
             }
-            Input::FlashFirmwareFromRelease(index) => {
-                if let FirmwareReleasesState::Some(releases) = &self.releases {
-                    match releases[index as usize].get_dfu_asset() {
+            Input::FlashFirmwareFromReleaseClicked => {
+                if let Some(release) = self.selected_release_info() {
+                    let selected = vercomp::Version::from(&release.tag);
+                    let minimum = vercomp::Version::from(MIN_FW_VERSION);
+                    if let (Some(selected), Some(minimum)) = (selected, minimum) {
+                        if selected < minimum {
+                            self.unsupported_firmware_warning.emit(AlertMsg::Show);
+                        } else {
+                            sender.input(Input::FlashFirmwareFromRelease);
+                        }
+                    } else {
+                        sender.input(Input::FlashFirmwareFromRelease);
+                    }
+                }
+            }
+            Input::FlashFirmwareFromRelease => {
+                if let Some(release) = self.selected_release_info() {
+                    match release.get_dfu_asset() {
                         Some(asset) => {
                             let url = asset.url.clone();
                             let atype = AssetType::Firmware;
@@ -403,16 +483,32 @@ impl Component for Model {
                 let atype = AssetType::Firmware;
                 sender.output(Output::FlashAssetFromFile(filepath, atype)).unwrap();
             }
-            Input::FlashResourcesFromRelease(index) => {
-                if let FirmwareReleasesState::Some(releases) = &self.releases {
-                    match releases[index as usize].get_resources_asset() {
+            Input::FlashResourcesFromReleaseClicked => {
+                if let Some(release) = self.selected_release_info() {
+                    let manifest = vercomp::Manifest { ignore_text: true, ..Default::default() };
+                    let selected = vercomp::Version::from_manifest(&release.tag, &manifest);
+                    let current = vercomp::Version::from_manifest(&self.current_version, &manifest);
+                    if let (Some(selected), Some(current)) = (selected, current) {
+                        if selected != current {
+                            self.resource_mismatch_warning.emit(AlertMsg::Show);
+                        } else {
+                            sender.input(Input::FlashResourcesFromRelease);
+                        }
+                    } else {
+                        sender.input(Input::FlashResourcesFromRelease);
+                    }
+                }
+            }
+            Input::FlashResourcesFromRelease => {
+                if let Some(release) = self.selected_release_info() {
+                    match release.get_resources_asset() {
                         Some(asset) => {
                             let url = asset.url.clone();
                             let atype = AssetType::Resources;
                             sender.output(Output::FlashAssetFromUrl(url, atype)).unwrap();
                         }
                         None => {
-                            ui::BROKER.send(ui::Input::Toast("DFU file not found"));
+                            ui::BROKER.send(ui::Input::Toast("Resources asset not found"));
                         }
                     }
                 }
