@@ -7,8 +7,8 @@ edition = "2021"
 
 [dependencies]
 infinitime = { path = "../infinitime", features = ["freedesktop", "github"] }
-relm4 = { git = "https://github.com/Relm4/relm4", branch = "next", features = ["libadwaita", "gnome_43"] }
-relm4-components = { git = "https://github.com/Relm4/relm4", branch = "next" }
+relm4 = { version = "0.6.0-alpha.2", features = ["libadwaita", "gnome_43"] }
+relm4-components = "0.6.0-alpha.2"
 futures = "0.3"
 anyhow = "1.0"
 version-compare = "0.1"
