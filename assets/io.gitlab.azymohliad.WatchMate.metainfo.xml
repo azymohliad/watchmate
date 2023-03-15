@@ -53,7 +53,7 @@
   </recommends>
 
   <releases>
-    <release version="0.4.3" date="2023-02-26">
+    <release version="0.4.3" date="2023-03-15">
       <description>
         <ul>
           <li>Warn when trying to flash unsupported firmware release or mismatching resource version</li>
