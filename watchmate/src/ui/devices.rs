@@ -301,7 +301,7 @@ impl Component for Model {
                 }
                 Err(error) => {
                     log::error!("Failed to start GATT server: {error}");
-                    ui::BROKER.send(ui::Input::Toast("Failed to start GATT server"));
+                    ui::BROKER.send(ui::Input::ToastStatic("Failed to start GATT server"));
                 }
             }
 
