@@ -26,7 +26,8 @@ enum Input {
     DeviceRejected,
     FlashAssetFromFile(PathBuf, AssetType),
     FlashAssetFromUrl(String, AssetType),
-    Toast(&'static str),
+    Toast(String),
+    ToastStatic(&'static str),
     ToastWithLink {
         message: &'static str,
         label: &'static str,
@@ -151,7 +152,7 @@ impl Component for Model {
                         Err(error) => {
                             sender.input(Input::DeviceRejected);
                             log::error!("Device is rejected: {}", error);
-                            sender.input(Input::Toast("Device is rejected by the app"));
+                            sender.input(Input::ToastStatic("Device is rejected by the app"));
                         }
                     }
                 });
@@ -198,6 +199,9 @@ impl Component for Model {
                 sender.input(Input::SetView(View::FirmwareUpdate));
             }
             Input::Toast(message) => {
+                self.toast_overlay.add_toast(adw::Toast::new(&message));
+            }
+            Input::ToastStatic(message) => {
                 self.toast_overlay.add_toast(adw::Toast::new(message));
             }
             Input::ToastWithLink { message, label, url } => {

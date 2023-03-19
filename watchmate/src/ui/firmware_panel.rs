@@ -13,8 +13,6 @@ use anyhow::Result;
 use version_compare as vercomp;
 
 
-const MIN_FW_VERSION: &'static str = "1.7.0";
-
 #[derive(Debug)]
 pub enum Input {
     None,
@@ -104,7 +102,7 @@ pub struct Model {
     dfu_open_dialog: Controller<OpenDialog>,
     res_open_dialog: Controller<OpenDialog>,
     save_dialog: Controller<SaveDialog>,
-    unsupported_firmware_warning: Controller<Alert>,
+    firmware_downgrade_warning: Controller<Alert>,
     resource_mismatch_warning: Controller<Alert>,
 }
 
@@ -308,11 +306,11 @@ impl Component for Model {
                 SaveDialogResponse::Cancel => Input::CancelDownloading,
             });
 
-        let unsupported_firmware_warning = Alert::builder()
+        let firmware_downgrade_warning = Alert::builder()
             .transient_for(&main_window)
             .launch(AlertSettings {
-                text: String::from("Warning: old firmware!"),
-                secondary_text: Some(format!("WatchMate might not work with InfiniTime below v{}", MIN_FW_VERSION)),
+                text: String::from("Warning: downgrading!"),
+                secondary_text: Some(String::from("Are you sure you want to downgrade the firmware?")),
                 confirm_label: String::from("Proceed"),
                 cancel_label: String::from("Cancel"),
                 option_label: None,
@@ -354,7 +352,7 @@ impl Component for Model {
             dfu_open_dialog,
             res_open_dialog,
             save_dialog,
-            unsupported_firmware_warning,
+            firmware_downgrade_warning,
             resource_mismatch_warning,
         };
 
@@ -393,7 +391,7 @@ impl Component for Model {
                             sender.input(Input::DownloadAsset(asset.clone()));
                         }
                         None => {
-                            ui::BROKER.send(ui::Input::Toast("DFU file not found"));
+                            ui::BROKER.send(ui::Input::ToastStatic("DFU file not found"));
                         }
                     }
                 }
@@ -405,7 +403,7 @@ impl Component for Model {
                             sender.input(Input::DownloadAsset(asset.clone()));
                         }
                         None => {
-                            ui::BROKER.send(ui::Input::Toast("Resources file not found"));
+                            ui::BROKER.send(ui::Input::ToastStatic("Resources file not found"));
                         }
                     }
                 }
@@ -436,7 +434,7 @@ impl Component for Model {
                     Err(error) => {
                         self.download_content = None;
                         log::error!("Failed to download DFU file: {}", error);
-                        ui::BROKER.send(ui::Input::Toast("Failed to download DFU file"));
+                        ui::BROKER.send(ui::Input::ToastStatic("Failed to download DFU file"));
                     }
                 }
             }
@@ -452,11 +450,12 @@ impl Component for Model {
             }
             Input::FlashFirmwareFromReleaseClicked => {
                 if let Some(release) = self.selected_release_info() {
-                    let selected = vercomp::Version::from(&release.tag);
-                    let minimum = vercomp::Version::from(MIN_FW_VERSION);
-                    if let (Some(selected), Some(minimum)) = (selected, minimum) {
-                        if selected < minimum {
-                            self.unsupported_firmware_warning.emit(AlertMsg::Show);
+                    let manifest = vercomp::Manifest { ignore_text: true, ..Default::default() };
+                    let selected = vercomp::Version::from_manifest(&release.tag, &manifest);
+                    let current = vercomp::Version::from_manifest(&self.current_version, &manifest);
+                    if let (Some(selected), Some(current)) = (selected, current) {
+                        if selected < current {
+                            self.firmware_downgrade_warning.emit(AlertMsg::Show);
                         } else {
                             sender.input(Input::FlashFirmwareFromRelease);
                         }
@@ -474,7 +473,7 @@ impl Component for Model {
                             sender.output(Output::FlashAssetFromUrl(url, atype)).unwrap();
                         }
                         None => {
-                            ui::BROKER.send(ui::Input::Toast("DFU file not found"));
+                            ui::BROKER.send(ui::Input::ToastStatic("DFU file not found"));
                         }
                     }
                 }
@@ -508,7 +507,7 @@ impl Component for Model {
                             sender.output(Output::FlashAssetFromUrl(url, atype)).unwrap();
                         }
                         None => {
-                            ui::BROKER.send(ui::Input::Toast("Resources asset not found"));
+                            ui::BROKER.send(ui::Input::ToastStatic("Resources asset not found"));
                         }
                     }
                 }
@@ -539,11 +538,11 @@ impl Component for Model {
             }
             CommandOutput::SaveFileResponse(response) => match response {
                 Ok(()) => {
-                    ui::BROKER.send(ui::Input::Toast("Firmware downloaded"));
+                    ui::BROKER.send(ui::Input::ToastStatic("Firmware downloaded"));
                 }
                 Err(error) => {
                     log::error!("Failed to save firmware file: {error}");
-                    ui::BROKER.send(ui::Input::Toast("Failed to save DFU file"));
+                    ui::BROKER.send(ui::Input::ToastStatic("Failed to save DFU file"));
                 }
             }
         }

@@ -3,11 +3,11 @@ use ui::{media_player, firmware_panel, notifications, AssetType};
 use infinitime::{tokio, bt};
 
 use std::{sync::Arc, path::PathBuf};
-use futures::{pin_mut, StreamExt};
+use futures::{stream, StreamExt};
 use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, ListBoxRowExt, WidgetExt};
 use adw::prelude::{PreferencesRowExt, ExpanderRowExt};
 use relm4::{adw, gtk, ComponentController, ComponentParts, ComponentSender, Component, Controller, JoinHandle, RelmWidgetExt};
-use anyhow::Result;
+use anyhow::{Result, Context};
 use version_compare::Version;
 
 
@@ -53,23 +53,60 @@ pub struct Model {
 }
 
 impl Model {
-    async fn read_info(infinitime: Arc<bt::InfiniTime>, sender: ComponentSender<Self>) -> Result<()> {
+    async fn read_info(infinitime: Arc<bt::InfiniTime>, sender: ComponentSender<Self>) {
+        let send_checked = |res: Result<Input>| match res {
+            Ok(msg) => {
+                sender.input(msg);
+            }
+            Err(error) => {
+                log::error!("{}: {}", &error, error.root_cause());
+                ui::BROKER.send(ui::Input::Toast(format!("{}", error)));
+            }
+        };
+
         sender.input(Input::Address(infinitime.device().address().to_string()));
-        sender.input(Input::BatteryLevel(infinitime.read_battery_level().await?));
-        sender.input(Input::HeartRate(infinitime.read_heart_rate().await?));
-        sender.input(Input::StepCount(infinitime.read_step_count().await?));
-        sender.input(Input::Alias(infinitime.device().alias().await?));
-        sender.input(Input::FirmwareVersion(infinitime.read_firmware_version().await?));
-        Ok(())
+
+        send_checked(infinitime.device().alias().await
+            .map(Input::Alias)
+            .context("Failed to read alias"));
+
+        send_checked(infinitime.read_firmware_version().await
+            .map(Input::FirmwareVersion)
+            .context("Failed to read firmware version"));
+
+        send_checked(infinitime.read_battery_level().await
+            .map(Input::BatteryLevel)
+            .context("Failed to read battery level"));
+
+        send_checked(infinitime.read_heart_rate().await
+            .map(Input::HeartRate)
+            .context("Failed to read heart rate"));
+
+        send_checked(infinitime.read_step_count().await
+            .map(Input::StepCount)
+            .context("Failed to read step count"));
     }
 
-    async fn run_info_listener(infinitime: Arc<bt::InfiniTime>, sender: ComponentSender<Self>) -> Result<()> {
-        let bl_stream = infinitime.get_battery_level_stream().await?;
-        let hr_stream = infinitime.get_heart_rate_stream().await?;
-        let sc_stream = infinitime.get_step_count_stream().await?;
-        pin_mut!(bl_stream);
-        pin_mut!(hr_stream);
-        pin_mut!(sc_stream);
+    async fn run_info_listener(infinitime: Arc<bt::InfiniTime>, sender: ComponentSender<Self>) {
+        let log_error = |err| {
+            log::error!("Failed to create data stream: {}", &err);
+            err
+        };
+
+        let mut bl_stream = infinitime.get_battery_level_stream().await
+            .map_err(log_error)
+            .map(StreamExt::boxed)
+            .unwrap_or(stream::empty().boxed());
+
+        let mut hr_stream = infinitime.get_heart_rate_stream().await
+            .map_err(log_error)
+            .map(StreamExt::boxed)
+            .unwrap_or(stream::empty().boxed());
+
+        let mut sc_stream = infinitime.get_step_count_stream().await
+            .map_err(log_error)
+            .map(StreamExt::boxed)
+            .unwrap_or(stream::empty().boxed());
 
         loop {
             tokio::select! {
@@ -79,7 +116,6 @@ impl Model {
                 else => break
             }
         }
-        Ok(())
     }
 
     fn check_fw_update_available(&mut self) {
@@ -439,14 +475,9 @@ impl Component for Model {
                 // Read data from the watch
                 self.data_task = Some(relm4::spawn(async move {
                     // Read initial values
-                    if let Err(error) = Self::read_info(infinitime.clone(), sender.clone()).await {
-                        log::error!("Failed to read data: {}", error);
-                        ui::BROKER.send(ui::Input::Toast("Failed to read data"));
-                    }
+                    Self::read_info(infinitime.clone(), sender.clone()).await;
                     // Run data update task
-                    if let Err(error) = Self::run_info_listener(infinitime, sender).await {
-                        log::error!("Data update task failed: {}", error);
-                    }
+                    Self::run_info_listener(infinitime, sender).await;
                     log::warn!("Data update task ended");
                 }));
             }

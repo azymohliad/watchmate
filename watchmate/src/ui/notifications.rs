@@ -33,14 +33,14 @@ impl Model {
                             command: `flatpak override --socket=session-bus io.gitlab.azymohliad.WatchMate`, \
                             or via Flatseal"
                         );
-                        _ = ui::BROKER.send(ui::Input::ToastWithLink {
-                                message: "Session bus permission is needed here",
-                                label: "Details",
-                                url: "https://github.com/azymohliad/watchmate/issues/6",
-                            });
+                        ui::BROKER.send(ui::Input::ToastWithLink {
+                            message: "Session bus permission is needed here",
+                            label: "Details",
+                            url: "https://github.com/azymohliad/watchmate/issues/6",
+                        });
                     } else {
                         log::warn!("Notifications session failed: {error}");
-                        _ = ui::BROKER.send(ui::Input::Toast("Notification session failed"));
+                        ui::BROKER.send(ui::Input::ToastStatic("Notification session failed"));
                     }
                 }
                 sender.input(Input::NotificationSessionEnded);
