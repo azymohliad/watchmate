@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.4 - 2023-03-19
+
+- Add support for older versions of InfiniTime (tested with v0.8.3)
+
 ## v0.4.3 - 2023-03-15
 
 - Warn when trying to flash unsupported firmware release or mismatching resource version
