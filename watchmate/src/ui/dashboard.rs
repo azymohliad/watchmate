@@ -384,7 +384,7 @@ impl Component for Model {
                                             #[watch]
                                             set_visible: model.fw_update_available,
                                             set_tooltip_text: Some("Firmware update available"),
-                                            set_icon_name: Some("software-update-available-symbolic"),
+                                            set_icon_name: Some("arrow3-up-symbolic"),
                                         },
                                     },
 

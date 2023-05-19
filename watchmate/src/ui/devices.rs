@@ -451,7 +451,7 @@ impl FactoryComponent for DeviceInfo {
         }
     }
 
-    fn output_to_parent_input(output: Self::Output) -> Option<Input> {
+    fn forward_to_parent(output: Self::Output) -> Option<Input> {
         Some(match output {
             DeviceOutput::Connected(device) => Input::DeviceManuallyConnected(device),
             DeviceOutput::Disconnected(device) => Input::DeviceManuallyDisconnected(device),
