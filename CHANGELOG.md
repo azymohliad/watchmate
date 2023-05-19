@@ -1,17 +1,26 @@
 # Changelog
 
+## v0.4.5 - 2023-05-19
+
+- Add mobile-friendly declaration for Phosh
+- Bundle symbolic icons
+
+
 ## v0.4.4 - 2023-03-19
 
 - Add support for older versions of InfiniTime (tested with v0.8.3)
+
 
 ## v0.4.3 - 2023-03-15
 
 - Warn when trying to flash unsupported firmware release or mismatching resource version
 - Disable resource flash and download buttons for releases without resources
 
+
 ## v0.4.2 - 2023-02-20
 
 - Improve notifications permission error message
+
 
 ## v0.4.1 - 2023-02-11
 
