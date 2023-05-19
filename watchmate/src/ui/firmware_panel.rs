@@ -236,7 +236,7 @@ impl Component for Model {
                 } else {
                     gtk::Button {
                         set_tooltip_text: Some("Refresh releases list"),
-                        set_icon_name: "view-refresh-symbolic",
+                        set_icon_name: "refresh-symbolic",
                         connect_clicked => Input::RequestReleases,
                     }
                 }

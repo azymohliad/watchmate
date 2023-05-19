@@ -231,6 +231,9 @@ pub fn run() {
     // Init GTK before libadwaita (ToastOverlay)
     gtk::init().unwrap();
 
+    // Init icons
+    relm4_icons::initialize_icons();
+
     // Run app
     RelmApp::new("io.gitlab.azymohliad.WatchMate")
         .with_broker(&BROKER)
