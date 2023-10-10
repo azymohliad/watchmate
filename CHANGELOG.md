@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.4.6 - 2023-10-10
+
+- Fix build with musl
+
+
 ## v0.4.5 - 2023-05-19
 
 - Add mobile-friendly declaration for Phosh
