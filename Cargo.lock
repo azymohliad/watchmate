@@ -2764,7 +2764,7 @@ checksum = "0046fef7e28c3804e5e38bfa31ea2a0f73905319b677e57ebe37e49358989b5d"
 
 [[package]]
 name = "watchmate"
-version = "0.4.4"
+version = "0.4.6"
 dependencies = [
  "anyhow",
  "env_logger",
