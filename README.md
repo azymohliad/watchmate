@@ -8,6 +8,8 @@ Visually optimized for GNOME, adaptive for phone and desktop, Linux only.
 
 ## Install
 
+[![Packaging status](https://repology.org/badge/vertical-allrepos/watchmate.svg)](https://repology.org/project/watchmate/versions)
+
 ### ArchLinux
 
 WatchMate is available on AUR as [watchmate-git](https://aur.archlinux.org/packages/watchmate-git), so you can install it either [manually](https://wiki.archlinux.org/title/Arch_User_Repository#Installing_and_upgrading_packages) or with your [AUR helper](https://wiki.archlinux.org/title/AUR_helpers) of choice, for example:
