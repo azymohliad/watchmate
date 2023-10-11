@@ -6,25 +6,25 @@ Visually optimized for GNOME, adaptive for phone and desktop, Linux only.
 
 ![watchmate_v0.4.0](https://user-images.githubusercontent.com/4020369/216776553-59d2081e-9729-4997-8021-0882296621a4.png)
 
+## Features
+
+- Current time service.
+- Data reading: battery level, heart rate, steps count, firmware version.
+- OTA firmware and external resources updates. Both, from manually specified DFU/resources files, or automatically downloaded from [InfiniTime releases](https://github.com/InfiniTimeOrg/InfiniTime/releases) for selected version.
+- Media-player control.
+- Notifications forwarding.
+
 ## Install
 
+WatchMate is available on [Flathub](https://flathub.org/apps/details/io.gitlab.azymohliad.WatchMate):
+
+```
+flatpak install io.gitlab.azymohliad.WatchMate
+```
+
+Or via the following community-maintained distro packages:
+
 [![Packaging status](https://repology.org/badge/vertical-allrepos/watchmate.svg)](https://repology.org/project/watchmate/versions)
-
-### ArchLinux
-
-WatchMate is available on AUR as [watchmate-git](https://aur.archlinux.org/packages/watchmate-git), so you can install it either [manually](https://wiki.archlinux.org/title/Arch_User_Repository#Installing_and_upgrading_packages) or with your [AUR helper](https://wiki.archlinux.org/title/AUR_helpers) of choice, for example:
-
-```
-paru -S watchmate-git
-```
-
-### Flathub
-
-WatchMate is on [Flathub](https://flathub.org/apps/details/io.gitlab.azymohliad.WatchMate). To install it from command line execute the following command:
-
-```
-flatpak install flathub io.gitlab.azymohliad.WatchMate
-```
 
 ## Build
 
@@ -76,37 +76,6 @@ flatpak-builder --install target/flatpak flatpak/io.gitlab.azymohliad.WatchMate.
 ```
 
 Here and above, `target/flatpak` is the build directory. It's a convenient default for Rust project (`target` is already in `.gitignore`), but can be anything else.
-
-## Roadmap
-
-- [x] Bluetooth device discovery, connecting to InfiniTime watch
-- [x] Sharing time via Current Time Service
-- [x] Reading data from the watch
-    - [x] Battery level
-    - [x] Firmware version
-    - [x] Heart rate
-    - [x] Steps count
-- [x] OTA firmware update
-    - [x] From DFU file
-    - [x] From [InfiniTime releases](https://github.com/InfiniTimeOrg/InfiniTime/releases)
-- [ ] OTA external resources update
-    - [x] From resources file
-    - [x] From InfiniTime release
-    - [ ] Advanced resources management (read from the watch, delete, etc)
-- [x] Media-player control
-- [ ] Secure pairing
-- [ ] Notifications
-    - [x] Basic desktop notifications propagation
-    - [ ] Filtering by app, title, or content
-- [ ] "Find-my-watch" (fake call)
-- [ ] Persistent app settings
-- [ ] About dialog
-- [x] Packaging and distribution
-    - [x] Flathub
-    - [x] AUR
-- [ ] InfiniTime companion crate (Rust library)
-- [ ] (Maybe) Support for other smart watches
-
 
 ## Tech Stack and Thanks
 
