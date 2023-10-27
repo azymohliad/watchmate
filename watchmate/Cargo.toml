@@ -12,9 +12,9 @@ anyhow = "1.0"
 version-compare = "0.1"
 log = "0.4"
 env_logger = "0.10"
-relm4 = { version = "0.6.0-beta.1", features = ["libadwaita", "gnome_43"] }
-relm4-components = "0.6.0-beta.1"
-relm4-icons = { version = "0.6.0-beta.6", features = [
+relm4 = { version = "0.6.2", features = ["libadwaita", "gnome_43"] }
+relm4-components = "0.6.2"
+relm4-icons = { version = "0.6.0", features = [
     "arrow3-up",
     "bluetooth",
     "refresh"
