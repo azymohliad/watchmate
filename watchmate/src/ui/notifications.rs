@@ -1,7 +1,7 @@
 use crate::ui;
 use infinitime::{zbus, bt, fdo::notifications};
 use std::sync::Arc;
-use gtk::prelude::{BoxExt, OrientableExt, WidgetExt};
+use gtk::{gio, prelude::{BoxExt, OrientableExt, WidgetExt, SettingsExt, SettingsExtManual}};
 use relm4::{gtk, ComponentParts, ComponentSender, Component, JoinHandle, RelmWidgetExt};
 
 #[derive(Debug)]
@@ -61,7 +61,7 @@ impl Model {
 #[relm4::component(pub)]
 impl Component for Model {
     type CommandOutput = ();
-    type Init = ();
+    type Init = gio::Settings;
     type Input = Input;
     type Output = ();
     type Widgets = Widgets;
@@ -77,6 +77,7 @@ impl Component for Model {
                 set_halign: gtk::Align::Start,
             },
 
+            #[name = "switch"]
             gtk::Switch {
                 #[watch]
                 set_state: model.is_enabled && model.task.is_some(),
@@ -90,9 +91,11 @@ impl Component for Model {
         }
     }
 
-    fn init(_: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
-        let model = Self { is_enabled: false, ..Default::default() };
+    fn init(persistent_settings: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
+        let is_enabled = persistent_settings.boolean("notification-forwarding-enabled");
+        let model = Self { is_enabled, ..Default::default() };
         let widgets = view_output!();
+        persistent_settings.bind("notification-forwarding-enabled", &widgets.switch, "active").build();
         ComponentParts { model, widgets }
     }
 
