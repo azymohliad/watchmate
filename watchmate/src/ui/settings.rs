@@ -4,6 +4,11 @@ use adw::prelude::{PreferencesPageExt, PreferencesGroupExt, PreferencesRowExt, A
 use relm4::{adw, gtk, ComponentParts, ComponentSender, Component};
 
 
+#[derive(Debug)]
+pub enum Output {
+    SetAutoReconnect(bool),
+}
+
 pub struct Model {
 }
 
@@ -13,7 +18,7 @@ impl Component for Model {
     type CommandOutput = ();
     type Init = gio::Settings;
     type Input = ();
-    type Output = ();
+    type Output = Output;
     type Widgets = Widgets;
 
     view! {
@@ -38,20 +43,23 @@ impl Component for Model {
 
             adw::PreferencesPage {
                 add = &adw::PreferencesGroup {
-                    // #[name = "some_switch"]
-                    // add = &adw::SwitchRow {
-                    //     set_title: "Some Settings",
-                    //     set_subtitle: "Some Setting Description"
-                    // }
+                    #[name = "autoreconnect_switch"]
+                    add = &adw::SwitchRow {
+                        set_title: "Automatically reconnect",
+                        set_subtitle: "When BLE connection is lost",
+                        connect_active_notify[sender] => move |wgt| {
+                            _ = sender.output(Output::SetAutoReconnect(wgt.is_active()));
+                        }
+                    }
                 }
             }
         }
     }
 
-    fn init(_persistent_settings: Self::Init, root: &Self::Root, _sender: ComponentSender<Self>) -> ComponentParts<Self> {
+    fn init(persistent_settings: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
         let model = Self {};
         let widgets = view_output!();
-        // _persistent_settings.bind("some-setting", widgets.some_switch, "active");
+        persistent_settings.bind("auto-reconnect-enabled", &widgets.autoreconnect_switch, "active").build();
         ComponentParts { model, widgets }
     }
 

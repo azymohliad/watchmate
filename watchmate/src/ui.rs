@@ -1,7 +1,7 @@
 use infinitime::{bluer, bt};
 use std::{sync::Arc, path::PathBuf};
 use futures::{pin_mut, StreamExt};
-use gtk::{gio, prelude::{BoxExt, GtkWindowExt}};
+use gtk::{gio, prelude::{BoxExt, GtkWindowExt, SettingsExt}};
 use relm4::{
     adw, gtk, Component, ComponentController, ComponentParts,
     ComponentSender, Controller, RelmApp, MessageBroker
@@ -23,6 +23,7 @@ static BROKER: relm4::MessageBroker<Input> = MessageBroker::new();
 #[derive(Debug)]
 enum Input {
     SetView(View),
+    SetAutoReconnect(bool),
     DeviceConnected(Arc<bluer::Device>),
     DeviceDisconnected,
     DeviceReady(Arc<bt::InfiniTime>),
@@ -117,8 +118,10 @@ impl Component for Model {
             .detach();
 
         let settings = settings::Model::builder()
-            .launch(persistent_settings)
-            .detach();
+            .launch(persistent_settings.clone())
+            .forward(&sender.input_sender(), |message| match message {
+                settings::Output::SetAutoReconnect(on) => Input::SetAutoReconnect(on),
+            });
 
         let toast_overlay = adw::ToastOverlay::new();
 
@@ -138,6 +141,8 @@ impl Component for Model {
 
         let widgets = view_output!();
 
+        model.devices.emit(devices::Input::SetAutoReconnect(persistent_settings.boolean("auto-reconnect-enabled")));
+
         ComponentParts { model, widgets }
     }
 
@@ -154,6 +159,9 @@ impl Component for Model {
                     }
                     self.active_view = view;
                 }
+            }
+            Input::SetAutoReconnect(enabled) => {
+                self.devices.emit(devices::Input::SetAutoReconnect(enabled));
             }
             Input::DeviceConnected(device) => {
                 log::info!("Device connected: {}", device.address());
@@ -174,7 +182,7 @@ impl Component for Model {
             Input::DeviceDisconnected => {
                 log::info!("PineTime disconnected");
                 if let Some(infinitime) = self.infinitime.take() {
-                    self.devices.emit(devices::Input::DeviceDisconnected(infinitime.device().address()));
+                    self.devices.emit(devices::Input::DeviceConnectionLost(infinitime.device().address()));
                 }
                 self.dashboard.emit(dashboard::Input::Disconnected);
                 self.fwupd.emit(firmware_update::Input::Disconnected);
