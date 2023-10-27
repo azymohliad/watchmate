@@ -17,5 +17,6 @@ relm4-components = "0.7.0-beta.2"
 relm4-icons = { version = "0.7.0-alpha.2", features = [
     "arrow3-up",
     "bluetooth",
-    "refresh"
+    "refresh",
+    "settings"
 ] }

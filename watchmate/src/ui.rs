@@ -1,10 +1,10 @@
 use infinitime::{bluer, bt};
 use std::{sync::Arc, path::PathBuf};
 use futures::{pin_mut, StreamExt};
-use gtk::prelude::{BoxExt, GtkWindowExt};
+use gtk::{gio, prelude::{BoxExt, GtkWindowExt}};
 use relm4::{
-    adw, gtk::{self, gio},
-    Component, ComponentController, ComponentParts, ComponentSender, Controller, RelmApp, MessageBroker
+    adw, gtk, Component, ComponentController, ComponentParts,
+    ComponentSender, Controller, RelmApp, MessageBroker
 };
 
 mod dashboard;
@@ -13,9 +13,11 @@ mod firmware_update;
 mod firmware_panel;
 mod media_player;
 mod notifications;
+mod settings;
 
 use firmware_update::AssetType;
 
+static APP_ID: &'static str = "io.gitlab.azymohliad.WatchMate";
 static BROKER: relm4::MessageBroker<Input> = MessageBroker::new();
 
 #[derive(Debug)]
@@ -44,6 +46,7 @@ struct Model {
     dashboard: Controller<dashboard::Model>,
     devices: Controller<devices::Model>,
     fwupd: Controller<firmware_update::Model>,
+    settings: Controller<settings::Model>,
     // Other
     infinitime: Option<Arc<bt::InfiniTime>>,
     toast_overlay: adw::ToastOverlay,
@@ -78,11 +81,15 @@ impl Component for Model {
                     add_named[Some("fwupd_view")] = &gtk::Box {
                         append: model.fwupd.widget(),
                     },
+                    add_named[Some("settings_view")] = &gtk::Box {
+                        append: model.settings.widget(),
+                    },
                     #[watch]
                     set_visible_child_name: match model.active_view {
                         View::Dashboard => "dashboard_view",
                         View::Devices => "devices_view",
                         View::FirmwareUpdate => "fwupd_view",
+                        View::Settings => "settings_view",
                     },
                 },
             },
@@ -90,9 +97,10 @@ impl Component for Model {
     }
 
     fn init(_: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
+        let persistent_settings = gio::Settings::new(APP_ID);
         // Components
         let dashboard = dashboard::Model::builder()
-            .launch(root.clone())
+            .launch((root.clone(), persistent_settings.clone()))
             .forward(&sender.input_sender(), |message| match message {
                 dashboard::Output::FlashAssetFromFile(file, atype) => Input::FlashAssetFromFile(file, atype),
                 dashboard::Output::FlashAssetFromUrl(url, atype) => Input::FlashAssetFromUrl(url, atype),
@@ -108,6 +116,10 @@ impl Component for Model {
             .launch(())
             .detach();
 
+        let settings = settings::Model::builder()
+            .launch(persistent_settings)
+            .detach();
+
         let toast_overlay = adw::ToastOverlay::new();
 
         let model = Model {
@@ -118,6 +130,7 @@ impl Component for Model {
             dashboard,
             devices,
             fwupd,
+            settings,
             // Other
             infinitime: None,
             toast_overlay: toast_overlay.clone(),
@@ -226,6 +239,7 @@ pub enum View {
     Dashboard,
     Devices,
     FirmwareUpdate,
+    Settings,
 }
 
 
@@ -237,7 +251,7 @@ pub fn run() {
     relm4_icons::initialize_icons();
 
     // Run app
-    RelmApp::new("io.gitlab.azymohliad.WatchMate")
+    RelmApp::new(APP_ID)
         .with_broker(&BROKER)
         .run::<Model>(());
 }

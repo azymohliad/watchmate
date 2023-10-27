@@ -6,7 +6,7 @@ use std::{sync::Arc, path::PathBuf};
 use futures::{stream, StreamExt};
 use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, ListBoxRowExt, WidgetExt};
 use adw::prelude::{PreferencesRowExt, ExpanderRowExt};
-use relm4::{adw, gtk, ComponentController, ComponentParts, ComponentSender, Component, Controller, JoinHandle, RelmWidgetExt};
+use relm4::{adw, gtk::{self, gio}, ComponentController, ComponentParts, ComponentSender, Component, Controller, JoinHandle, RelmWidgetExt};
 use anyhow::{Result, Context};
 use version_compare::Version;
 
@@ -132,7 +132,7 @@ impl Model {
 #[relm4::component(pub)]
 impl Component for Model {
     type CommandOutput = ();
-    type Init = adw::ApplicationWindow;
+    type Init = (adw::ApplicationWindow, gio::Settings);
     type Input = Input;
     type Output = Output;
     type Widgets = Widgets;
@@ -150,9 +150,16 @@ impl Component for Model {
 
                 pack_start = &gtk::Button {
                     set_tooltip_text: Some("Devices"),
-                    set_icon_name: "open-menu-symbolic",
+                    set_icon_name: "bluetooth-symbolic",
                     connect_clicked => |_| {
                         ui::BROKER.send(ui::Input::SetView(ui::View::Devices));
+                    },
+                },
+                pack_end = &gtk::Button {
+                    set_tooltip_text: Some("Settings"),
+                    set_icon_name: "settings-symbolic",
+                    connect_clicked => |_| {
+                        ui::BROKER.send(ui::Input::SetView(ui::View::Settings));
                     },
                 },
             },
@@ -422,18 +429,18 @@ impl Component for Model {
         }
     }
 
-    fn init(main_window: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
+    fn init((window, settings): Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
 
         let player_panel = media_player::Model::builder()
             .launch(())
             .detach();
 
         let notifications_panel = notifications::Model::builder()
-            .launch(())
+            .launch(settings)
             .detach();
 
         let firmware_panel = firmware_panel::Model::builder()
-            .launch(main_window)
+            .launch(window)
             .forward(&sender.input_sender(), |message| match message {
                 firmware_panel::Output::LatestFirmwareVersion(f) => Input::LatestFirmwareVersion(f),
                 firmware_panel::Output::FlashAssetFromFile(f, t) => Input::FlashAssetFromFile(f, t),

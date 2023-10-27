@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<schemalist>
+  <schema id="io.gitlab.azymohliad.WatchMate" path="/io/gitlab/azymohliad/WatchMate/">
+    <key name="notification-forwarding-enabled" type="b">
+      <default>false</default>
+      <summary>Notification Forwarding</summary>
+    </key>
+  </schema>
+</schemalist>
