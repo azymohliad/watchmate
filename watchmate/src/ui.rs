@@ -3,7 +3,8 @@ use std::{sync::Arc, path::PathBuf};
 use futures::{pin_mut, StreamExt};
 use gtk::prelude::{BoxExt, GtkWindowExt};
 use relm4::{
-    adw, gtk, Component, ComponentController, ComponentParts, ComponentSender, Controller, RelmApp, MessageBroker
+    adw, gtk::{self, gio},
+    Component, ComponentController, ComponentParts, ComponentSender, Controller, RelmApp, MessageBroker
 };
 
 mod dashboard;
@@ -209,7 +210,8 @@ impl Component for Model {
                 let root = root.clone();
                 toast.set_button_label(Some(label));
                 toast.connect_button_clicked(move |_| {
-                    gtk::show_uri(Some(&root), url, 0);
+                    gtk::UriLauncher::new(&url)
+                        .launch(Some(&root), gio::Cancellable::NONE, |_| ());
                 });
                 self.toast_overlay.add_toast(toast);
             }
