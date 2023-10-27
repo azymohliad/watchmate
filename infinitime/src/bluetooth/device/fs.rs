@@ -116,7 +116,7 @@ impl InfiniTime {
         pin_mut!(resp_stream);
 
         // Init
-        let timestamp = Utc::now().timestamp_nanos() as u64;
+        let timestamp = Utc::now().timestamp_nanos_opt().unwrap_or(0) as u64;
         let req = msg::write_init_req(path, position, content.len() as u32, timestamp);
         chr.write(&req).await?;
         let resp = resp_stream.next().await.ok_or(anyhow!("No response"))?;
@@ -157,7 +157,7 @@ impl InfiniTime {
         let resp_stream = chr.notify().await?;
         pin_mut!(resp_stream);
 
-        let timestamp = Utc::now().timestamp_nanos() as u64;
+        let timestamp = Utc::now().timestamp_nanos_opt().unwrap_or(0) as u64;
         let req = msg::make_dir_req(path, timestamp);
         chr.write(&req).await?;
         let resp = resp_stream.next().await.ok_or(anyhow!("No response"))?;
