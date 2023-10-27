@@ -368,7 +368,7 @@ impl Component for Model {
                                     #[watch]
                                     set_sensitive: model.fw_version.is_some(),
 
-                                    add_action = &gtk::Box {
+                                    add_suffix = &gtk::Box {
                                         set_spacing: 10,
 
                                         gtk::Label {

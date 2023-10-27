@@ -4,7 +4,7 @@ use infinitime::gh;
 
 use std::path::PathBuf;
 use relm4::{
-    adw, gtk,
+    adw, gtk::{self, gio},
     gtk::prelude::*,
     ComponentController, ComponentParts, ComponentSender, Component, Controller, JoinHandle, RelmWidgetExt
 };
@@ -381,7 +381,8 @@ impl Component for Model {
             }
             Input::ReleaseNotes => {
                 if let Some(release) = self.selected_release_info() {
-                    gtk::show_uri(adw::ApplicationWindow::NONE, &release.url, 0);
+                    gtk::UriLauncher::new(&release.url)
+                        .launch(adw::ApplicationWindow::NONE, gio::Cancellable::NONE, |_| ());
                 }
             }
             Input::DownloadFirmware => {

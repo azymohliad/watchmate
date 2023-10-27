@@ -163,8 +163,15 @@ impl Component for Model {
     }
 
     fn init(_: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
+        let devices = FactoryVecDeque::builder()
+            .launch(gtk::ListBox::new())
+            .forward(sender.input_sender(), |output| match output {
+                DeviceOutput::Connected(device) => Input::DeviceManuallyConnected(device),
+                DeviceOutput::Disconnected(device) => Input::DeviceManuallyDisconnected(device),
+                DeviceOutput::ConnectionFailed => Input::DeviceConnectionFailed,
+            });
         let model = Self {
-            devices: FactoryVecDeque::new(gtk::ListBox::new(), &sender.input_sender()),
+            devices,
             adapter: None,
             gatt_server: None,
             discovery_task: None,
@@ -391,7 +398,6 @@ pub enum DeviceOutput {
 #[relm4::factory(pub)]
 impl FactoryComponent for DeviceInfo {
     type ParentWidget = gtk::ListBox;
-    type ParentInput = Input;
     type CommandOutput = ();
     type Init = Self;
     type Input = DeviceInput;
@@ -451,14 +457,6 @@ impl FactoryComponent for DeviceInfo {
         }
     }
 
-    fn forward_to_parent(output: Self::Output) -> Option<Input> {
-        Some(match output {
-            DeviceOutput::Connected(device) => Input::DeviceManuallyConnected(device),
-            DeviceOutput::Disconnected(device) => Input::DeviceManuallyDisconnected(device),
-            DeviceOutput::ConnectionFailed => Input::DeviceConnectionFailed,
-        })
-    }
-
     fn init_model(
         model: Self,
         _index: &DynamicIndex,
@@ -491,11 +489,11 @@ impl FactoryComponent for DeviceInfo {
                     match device.connect().await {
                         Ok(()) => {
                             sender.input(DeviceInput::StateUpdated(DeviceState::Connected));
-                            sender.output(DeviceOutput::Connected(device));
+                            _ = sender.output(DeviceOutput::Connected(device));
                         }
                         Err(error) => {
                             sender.input(DeviceInput::StateUpdated(DeviceState::Disconnected));
-                            sender.output(DeviceOutput::ConnectionFailed);
+                            _ = sender.output(DeviceOutput::ConnectionFailed);
                             log::error!("Connection failure: {}", error);
                         }
                     }
@@ -509,7 +507,7 @@ impl FactoryComponent for DeviceInfo {
                     match device.disconnect().await {
                         Ok(()) => {
                             sender.input(DeviceInput::StateUpdated(DeviceState::Disconnected));
-                            sender.output(DeviceOutput::Disconnected(device));
+                            _ = sender.output(DeviceOutput::Disconnected(device));
                         }
                         Err(error) => {
                             sender.input(DeviceInput::StateUpdated(DeviceState::Connected));
