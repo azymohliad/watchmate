@@ -3,7 +3,11 @@
   <schema id="io.gitlab.azymohliad.WatchMate" path="/io/gitlab/azymohliad/WatchMate/">
     <key name="notification-forwarding-enabled" type="b">
       <default>false</default>
-      <summary>Notification Forwarding</summary>
+      <summary>Notification forwarding</summary>
+    </key>
+    <key name="auto-reconnect-enabled" type="b">
+      <default>true</default>
+      <summary>Automatic reconnection</summary>
     </key>
   </schema>
 </schemalist>

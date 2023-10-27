@@ -4,11 +4,10 @@ use std::sync::Arc;
 use futures::{pin_mut, StreamExt};
 use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, ListBoxRowExt, WidgetExt};
 use relm4::{
-    adw, gtk, factory::{FactoryComponent, FactorySender, FactoryVecDeque, DynamicIndex},
+    adw, gtk,
+    factory::{FactoryComponent, FactorySender, FactoryVecDeque, DynamicIndex},
     ComponentParts, ComponentSender, Component, JoinHandle, RelmWidgetExt,
 };
-
-
 
 
 #[derive(Debug)]
@@ -20,11 +19,12 @@ pub enum Input {
     DeviceInfoReady(DeviceInfo),
     DeviceAdded(bluer::Address),
     DeviceRemoved(bluer::Address),
-    DeviceDisconnected(bluer::Address),
     DeviceSelected(i32),
-    DeviceManuallyConnected(Arc<bluer::Device>),
-    DeviceManuallyDisconnected(Arc<bluer::Device>),
+    DeviceConnected(Arc<bluer::Device>),
+    DeviceDisconnected(Arc<bluer::Device>),
     DeviceConnectionFailed,
+    DeviceConnectionLost(bluer::Address),
+    SetAutoReconnect(bool),
 }
 
 #[derive(Debug)]
@@ -44,6 +44,8 @@ pub struct Model {
     adapter: Option<Arc<bluer::Adapter>>,
     gatt_server: Option<bluer::gatt::local::ApplicationHandle>,
     discovery_task: Option<JoinHandle<()>>,
+    auto_reconnect: bool,
+    auto_reconnect_address: Option<bluer::Address>,
 }
 
 impl Model {
@@ -166,8 +168,8 @@ impl Component for Model {
         let devices = FactoryVecDeque::builder()
             .launch(gtk::ListBox::new())
             .forward(sender.input_sender(), |output| match output {
-                DeviceOutput::Connected(device) => Input::DeviceManuallyConnected(device),
-                DeviceOutput::Disconnected(device) => Input::DeviceManuallyDisconnected(device),
+                DeviceOutput::Connected(device) => Input::DeviceConnected(device),
+                DeviceOutput::Disconnected(device) => Input::DeviceDisconnected(device),
                 DeviceOutput::ConnectionFailed => Input::DeviceConnectionFailed,
             });
         let model = Self {
@@ -175,6 +177,8 @@ impl Component for Model {
             adapter: None,
             gatt_server: None,
             discovery_task: None,
+            auto_reconnect: false,
+            auto_reconnect_address: None,
         };
 
         let factory_widget = model.devices.widget();
@@ -194,35 +198,45 @@ impl Component for Model {
             }
 
             Input::StartDiscovery => {
-                if let Some(adapter) = self.adapter.clone() {
-                    self.devices.guard().clear();
-                    self.discovery_task = Some(relm4::spawn(Self::run_discovery(adapter, sender)));
-                    log::info!("Discovery started");
+                if self.discovery_task.is_none() {
+                    if let Some(adapter) = self.adapter.clone() {
+                        self.devices.guard().clear();
+                        self.discovery_task = Some(relm4::spawn(Self::run_discovery(adapter, sender)));
+                        log::info!("Device discovery started");
+                    }
                 }
             }
 
             Input::StopDiscovery => {
                 if let Some(handle) = self.discovery_task.take() {
                     handle.abort();
-                    log::info!("Discovery stopped");
+                    log::info!("Device discovery stopped");
                 }
             }
 
             Input::DiscoveryFailed => {
+                log::error!("Device discovery failed");
                 self.discovery_task = None;
             }
 
             Input::DeviceInfoReady(info) => {
-                self.devices.guard().push_front(info);
+                let address = info.address;
+                let mut devices = self.devices.guard();
+                devices.push_front(info);
+                if Some(address) == self.auto_reconnect_address {
+                    log::debug!("Detected lost device: {}. Trying to reconnect...", address);
+                    sender.input(Input::StopDiscovery);
+                    devices.send(0, DeviceInput::Connect);
+                }
             }
 
             Input::DeviceAdded(address) => {
-                log::debug!("Device added: {}", address);
                 if let Some(adapter) = &self.adapter {
                     if let Ok(device) = adapter.device(address) {
                         let device = Arc::new(device);
                         relm4::spawn(async move {
                             if bt::InfiniTime::check_device(&device).await {
+                                log::debug!("Device discovered: {}", address);
                                 match DeviceInfo::new(device).await {
                                     Ok(info) => sender.input(Input::DeviceInfoReady(info)),
                                     Err(error) => log::error!("Failed to read device info: {}", error),
@@ -234,44 +248,60 @@ impl Component for Model {
             }
 
             Input::DeviceRemoved(address) => {
-                log::debug!("Device removed: {}", address);
                 let mut devices_guard = self.devices.guard();
                 for i in (0..devices_guard.len()).rev() {
                     if let Some(device) = devices_guard.get(i) {
                         if device.address == address {
-                            // Temporary hack to prevent removing devices
-                            // while they're being manually disconnected.
-                            // TODO: Ask bluer maintainers if the adapter is supposed to
-                            // sends AdapterEvent::DeviceRemoved event when disconnecting,
-                            // or if it is a bug
-                            if device.state == DeviceState::Transitioning { continue; }
-
+                            log::debug!("Device lost: {}", address);
                             devices_guard.remove(i);
                         }
                     }
                 }
             }
 
-            Input::DeviceDisconnected(address) => {
-                let device = self.devices.iter().enumerate().find(|(_,d)| d.address == address);
-                if let Some((idx, _)) = device {
-                    self.devices.send(idx, DeviceInput::StateUpdated(DeviceState::Disconnected));
-                }
-            }
-
             Input::DeviceSelected(index) => {
+                log::debug!("Device selected: {}", index);
                 sender.input(Input::StopDiscovery);
+                self.auto_reconnect_address = None;
                 self.devices.send(index as usize, DeviceInput::Connect);
             }
 
-            Input::DeviceManuallyConnected(device) => {
+            Input::DeviceConnected(device) => {
+                log::debug!("Device connected successfully: {}", device.address());
+                self.auto_reconnect_address = None;
                 sender.output(Output::DeviceConnected(device)).unwrap();
             }
 
-            Input::DeviceManuallyDisconnected(_) => {}
+            Input::DeviceDisconnected(device) => {
+                log::debug!("Device disconnected successfully: {}", device.address());
+                if Some(device.address()) == self.auto_reconnect_address {
+                    self.auto_reconnect_address = None;
+                }
+                sender.input(Input::StartDiscovery);
+            }
 
             Input::DeviceConnectionFailed => {
+                log::debug!("Device connection failed");
                 sender.input(Input::StartDiscovery);
+            }
+
+            Input::DeviceConnectionLost(address) => {
+                log::debug!("Device connection lost: {}", address);
+
+                let devices = self.devices.guard();
+                let result = devices.iter().enumerate().find(|(_, d)| d.address == address);
+                if let Some((idx, _)) = result {
+                    devices.send(idx, DeviceInput::StateUpdated(DeviceState::Disconnected));
+                }
+                if self.auto_reconnect {
+                    self.auto_reconnect_address = Some(address);
+                    sender.input(Input::StartDiscovery);
+                }
+            }
+
+            Input::SetAutoReconnect(enabled) => {
+                self.auto_reconnect = enabled;
+                self.auto_reconnect_address = None;
             }
         }
     }
@@ -506,7 +536,8 @@ impl FactoryComponent for DeviceInfo {
                 relm4::spawn(async move {
                     match device.disconnect().await {
                         Ok(()) => {
-                            sender.input(DeviceInput::StateUpdated(DeviceState::Disconnected));
+                            // self.state cannot be updated via the message here, because
+                            // bluer removes the device immediately after disconnection
                             _ = sender.output(DeviceOutput::Disconnected(device));
                         }
                         Err(error) => {
