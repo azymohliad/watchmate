@@ -54,7 +54,7 @@ cargo run --release
 ##### Install Dependencies
 
 ```
-flatpak install org.gnome.Platform//43 org.gnome.Sdk//43 org.freedesktop.Sdk.Extension.rust-stable//22.08
+flatpak install org.gnome.Platform//45 org.gnome.Sdk//45 org.freedesktop.Sdk.Extension.rust-stable//23.08
 ```
 
 ##### Build

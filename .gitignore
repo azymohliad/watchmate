@@ -1,3 +1,4 @@
 target
 .flatpak
 .flatpak-builder
+.vscode
