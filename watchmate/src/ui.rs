@@ -28,6 +28,7 @@ relm4::new_action_group!(ViewActionGroup, "view");
 relm4::new_stateless_action!(DashboardViewAction, ViewActionGroup, "dashboard");
 relm4::new_stateless_action!(DevicesViewAction, ViewActionGroup, "devices");
 relm4::new_stateless_action!(SettingsViewAction, ViewActionGroup, "settings");
+relm4::new_stateless_action!(AboutAction, ViewActionGroup, "about");
 relm4::new_action_group!(WindowActionGroup, "win");
 relm4::new_stateless_action!(CloseAction, WindowActionGroup, "close");
 relm4::new_stateless_action!(QuitAction, WindowActionGroup, "quit");
@@ -51,8 +52,9 @@ enum Input {
         label: &'static str,
         url: &'static str,
     },
-    Quit,
+    About,
     Close,
+    Quit,
 }
 
 struct Model {
@@ -180,6 +182,11 @@ impl Component for Model {
         view_group.add_action(RelmAction::<SettingsViewAction>::new_stateless(
             glib::clone!(@strong sender => move |_| {
                 sender.input(Input::SetView(View::Settings));
+            }
+        )));
+        view_group.add_action(RelmAction::<AboutAction>::new_stateless(
+            glib::clone!(@strong sender => move |_| {
+                sender.input(Input::About);
             }
         )));
         view_group.register_for_widget(&widgets.main_window);
@@ -315,11 +322,23 @@ impl Component for Model {
                 });
                 self.toast_overlay.add_toast(toast);
             }
-            Input::Quit => {
-                root.application().unwrap().quit();
+            Input::About => {
+                adw::AboutWindow::builder()
+                    .transient_for(root)
+                    .application_icon(APP_ID)
+                    .application_name("WatchMate")
+                    .version("v0.4.6")
+                    .website("https://github.com/azymohliad/watchmate")
+                    .issue_url("https://github.com/azymohliad/watchmate/issues")
+                    .license_type(gtk::License::Gpl30)
+                    .build()
+                    .present();
             }
             Input::Close => {
                 root.close();
+            }
+            Input::Quit => {
+                root.application().unwrap().quit();
             }
         }
     }

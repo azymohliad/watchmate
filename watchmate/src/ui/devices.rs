@@ -91,6 +91,9 @@ impl Component for Model {
             "Back to Dashboard" => super::DashboardViewAction,
             "Settings" => super::SettingsViewAction,
             section! {
+                "About" => super::AboutAction,
+            },
+            section! {
                 "Quit" => super::QuitAction,
             }
         }

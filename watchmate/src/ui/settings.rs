@@ -28,6 +28,9 @@ impl Component for Model {
             "Back to Dashboard" => super::DashboardViewAction,
             "Devices" => super::DevicesViewAction,
             section! {
+                "About" => super::AboutAction,
+            },
+            section! {
                 "Quit" => super::QuitAction,
             }
         }

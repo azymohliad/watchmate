@@ -142,6 +142,9 @@ impl Component for Model {
             "Devices" => super::DevicesViewAction,
             "Settings" => super::SettingsViewAction,
             section! {
+                "About" => super::AboutAction,
+            },
+            section! {
                 "Quit" => super::QuitAction,
             }
         }
