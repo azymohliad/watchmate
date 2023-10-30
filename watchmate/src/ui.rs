@@ -1,9 +1,10 @@
 use infinitime::{bluer, bt};
 use std::{sync::Arc, path::PathBuf};
 use futures::{pin_mut, StreamExt};
-use gtk::{gio, prelude::{BoxExt, GtkWindowExt, SettingsExt, WidgetExt}};
+use gtk::{gio, glib, prelude::{ApplicationExt, BoxExt, GtkWindowExt, SettingsExt, WidgetExt}};
 use relm4::{
-    adw, gtk, Component, ComponentController, ComponentParts,
+    adw, gtk, actions::{AccelsPlus, RelmAction, RelmActionGroup},
+    Component, ComponentController, ComponentParts,
     ComponentSender, Controller, RelmApp, MessageBroker
 };
 use ashpd::{desktop::background::Background, WindowIdentifier};
@@ -21,6 +22,16 @@ use firmware_update::AssetType;
 
 static APP_ID: &'static str = "io.gitlab.azymohliad.WatchMate";
 static BROKER: relm4::MessageBroker<Input> = MessageBroker::new();
+
+
+relm4::new_action_group!(ViewActionGroup, "view");
+relm4::new_stateless_action!(DashboardViewAction, ViewActionGroup, "dashboard");
+relm4::new_stateless_action!(DevicesViewAction, ViewActionGroup, "devices");
+relm4::new_stateless_action!(SettingsViewAction, ViewActionGroup, "settings");
+relm4::new_action_group!(WindowActionGroup, "win");
+relm4::new_stateless_action!(CloseAction, WindowActionGroup, "close");
+relm4::new_stateless_action!(QuitAction, WindowActionGroup, "quit");
+
 
 #[derive(Debug)]
 enum Input {
@@ -40,6 +51,8 @@ enum Input {
         label: &'static str,
         url: &'static str,
     },
+    Quit,
+    Close,
 }
 
 struct Model {
@@ -65,6 +78,7 @@ impl Component for Model {
     type Widgets = Widgets;
 
     view! {
+        #[name = "main_window"]
         adw::ApplicationWindow {
             set_default_width: 480,
             set_default_height: 720,
@@ -102,6 +116,7 @@ impl Component for Model {
 
     fn init(_: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
         let persistent_settings = gio::Settings::new(APP_ID);
+
         // Components
         let dashboard = dashboard::Model::builder()
             .launch((root.clone(), persistent_settings.clone()))
@@ -127,8 +142,7 @@ impl Component for Model {
                 settings::Message::RunInBackground(on) => Input::SetRunInBackground(on),
             });
 
-        let toast_overlay = adw::ToastOverlay::new();
-
+        // Initialize model
         let model = Model {
             // UI state
             active_view: View::Devices,
@@ -140,11 +154,50 @@ impl Component for Model {
             settings,
             // Other
             infinitime: None,
-            toast_overlay: toast_overlay.clone(),
+            toast_overlay: adw::ToastOverlay::new(),
         };
 
+        // Widgets
+        let toast_overlay = model.toast_overlay.clone();
         let widgets = view_output!();
 
+        // Actions
+        let app = relm4::main_application();
+        app.set_accelerators_for_action::<CloseAction>(&["<primary>W"]);
+        app.set_accelerators_for_action::<QuitAction>(&["<primary>Q"]);
+
+        let mut view_group = RelmActionGroup::<ViewActionGroup>::new();
+        view_group.add_action(RelmAction::<DashboardViewAction>::new_stateless(
+            glib::clone!(@strong sender => move |_| {
+                sender.input(Input::SetView(View::Dashboard));
+            }
+        )));
+        view_group.add_action(RelmAction::<DevicesViewAction>::new_stateless(
+            glib::clone!(@strong sender => move |_| {
+                sender.input(Input::SetView(View::Devices));
+            }
+        )));
+        view_group.add_action(RelmAction::<SettingsViewAction>::new_stateless(
+            glib::clone!(@strong sender => move |_| {
+                sender.input(Input::SetView(View::Settings));
+            }
+        )));
+        view_group.register_for_widget(&widgets.main_window);
+
+        let mut global_group = RelmActionGroup::<WindowActionGroup>::new();
+        global_group.add_action(RelmAction::<QuitAction>::new_stateless(
+            glib::clone!(@strong sender => move |_| {
+                sender.input(Input::Quit);
+            }
+        )));
+        global_group.add_action(RelmAction::<CloseAction>::new_stateless(
+            glib::clone!(@strong sender => move |_| {
+                sender.input(Input::Close);
+            }
+        )));
+        global_group.register_for_widget(&widgets.main_window);
+
+        // Post-initialization
         model.devices.emit(devices::Input::SetAutoReconnect(persistent_settings.boolean("auto-reconnect-enabled")));
 
         ComponentParts { model, widgets }
@@ -261,6 +314,12 @@ impl Component for Model {
                         .launch(Some(&root), gio::Cancellable::NONE, |_| ());
                 });
                 self.toast_overlay.add_toast(toast);
+            }
+            Input::Quit => {
+                root.application().unwrap().quit();
+            }
+            Input::Close => {
+                root.close();
             }
         }
     }

@@ -137,6 +137,16 @@ impl Component for Model {
     type Output = Output;
     type Widgets = Widgets;
 
+    menu! {
+        main_menu: {
+            "Devices" => super::DevicesViewAction,
+            "Settings" => super::SettingsViewAction,
+            section! {
+                "Quit" => super::QuitAction,
+            }
+        }
+    }
+
     view! {
         gtk::Box {
             set_hexpand: true,
@@ -155,13 +165,11 @@ impl Component for Model {
                         ui::BROKER.send(ui::Input::SetView(ui::View::Devices));
                     },
                 },
-                pack_end = &gtk::Button {
-                    set_tooltip_text: Some("Settings"),
-                    set_icon_name: "settings-symbolic",
-                    connect_clicked => |_| {
-                        ui::BROKER.send(ui::Input::SetView(ui::View::Settings));
-                    },
-                },
+                pack_end = &gtk::MenuButton {
+                    set_icon_name: "open-menu-symbolic",
+                    #[wrap(Some)]
+                    set_popover = &gtk::PopoverMenu::from_model(Some(&main_menu)) {}
+                }
             },
 
             gtk::ScrolledWindow {
