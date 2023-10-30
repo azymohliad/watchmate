@@ -86,6 +86,16 @@ impl Component for Model {
     type Output = Output;
     type Widgets = Widgets;
 
+    menu! {
+        main_menu: {
+            "Back to Dashboard" => super::DashboardViewAction,
+            "Settings" => super::SettingsViewAction,
+            section! {
+                "Quit" => super::QuitAction,
+            }
+        }
+    }
+
     view! {
         gtk::Box {
             set_hexpand: true,
@@ -115,6 +125,11 @@ impl Component for Model {
                         ui::BROKER.send(ui::Input::SetView(super::View::Dashboard));
                     },
                 },
+                pack_end = &gtk::MenuButton {
+                    set_icon_name: "open-menu-symbolic",
+                    #[wrap(Some)]
+                    set_popover = &gtk::PopoverMenu::from_model(Some(&main_menu)) {}
+                }
             },
 
             adw::Clamp {
