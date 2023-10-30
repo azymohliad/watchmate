@@ -9,7 +9,7 @@ pub const CHR_FIRMWARE_REVISION: Uuid = uuid!("00002a26-0000-1000-8000-00805f9b3
 pub const CHR_HEART_RATE: Uuid = uuid!("00002a37-0000-1000-8000-00805f9b34fb");
 
 pub const CHR_NEW_ALERT: Uuid = uuid!("00002a46-0000-1000-8000-00805f9b34fb");
-pub const CHR_NOTIFICATION_EVENT: Uuid = uuid!("00020001-78fc-48fe-8e23-433b3a1942d0");
+pub const _CHR_NOTIFICATION_EVENT: Uuid = uuid!("00020001-78fc-48fe-8e23-433b3a1942d0");
 
 pub const CHR_FS_VERSION: Uuid = uuid!("adaf0100-4669-6c65-5472-616e73666572");
 pub const CHR_FS_TRANSFER: Uuid = uuid!("adaf0200-4669-6c65-5472-616e73666572");
@@ -29,4 +29,4 @@ pub const CHR_MP_REPEAT: Uuid = uuid!("0000000b-78fc-48fe-8e23-433b3a1942d0");
 pub const CHR_MP_SHUFFLE: Uuid = uuid!("0000000c-78fc-48fe-8e23-433b3a1942d0");
 
 pub const CHR_STEP_COUNT: Uuid = uuid!("00030001-78fc-48fe-8e23-433b3a1942d0");
-pub const CHR_MOTION: Uuid = uuid!("00030002-78fc-48fe-8e23-433b3a1942d0");
+pub const _CHR_MOTION: Uuid = uuid!("00030002-78fc-48fe-8e23-433b3a1942d0");
