@@ -12,8 +12,9 @@ anyhow = "1.0"
 version-compare = "0.1"
 log = "0.4"
 env_logger = "0.10"
-relm4 = { version = "0.7.0-beta.2", features = ["libadwaita", "gnome_45"] }
-relm4-components = "0.7.0-beta.2"
+ashpd = { version = "0.6.7", features = ["gtk4", "tokio"], default-features = false }
+relm4 = { git = "https://github.com/azymohliad/Relm4", features = ["libadwaita", "gnome_45"] }
+relm4-components = { git = "https://github.com/azymohliad/Relm4" }
 relm4-icons = { version = "0.7.0-alpha.2", features = [
     "arrow3-up",
     "bluetooth",

@@ -1,15 +1,17 @@
 use crate::ui;
-use gtk::{gio, prelude::{OrientableExt, WidgetExt, ButtonExt, SettingsExtManual}};
+use gtk::{gio, prelude::{OrientableExt, WidgetExt, ButtonExt, SettingsExt, SettingsExtManual}};
 use adw::prelude::{PreferencesPageExt, PreferencesGroupExt, PreferencesRowExt, ActionRowExt};
 use relm4::{adw, gtk, ComponentParts, ComponentSender, Component};
 
 
 #[derive(Debug)]
-pub enum Output {
-    SetAutoReconnect(bool),
+pub enum Message {
+    AutoReconnect(bool),
+    RunInBackground(bool),
 }
 
 pub struct Model {
+    settings: gio::Settings,
 }
 
 
@@ -17,8 +19,8 @@ pub struct Model {
 impl Component for Model {
     type CommandOutput = ();
     type Init = gio::Settings;
-    type Input = ();
-    type Output = Output;
+    type Input = Message;
+    type Output = Message;
     type Widgets = Widgets;
 
     view! {
@@ -48,22 +50,42 @@ impl Component for Model {
                         set_title: "Automatically reconnect",
                         set_subtitle: "When BLE connection is lost",
                         connect_active_notify[sender] => move |wgt| {
-                            _ = sender.output(Output::SetAutoReconnect(wgt.is_active()));
+                            _ = sender.output(Message::AutoReconnect(wgt.is_active()));
                         }
-                    }
+                    },
+                    #[name = "background_switch"]
+                    add = &adw::SwitchRow {
+                        set_title: "Run in background",
+                        set_subtitle: "When closed",
+                        connect_active_notify[sender] => move |wgt| {
+                            _ = sender.output(Message::RunInBackground(wgt.is_active()));
+                        }
+                    },
                 }
             }
         }
     }
 
-    fn init(persistent_settings: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
-        let model = Self {};
+    fn init(settings: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
+        let model = Self { settings };
         let widgets = view_output!();
-        persistent_settings.bind("auto-reconnect-enabled", &widgets.autoreconnect_switch, "active").build();
+        model.settings.bind("auto-reconnect-enabled", &widgets.autoreconnect_switch, "active").build();
+        model.settings.bind("run-in-background-enabled", &widgets.background_switch, "active").build();
         ComponentParts { model, widgets }
     }
 
-    fn update(&mut self, _msg: Self::Input, _sender: ComponentSender<Self>, _root: &Self::Root) {
+    fn update(&mut self, msg: Self::Input, _sender: ComponentSender<Self>, _root: &Self::Root) {
+        let result = match msg {
+            Message::AutoReconnect(value) => {
+                self.settings.set_boolean("auto-reconnect-enabled", value)
+            }
+            Message::RunInBackground(value) => {
+                self.settings.set_boolean("run-in-background-enabled", value)
+            }
+        };
+        if let Err(error) = result {
+            log::error!("Failed to update setting: {}", error);
+        }
     }
 }
 
