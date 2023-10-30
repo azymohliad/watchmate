@@ -9,5 +9,9 @@
       <default>true</default>
       <summary>Automatic reconnection</summary>
     </key>
+    <key name="run-in-background-enabled" type="b">
+      <default>false</default>
+      <summary>Run in background</summary>
+    </key>
   </schema>
 </schemalist>

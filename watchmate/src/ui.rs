@@ -1,11 +1,13 @@
 use infinitime::{bluer, bt};
 use std::{sync::Arc, path::PathBuf};
 use futures::{pin_mut, StreamExt};
-use gtk::{gio, prelude::{BoxExt, GtkWindowExt, SettingsExt}};
+use gtk::{gio, prelude::{BoxExt, GtkWindowExt, SettingsExt, WidgetExt}};
 use relm4::{
     adw, gtk, Component, ComponentController, ComponentParts,
     ComponentSender, Controller, RelmApp, MessageBroker
 };
+use ashpd::{desktop::background::Background, WindowIdentifier};
+
 
 mod dashboard;
 mod devices;
@@ -24,6 +26,7 @@ static BROKER: relm4::MessageBroker<Input> = MessageBroker::new();
 enum Input {
     SetView(View),
     SetAutoReconnect(bool),
+    SetRunInBackground(bool),
     DeviceConnected(Arc<bluer::Device>),
     DeviceDisconnected,
     DeviceReady(Arc<bt::InfiniTime>),
@@ -120,7 +123,8 @@ impl Component for Model {
         let settings = settings::Model::builder()
             .launch(persistent_settings.clone())
             .forward(&sender.input_sender(), |message| match message {
-                settings::Output::SetAutoReconnect(on) => Input::SetAutoReconnect(on),
+                settings::Message::AutoReconnect(on) => Input::SetAutoReconnect(on),
+                settings::Message::RunInBackground(on) => Input::SetRunInBackground(on),
             });
 
         let toast_overlay = adw::ToastOverlay::new();
@@ -162,6 +166,28 @@ impl Component for Model {
             }
             Input::SetAutoReconnect(enabled) => {
                 self.devices.emit(devices::Input::SetAutoReconnect(enabled));
+            }
+            Input::SetRunInBackground(enabled) => {
+                root.set_hide_on_close(enabled);
+                if enabled {
+                    let native_root = root.native().unwrap();
+                    let settings_sender = self.settings.sender().clone();
+                    relm4::spawn_local(async move {
+                        let identifier = WindowIdentifier::from_native(&native_root).await;
+                        let request = Background::request()
+                            .identifier(identifier)
+                            .reason("WatchMate needs to run in the background to maintain the connection to your PineTime");
+                        match request.send().await.and_then(|r| r.response()) {
+                            Ok(_response) => {}
+                            Err(err) => {
+                                _ = settings_sender.send(settings::Message::RunInBackground(false));
+                                sender.input(Input::SetRunInBackground(false));
+                                sender.input(Input::ToastStatic("Not allowed to run in background"));
+                                log::error!("Failed to request running in background: {err}");
+                            }
+                        }
+                    });
+                }
             }
             Input::DeviceConnected(device) => {
                 log::info!("Device connected: {}", device.address());
