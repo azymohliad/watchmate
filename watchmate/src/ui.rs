@@ -176,7 +176,7 @@ impl Component for Model {
                         let identifier = WindowIdentifier::from_native(&native_root).await;
                         let request = Background::request()
                             .identifier(identifier)
-                            .reason("WatchMate needs to run in the background to maintain the connection to your PineTime");
+                            .reason("Watchmate needs to run in the background to maintain the connection to your PineTime");
                         match request.send().await.and_then(|r| r.response()) {
                             Ok(_response) => {}
                             Err(err) => {
