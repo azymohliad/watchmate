@@ -2059,7 +2059,7 @@ checksum = "c08c74e62047bb2de4ff487b251e4a92e24f48745648451635cec7d591162d9f"
 [[package]]
 name = "relm4"
 version = "0.7.0-beta.2"
-source = "git+https://github.com/azymohliad/Relm4#e8e56a8a1994c1b24baea185639c7f223473d49c"
+source = "git+https://github.com/Relm4/Relm4#7ca06e9e0a1dcfb46c37423ede02de556f3ace32"
 dependencies = [
  "async-trait",
  "flume",
@@ -2076,7 +2076,7 @@ dependencies = [
 [[package]]
 name = "relm4-components"
 version = "0.7.0-beta.2"
-source = "git+https://github.com/azymohliad/Relm4#e8e56a8a1994c1b24baea185639c7f223473d49c"
+source = "git+https://github.com/Relm4/Relm4#7ca06e9e0a1dcfb46c37423ede02de556f3ace32"
 dependencies = [
  "once_cell",
  "relm4",
@@ -2096,7 +2096,7 @@ dependencies = [
 [[package]]
 name = "relm4-macros"
 version = "0.7.0-beta.2"
-source = "git+https://github.com/azymohliad/Relm4#e8e56a8a1994c1b24baea185639c7f223473d49c"
+source = "git+https://github.com/Relm4/Relm4#7ca06e9e0a1dcfb46c37423ede02de556f3ace32"
 dependencies = [
  "proc-macro2",
  "quote",
