@@ -4,8 +4,8 @@ use infinitime::gh;
 
 use std::path::PathBuf;
 use relm4::{
-    adw, gtk::{self, gio},
-    gtk::prelude::*,
+    adw, gtk::{self, gio, glib, prelude::*},
+    actions::{RelmAction, RelmActionGroup},
     ComponentController, ComponentParts, ComponentSender, Component, Controller, JoinHandle, RelmWidgetExt
 };
 use relm4_components::{open_dialog::*, save_dialog::*, alert::*};
@@ -136,7 +136,21 @@ impl Component for Model {
     type Output = Output;
     type Widgets = Widgets;
 
+    menu! {
+        extra_menu: {
+            "Flash Resources" => FlashResourcesAction,
+            section! {
+                "Download Firmware" => DownloadFirmwareAction,
+                "Download Resources" => DownloadResourcesAction,
+            },
+            section! {
+                "Release Notes" => ReleaseNotesAction,
+            },
+        }
+    }
+
     view! {
+        #[name = "root"]
         gtk::Box {
             set_orientation: gtk::Orientation::Vertical,
             set_margin_all: 12,
@@ -184,36 +198,7 @@ impl Component for Model {
                     set_label: "Flash",
                     connect_clicked => Input::FlashFirmwareFromReleaseClicked,
                     #[wrap(Some)]
-                    set_popover = &gtk::Popover {
-                        gtk::Box {
-                            set_spacing: 10,
-                            set_orientation: gtk::Orientation::Vertical,
-
-                            gtk::Button {
-                                set_label: "Download",
-                                connect_clicked => Input::DownloadFirmware,
-                            },
-
-                            gtk::Button {
-                                set_label: "Flash Resources",
-                                #[watch]
-                                set_sensitive: model.resources_available,
-                                connect_clicked => Input::FlashResourcesFromReleaseClicked,
-                            },
-
-                            gtk::Button {
-                                set_label: "Download Resources",
-                                #[watch]
-                                set_sensitive: model.resources_available,
-                                connect_clicked => Input::DownloadResources,
-                            },
-
-                            gtk::Button {
-                                set_label: "Release Notes",
-                                connect_clicked => Input::ReleaseNotes,
-                            },
-                        },
-                    },
+                    set_popover = &gtk::PopoverMenu::from_model(Some(&extra_menu)) {}
                 },
 
                 gtk::Label {
@@ -357,6 +342,35 @@ impl Component for Model {
         };
 
         let widgets = view_output!();
+
+        let mut group = RelmActionGroup::<FirmwareUpdateGroup>::new();
+        group.add_action(RelmAction::<FlashFirmwareAction>::new_stateless(
+            glib::clone!(@strong sender => move |_| {
+                sender.input(Input::FlashFirmwareFromReleaseClicked);
+            }
+        )));
+        group.add_action(RelmAction::<FlashResourcesAction>::new_stateless(
+            glib::clone!(@strong sender => move |_| {
+                sender.input(Input::FlashResourcesFromReleaseClicked);
+            }
+        )));
+        group.add_action(RelmAction::<DownloadFirmwareAction>::new_stateless(
+            glib::clone!(@strong sender => move |_| {
+                sender.input(Input::DownloadFirmware);
+            }
+        )));
+        group.add_action(RelmAction::<DownloadResourcesAction>::new_stateless(
+            glib::clone!(@strong sender => move |_| {
+                sender.input(Input::DownloadResources);
+            }
+        )));
+        group.add_action(RelmAction::<ReleaseNotesAction>::new_stateless(
+            glib::clone!(@strong sender => move |_| {
+                sender.input(Input::ReleaseNotes);
+            }
+        )));
+        group.register_for_widget(&widgets.root);
+
         sender.input(Input::RequestReleases);
         ComponentParts { model, widgets }
     }
@@ -550,3 +564,10 @@ impl Component for Model {
     }
 }
 
+
+relm4::new_action_group!(FirmwareUpdateGroup, "fwupd");
+relm4::new_stateless_action!(FlashFirmwareAction, FirmwareUpdateGroup, "flash-firmware");
+relm4::new_stateless_action!(FlashResourcesAction, FirmwareUpdateGroup, "flash-resources");
+relm4::new_stateless_action!(DownloadFirmwareAction, FirmwareUpdateGroup, "download-firmware");
+relm4::new_stateless_action!(DownloadResourcesAction, FirmwareUpdateGroup, "download-resouces");
+relm4::new_stateless_action!(ReleaseNotesAction, FirmwareUpdateGroup, "open-release-notes");
