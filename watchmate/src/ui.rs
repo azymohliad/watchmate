@@ -1,7 +1,7 @@
 use infinitime::{bluer, bt};
 use std::{sync::Arc, path::PathBuf};
 use futures::{pin_mut, StreamExt};
-use gtk::{gio, glib, prelude::{ApplicationExt, BoxExt, GtkWindowExt, SettingsExt, WidgetExt}};
+use gtk::{gio, glib, prelude::{ApplicationExt, BoxExt, GtkWindowExt, WidgetExt}};
 use relm4::{
     adw, gtk, actions::{AccelsPlus, RelmAction, RelmActionGroup},
     Component, ComponentController, ComponentParts,
@@ -203,9 +203,6 @@ impl Component for Model {
             }
         )));
         global_group.register_for_widget(&widgets.main_window);
-
-        // Post-initialization
-        model.devices.emit(devices::Input::SetAutoReconnect(persistent_settings.boolean("auto-reconnect-enabled")));
 
         ComponentParts { model, widgets }
     }

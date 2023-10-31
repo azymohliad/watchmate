@@ -22,6 +22,7 @@ pub enum Input {
     DeviceSelected(i32),
     DeviceConnected(Arc<bluer::Device>),
     DeviceDisconnected(Arc<bluer::Device>),
+    DeviceDisconnecting(Arc<bluer::Device>),
     DeviceConnectionFailed,
     DeviceConnectionLost(bluer::Address),
     SetAutoReconnect(bool),
@@ -46,6 +47,7 @@ pub struct Model {
     discovery_task: Option<JoinHandle<()>>,
     auto_reconnect: bool,
     auto_reconnect_address: Option<bluer::Address>,
+    disconnecting_address: Option<bluer::Address>,
 }
 
 impl Model {
@@ -188,6 +190,7 @@ impl Component for Model {
             .forward(sender.input_sender(), |output| match output {
                 DeviceOutput::Connected(device) => Input::DeviceConnected(device),
                 DeviceOutput::Disconnected(device) => Input::DeviceDisconnected(device),
+                DeviceOutput::Disconnecting(device) => Input::DeviceDisconnecting(device),
                 DeviceOutput::ConnectionFailed => Input::DeviceConnectionFailed,
             });
         let model = Self {
@@ -197,6 +200,7 @@ impl Component for Model {
             discovery_task: None,
             auto_reconnect: false,
             auto_reconnect_address: None,
+            disconnecting_address: None,
         };
 
         let factory_widget = model.devices.widget();
@@ -281,7 +285,11 @@ impl Component for Model {
                 log::debug!("Device selected: {}", index);
                 sender.input(Input::StopDiscovery);
                 self.auto_reconnect_address = None;
-                self.devices.send(index as usize, DeviceInput::Connect);
+                if let Some(device) = self.devices.get(index as usize) {
+                    if device.state != DeviceState::Transitioning {
+                        self.devices.send(index as usize, DeviceInput::Connect);
+                    }
+                }
             }
 
             Input::DeviceConnected(device) => {
@@ -295,7 +303,14 @@ impl Component for Model {
                 if Some(device.address()) == self.auto_reconnect_address {
                     self.auto_reconnect_address = None;
                 }
+                self.disconnecting_address = None;
+                // Repopulate known devices
+                sender.input(Input::StopDiscovery);
                 sender.input(Input::StartDiscovery);
+            }
+
+            Input::DeviceDisconnecting(device) => {
+                self.disconnecting_address = Some(device.address());
             }
 
             Input::DeviceConnectionFailed => {
@@ -311,7 +326,7 @@ impl Component for Model {
                 if let Some((idx, _)) = result {
                     devices.send(idx, DeviceInput::StateUpdated(DeviceState::Disconnected));
                 }
-                if self.auto_reconnect {
+                if self.auto_reconnect && Some(address) != self.disconnecting_address {
                     self.auto_reconnect_address = Some(address);
                     sender.input(Input::StartDiscovery);
                 }
@@ -439,6 +454,7 @@ pub enum DeviceInput {
 pub enum DeviceOutput {
     Connected(Arc<bluer::Device>),
     Disconnected(Arc<bluer::Device>),
+    Disconnecting(Arc<bluer::Device>),
     ConnectionFailed,
 }
 
@@ -551,6 +567,7 @@ impl FactoryComponent for DeviceInfo {
             DeviceInput::Disconnect => {
                 self.state = DeviceState::Transitioning;
                 let device = self.device.clone();
+                _ = sender.output(DeviceOutput::Disconnecting(device.clone()));
                 relm4::spawn(async move {
                     match device.disconnect().await {
                         Ok(()) => {
