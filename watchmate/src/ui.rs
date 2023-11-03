@@ -1,13 +1,12 @@
 use infinitime::{bluer, bt};
 use std::{sync::Arc, path::PathBuf};
 use futures::{pin_mut, StreamExt};
-use gtk::{gio, glib, prelude::{ApplicationExt, BoxExt, GtkWindowExt, WidgetExt}};
+use gtk::{gio, glib, prelude::{ApplicationExt, BoxExt, GtkWindowExt}};
 use relm4::{
     adw, gtk, actions::{AccelsPlus, RelmAction, RelmActionGroup},
     Component, ComponentController, ComponentParts,
     ComponentSender, Controller, RelmApp, MessageBroker
 };
-use ashpd::{desktop::background::Background, WindowIdentifier};
 
 
 mod dashboard;
@@ -55,6 +54,7 @@ enum Input {
     About,
     Close,
     Quit,
+    None,
 }
 
 struct Model {
@@ -140,8 +140,9 @@ impl Component for Model {
         let settings = settings::Model::builder()
             .launch(persistent_settings.clone())
             .forward(&sender.input_sender(), |message| match message {
-                settings::Message::AutoReconnect(on) => Input::SetAutoReconnect(on),
-                settings::Message::RunInBackground(on) => Input::SetRunInBackground(on),
+                settings::Output::RunInBackground(on) => Input::SetRunInBackground(on),
+                settings::Output::AutoReconnect(on) => Input::SetAutoReconnect(on),
+                settings::Output::AutoStart(_) => Input::None,
             });
 
         // Initialize model
@@ -226,25 +227,6 @@ impl Component for Model {
             }
             Input::SetRunInBackground(enabled) => {
                 root.set_hide_on_close(enabled);
-                if enabled {
-                    let native_root = root.native().unwrap();
-                    let settings_sender = self.settings.sender().clone();
-                    relm4::spawn_local(async move {
-                        let identifier = WindowIdentifier::from_native(&native_root).await;
-                        let request = Background::request()
-                            .identifier(identifier)
-                            .reason("WatchMate needs to run in the background to maintain the connection to your PineTime");
-                        match request.send().await.and_then(|r| r.response()) {
-                            Ok(_response) => {}
-                            Err(err) => {
-                                _ = settings_sender.send(settings::Message::RunInBackground(false));
-                                sender.input(Input::SetRunInBackground(false));
-                                sender.input(Input::ToastStatic("Not allowed to run in background"));
-                                log::error!("Failed to request running in background: {err}");
-                            }
-                        }
-                    });
-                }
             }
             Input::DeviceConnected(device) => {
                 log::info!("Device connected: {}", device.address());
@@ -274,7 +256,9 @@ impl Component for Model {
             Input::DeviceReady(infinitime) => {
                 log::info!("PineTime recognized");
                 self.infinitime = Some(infinitime.clone());
-                self.active_view = View::Dashboard;
+                if self.active_view == View::Devices {
+                    self.active_view = View::Dashboard;
+                }
                 self.dashboard.emit(dashboard::Input::Connected(infinitime.clone()));
                 self.fwupd.emit(firmware_update::Input::Connected(infinitime.clone()));
                 // Handle disconnection
@@ -337,6 +321,7 @@ impl Component for Model {
             Input::Quit => {
                 root.application().unwrap().quit();
             }
+            Input::None => {}
         }
     }
 }

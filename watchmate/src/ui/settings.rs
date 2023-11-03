@@ -1,16 +1,33 @@
 use crate::ui;
-use gtk::{gio, prelude::{OrientableExt, WidgetExt, ButtonExt, SettingsExt, SettingsExtManual}};
+use gtk::{
+    gio, glib::Propagation, prelude::{
+        GtkApplicationExt, OrientableExt, WidgetExt, ButtonExt, SettingsExt,
+        SettingsExtManual
+    }
+};
 use adw::prelude::{PreferencesPageExt, PreferencesGroupExt, PreferencesRowExt, ActionRowExt};
 use relm4::{adw, gtk, ComponentParts, ComponentSender, Component};
+use ashpd::{desktop::background::Background, WindowIdentifier};
 
 
 #[derive(Debug)]
-pub enum Message {
-    AutoReconnect(bool),
+pub enum Input {
+    RunInBackgroundRequest(bool),
+    RunInBackgroundResponse(bool),
+    AutoStartRequest(bool),
+    AutoStartResponse(bool),
+}
+
+#[derive(Debug)]
+pub enum Output {
     RunInBackground(bool),
+    AutoStart(bool),
+    AutoReconnect(bool),
 }
 
 pub struct Model {
+    background_switch: gtk::Switch,
+    autostart_switch: gtk::Switch,
     settings: gio::Settings,
 }
 
@@ -19,8 +36,8 @@ pub struct Model {
 impl Component for Model {
     type CommandOutput = ();
     type Init = gio::Settings;
-    type Input = Message;
-    type Output = Message;
+    type Input = Input;
+    type Output = Output;
     type Widgets = Widgets;
 
     menu! {
@@ -63,20 +80,38 @@ impl Component for Model {
 
             adw::PreferencesPage {
                 add = &adw::PreferencesGroup {
+                    add = &adw::ActionRow {
+                        set_title: "Run in background",
+                        set_subtitle: "When closed",
+                        #[local]
+                        add_suffix = &background_switch -> gtk::Switch {
+                            set_active: model.settings.boolean("run-in-background-enabled"),
+                            set_valign: gtk::Align::Center,
+                            connect_state_set[sender] => move |_, state| {
+                                sender.input(Input::RunInBackgroundRequest(state));
+                                Propagation::Stop
+                            }
+                        }
+                    },
+                    add = &adw::ActionRow {
+                        set_title: "Autostart",
+                        set_subtitle: "At login",
+                        #[local]
+                        add_suffix = &autostart_switch -> gtk::Switch {
+                            set_active: model.settings.boolean("auto-start-enabled"),
+                            set_valign: gtk::Align::Center,
+                            connect_state_set[sender] => move |_, state| {
+                                sender.input(Input::AutoStartRequest(state));
+                                Propagation::Stop
+                            }
+                        }
+                    },
                     #[name = "autoreconnect_switch"]
                     add = &adw::SwitchRow {
                         set_title: "Automatically reconnect",
                         set_subtitle: "When BLE connection is lost",
                         connect_active_notify[sender] => move |wgt| {
-                            _ = sender.output(Message::AutoReconnect(wgt.is_active()));
-                        }
-                    },
-                    #[name = "background_switch"]
-                    add = &adw::SwitchRow {
-                        set_title: "Run in background",
-                        set_subtitle: "When closed",
-                        connect_active_notify[sender] => move |wgt| {
-                            _ = sender.output(Message::RunInBackground(wgt.is_active()));
+                            _ = sender.output(Output::AutoReconnect(wgt.is_active()));
                         }
                     },
                 }
@@ -85,25 +120,96 @@ impl Component for Model {
     }
 
     fn init(settings: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
-        let model = Self { settings };
+        let model = Self {
+            background_switch: gtk::Switch::new(),
+            autostart_switch: gtk::Switch::new(),
+            settings
+        };
+
+        let background_switch = model.background_switch.clone();
+        let autostart_switch = model.autostart_switch.clone();
         let widgets = view_output!();
+        // Bind simple settings
         model.settings.bind("auto-reconnect-enabled", &widgets.autoreconnect_switch, "active").build();
-        model.settings.bind("run-in-background-enabled", &widgets.background_switch, "active").build();
+        // Signal start-up settings
+        _ = sender.output(Output::RunInBackground(model.settings.boolean("run-in-background-enabled")));
+        _ = sender.output(Output::AutoStart(model.settings.boolean("auto-start-enabled")));
+        _ = sender.output(Output::AutoReconnect(model.settings.boolean("auto-reconnect-enabled")));
         ComponentParts { model, widgets }
     }
 
-    fn update(&mut self, msg: Self::Input, _sender: ComponentSender<Self>, _root: &Self::Root) {
-        let result = match msg {
-            Message::AutoReconnect(value) => {
-                self.settings.set_boolean("auto-reconnect-enabled", value)
+    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, _root: &Self::Root) {
+        match msg {
+            Input::RunInBackgroundRequest(enabled) => {
+                if self.background_switch.state() == self.background_switch.is_active() {
+                    // Switch state was reverted, do nothing
+                } else if enabled {
+                    let autostart = self.settings.boolean("auto-start-enabled");
+                    let native_window = native_window().unwrap();
+                    relm4::spawn_local(async move {
+                        let identifier = WindowIdentifier::from_native(&native_window).await;
+                        let request = Background::request()
+                            .identifier(identifier)
+                            .auto_start(autostart)
+                            .command(["watchmate"])
+                            .reason("Why not?");
+                        match request.send().await.and_then(|r| r.response()) {
+                            Ok(response ) => {
+                                sender.input(Input::RunInBackgroundResponse(response.run_in_background()));
+                            }
+                            Err(error) => {
+                                sender.input(Input::RunInBackgroundResponse(false));
+                                log::error!("Background portal request failed: {error}");
+                            }
+                        }
+                    });
+                } else {
+                    sender.input(Input::RunInBackgroundResponse(false));
+                }
             }
-            Message::RunInBackground(value) => {
-                self.settings.set_boolean("run-in-background-enabled", value)
+            Input::AutoStartRequest(enabled) => {
+                if self.autostart_switch.state() == self.autostart_switch.is_active() {
+                    // Switch state was reverted, do nothing
+                } else {
+                    let old_state = self.autostart_switch.state();
+                    let native_window = native_window().unwrap();
+                    relm4::spawn_local(async move {
+                        let identifier = WindowIdentifier::from_native(&native_window).await;
+                        let request = Background::request()
+                            .identifier(identifier)
+                            .auto_start(enabled)
+                            .command(["watchmate"])
+                            .reason("Why not?");
+                        match request.send().await.and_then(|r| r.response()) {
+                            Ok(response) => {
+                                sender.input(Input::AutoStartResponse(response.auto_start()));
+                            }
+                            Err(error) => {
+                                sender.input(Input::AutoStartResponse(old_state));
+                                log::error!("Background portal request failed: {error}");
+                            }
+                        }
+                    });
+                }
+            }
+            Input::RunInBackgroundResponse(enabled) => {
+                self.background_switch.set_state(enabled);
+                self.background_switch.set_active(enabled);
+                _ = self.settings.set_boolean("run-in-background-enabled", enabled);
+                _ = sender.output(Output::RunInBackground(enabled));
+            }
+            Input::AutoStartResponse(enabled) => {
+                self.autostart_switch.set_state(enabled);
+                self.autostart_switch.set_active(enabled);
+                _ = self.settings.set_boolean("auto-start-enabled", enabled);
+                _ = sender.output(Output::AutoStart(enabled));
             }
         };
-        if let Err(error) = result {
-            log::error!("Failed to update setting: {}", error);
-        }
     }
 }
 
+fn native_window() -> Option<gtk::Native> {
+    relm4::main_application()
+        .active_window()
+        .and_then(|w| w.native())
+}
