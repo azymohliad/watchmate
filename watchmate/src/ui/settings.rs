@@ -7,7 +7,7 @@ use gtk::{
 };
 use adw::prelude::{PreferencesPageExt, PreferencesGroupExt, PreferencesRowExt, ActionRowExt};
 use relm4::{adw, gtk, ComponentParts, ComponentSender, Component};
-use ashpd::{desktop::background::Background, WindowIdentifier};
+use ashpd::{desktop::background::Background, WindowIdentifier, Error};
 
 
 #[derive(Debug)]
@@ -29,6 +29,27 @@ pub struct Model {
     background_switch: gtk::Switch,
     autostart_switch: gtk::Switch,
     settings: gio::Settings,
+}
+
+impl Model {
+    fn background_portal_request<F>(&self, autostart: bool, handler: F)
+        where F: Fn(Result<Background, Error>) + 'static
+    {
+        let native_window = relm4::main_application()
+            .active_window()
+            .and_then(|w| w.native())
+            .unwrap();
+        relm4::spawn_local(async move {
+            let identifier = WindowIdentifier::from_native(&native_window).await;
+            let request = Background::request()
+                .identifier(identifier)
+                .auto_start(autostart)
+                .command(["watchmate"])
+                .reason("Keep the watch connected, forward notifications, control media player");
+            let response = request.send().await.and_then(|r| r.response());
+            handler(response);
+        });
+    }
 }
 
 
@@ -145,22 +166,13 @@ impl Component for Model {
                     // Switch state was reverted, do nothing
                 } else if enabled {
                     let autostart = self.settings.boolean("auto-start-enabled");
-                    let native_window = native_window().unwrap();
-                    relm4::spawn_local(async move {
-                        let identifier = WindowIdentifier::from_native(&native_window).await;
-                        let request = Background::request()
-                            .identifier(identifier)
-                            .auto_start(autostart)
-                            .command(["watchmate"])
-                            .reason("Why not?");
-                        match request.send().await.and_then(|r| r.response()) {
-                            Ok(response ) => {
-                                sender.input(Input::RunInBackgroundResponse(response.run_in_background()));
-                            }
-                            Err(error) => {
-                                sender.input(Input::RunInBackgroundResponse(false));
-                                log::error!("Background portal request failed: {error}");
-                            }
+                    self.background_portal_request(autostart, move |r| match r {
+                        Ok(response ) => {
+                            sender.input(Input::RunInBackgroundResponse(response.run_in_background()));
+                        }
+                        Err(error) => {
+                            sender.input(Input::RunInBackgroundResponse(false));
+                            log::error!("Background portal request failed: {error}");
                         }
                     });
                 } else {
@@ -172,22 +184,13 @@ impl Component for Model {
                     // Switch state was reverted, do nothing
                 } else {
                     let old_state = self.autostart_switch.state();
-                    let native_window = native_window().unwrap();
-                    relm4::spawn_local(async move {
-                        let identifier = WindowIdentifier::from_native(&native_window).await;
-                        let request = Background::request()
-                            .identifier(identifier)
-                            .auto_start(enabled)
-                            .command(["watchmate"])
-                            .reason("Why not?");
-                        match request.send().await.and_then(|r| r.response()) {
-                            Ok(response) => {
-                                sender.input(Input::AutoStartResponse(response.auto_start()));
-                            }
-                            Err(error) => {
-                                sender.input(Input::AutoStartResponse(old_state));
-                                log::error!("Background portal request failed: {error}");
-                            }
+                    self.background_portal_request(enabled, move |r| match r {
+                        Ok(response) => {
+                            sender.input(Input::AutoStartResponse(response.auto_start()));
+                        }
+                        Err(error) => {
+                            sender.input(Input::AutoStartResponse(old_state));
+                            log::error!("Background portal request failed: {error}");
                         }
                     });
                 }
@@ -206,10 +209,4 @@ impl Component for Model {
             }
         };
     }
-}
-
-fn native_window() -> Option<gtk::Native> {
-    relm4::main_application()
-        .active_window()
-        .and_then(|w| w.native())
 }
