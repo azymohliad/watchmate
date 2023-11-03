@@ -5,13 +5,17 @@
       <default>false</default>
       <summary>Notification forwarding</summary>
     </key>
-    <key name="auto-reconnect-enabled" type="b">
-      <default>true</default>
-      <summary>Automatic reconnection</summary>
-    </key>
     <key name="run-in-background-enabled" type="b">
       <default>false</default>
       <summary>Run in background</summary>
+    </key>
+    <key name="auto-start-enabled" type="b">
+      <default>false</default>
+      <summary>Auto-start</summary>
+    </key>
+    <key name="auto-reconnect-enabled" type="b">
+      <default>true</default>
+      <summary>Auto-reconnect</summary>
     </key>
   </schema>
 </schemalist>
