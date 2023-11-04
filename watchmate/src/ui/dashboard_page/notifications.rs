@@ -4,6 +4,7 @@ use std::sync::Arc;
 use gtk::{gio, prelude::{BoxExt, OrientableExt, WidgetExt, SettingsExt, SettingsExtManual}};
 use relm4::{gtk, ComponentParts, ComponentSender, Component, JoinHandle, RelmWidgetExt};
 
+
 #[derive(Debug)]
 pub enum Input {
     Device(Option<Arc<bt::InfiniTime>>),
@@ -84,18 +85,17 @@ impl Component for Model {
                 set_halign: gtk::Align::End,
                 set_hexpand: true,
                 connect_active_notify[sender] => move |switch| {
-                    let state = switch.is_active();
-                    sender.input(Input::SetNotificationSession(state));
+                    sender.input(Input::SetNotificationSession(switch.is_active()));
                 }
             }
         }
     }
 
-    fn init(persistent_settings: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
-        let is_enabled = persistent_settings.boolean("notification-forwarding-enabled");
+    fn init(settings: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
+        let is_enabled = settings.boolean("notification-forwarding-enabled");
         let model = Self { is_enabled, ..Default::default() };
         let widgets = view_output!();
-        persistent_settings.bind("notification-forwarding-enabled", &widgets.switch, "active").build();
+        settings.bind("notification-forwarding-enabled", &widgets.switch, "active").build();
         ComponentParts { model, widgets }
     }
 
