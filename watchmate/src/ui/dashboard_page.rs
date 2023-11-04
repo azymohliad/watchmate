@@ -1,5 +1,4 @@
-use crate::ui;
-use ui::{media_player, firmware_panel, notifications, AssetType};
+use crate::ui::{self, AssetType};
 use infinitime::{tokio, bt};
 
 use std::{sync::Arc, path::PathBuf};
@@ -9,6 +8,10 @@ use adw::prelude::{PreferencesRowExt, ExpanderRowExt};
 use relm4::{adw, gtk::{self, gio}, ComponentController, ComponentParts, ComponentSender, Component, Controller, JoinHandle, RelmWidgetExt};
 use anyhow::{Result, Context};
 use version_compare::Version;
+
+mod media_player;
+mod fwupd;
+mod notifications;
 
 
 #[derive(Debug)]
@@ -46,7 +49,7 @@ pub struct Model {
     // Components
     player_panel: Controller<media_player::Model>,
     notifications_panel: Controller<notifications::Model>,
-    firmware_panel: Controller<firmware_panel::Model>,
+    firmware_panel: Controller<fwupd::Model>,
     // Other
     infinitime: Option<Arc<bt::InfiniTime>>,
     data_task: Option<JoinHandle<()>>,
@@ -450,12 +453,12 @@ impl Component for Model {
             .launch(settings)
             .detach();
 
-        let firmware_panel = firmware_panel::Model::builder()
+        let firmware_panel = fwupd::Model::builder()
             .launch(window)
             .forward(&sender.input_sender(), |message| match message {
-                firmware_panel::Output::LatestFirmwareVersion(f) => Input::LatestFirmwareVersion(f),
-                firmware_panel::Output::FlashAssetFromFile(f, t) => Input::FlashAssetFromFile(f, t),
-                firmware_panel::Output::FlashAssetFromUrl(u, t) => Input::FlashAssetFromUrl(u, t),
+                fwupd::Output::LatestFirmwareVersion(f) => Input::LatestFirmwareVersion(f),
+                fwupd::Output::FlashAssetFromFile(f, t) => Input::FlashAssetFromFile(f, t),
+                fwupd::Output::FlashAssetFromUrl(u, t) => Input::FlashAssetFromUrl(u, t),
             });
 
         let model = Model {
@@ -541,7 +544,7 @@ impl Component for Model {
             }
             Input::FirmwareVersion(version) => {
                 self.firmware_panel.emit(
-                    firmware_panel::Input::CurrentFirmwareVersion(version.clone())
+                    fwupd::Input::CurrentFirmwareVersion(version.clone())
                 );
                 self.fw_version = Some(version);
                 self.check_fw_update_available();

@@ -144,7 +144,7 @@ impl Component for Model {
         let model = Self {
             background_switch: gtk::Switch::new(),
             autostart_switch: gtk::Switch::new(),
-            settings
+            settings,
         };
 
         let background_switch = model.background_switch.clone();

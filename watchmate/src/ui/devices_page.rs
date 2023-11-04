@@ -2,7 +2,7 @@ use crate::ui;
 use infinitime::{ bluer, bt };
 use std::sync::Arc;
 use futures::{pin_mut, StreamExt};
-use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, ListBoxRowExt, WidgetExt};
+use gtk::{gio, prelude::{BoxExt, ButtonExt, OrientableExt, ListBoxRowExt, WidgetExt}};
 use relm4::{
     adw, gtk,
     factory::{FactoryComponent, FactorySender, FactoryVecDeque, DynamicIndex},
@@ -498,7 +498,7 @@ impl FactoryComponent for DeviceInfo {
                 gtk::Label {
                     set_label: &match self.rssi {
                         Some(rssi) => format!("RSSI: {}", rssi),
-                        None => String::from("Saved"),
+                        None => String::from("Known"),
                     },
                     add_css_class: "dim-label",
                 },

@@ -9,15 +9,12 @@ use relm4::{
 };
 
 
-mod dashboard;
-mod devices;
-mod firmware_update;
-mod firmware_panel;
-mod media_player;
-mod notifications;
-mod settings;
+mod dashboard_page;
+mod devices_page;
+mod fwupd_page;
+mod settings_page;
 
-use firmware_update::AssetType;
+use fwupd_page::AssetType;
 
 static APP_ID: &'static str = "io.gitlab.azymohliad.WatchMate";
 static BROKER: relm4::MessageBroker<Input> = MessageBroker::new();
@@ -62,10 +59,10 @@ struct Model {
     active_view: View,
     is_connected: bool,
     // Components
-    dashboard: Controller<dashboard::Model>,
-    devices: Controller<devices::Model>,
-    fwupd: Controller<firmware_update::Model>,
-    settings: Controller<settings::Model>,
+    dashboard_page: Controller<dashboard_page::Model>,
+    devices_page: Controller<devices_page::Model>,
+    fwupd_page: Controller<fwupd_page::Model>,
+    settings_page: Controller<settings_page::Model>,
     // Other
     infinitime: Option<Arc<bt::InfiniTime>>,
     toast_overlay: adw::ToastOverlay,
@@ -93,16 +90,16 @@ impl Component for Model {
                 set_child = &gtk::Stack {
                     add_named[Some("dashboard_view")] = &gtk::Box {
                         // set_visible: watch!(components.dashboard.model.device.is_some()),
-                        append: model.dashboard.widget(),
+                        append: model.dashboard_page.widget(),
                     },
                     add_named[Some("devices_view")] = &gtk::Box {
-                        append: model.devices.widget(),
+                        append: model.devices_page.widget(),
                     },
                     add_named[Some("fwupd_view")] = &gtk::Box {
-                        append: model.fwupd.widget(),
+                        append: model.fwupd_page.widget(),
                     },
                     add_named[Some("settings_view")] = &gtk::Box {
-                        append: model.settings.widget(),
+                        append: model.settings_page.widget(),
                     },
                     #[watch]
                     set_visible_child_name: match model.active_view {
@@ -117,32 +114,32 @@ impl Component for Model {
     }
 
     fn init(_: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
-        let persistent_settings = gio::Settings::new(APP_ID);
+        let settings = gio::Settings::new(APP_ID);
 
         // Components
-        let dashboard = dashboard::Model::builder()
-            .launch((root.clone(), persistent_settings.clone()))
+        let dashboard_page = dashboard_page::Model::builder()
+            .launch((root.clone(), settings.clone()))
             .forward(&sender.input_sender(), |message| match message {
-                dashboard::Output::FlashAssetFromFile(file, atype) => Input::FlashAssetFromFile(file, atype),
-                dashboard::Output::FlashAssetFromUrl(url, atype) => Input::FlashAssetFromUrl(url, atype),
+                dashboard_page::Output::FlashAssetFromFile(file, atype) => Input::FlashAssetFromFile(file, atype),
+                dashboard_page::Output::FlashAssetFromUrl(url, atype) => Input::FlashAssetFromUrl(url, atype),
             });
 
-        let devices = devices::Model::builder()
+        let devices_page = devices_page::Model::builder()
             .launch(())
             .forward(&sender.input_sender(), |message| match message {
-                devices::Output::DeviceConnected(device) => Input::DeviceConnected(device),
+                devices_page::Output::DeviceConnected(device) => Input::DeviceConnected(device),
             });
 
-        let fwupd = firmware_update::Model::builder()
+        let fwupd_page = fwupd_page::Model::builder()
             .launch(())
             .detach();
 
-        let settings = settings::Model::builder()
-            .launch(persistent_settings.clone())
+        let settings_page = settings_page::Model::builder()
+            .launch(settings.clone())
             .forward(&sender.input_sender(), |message| match message {
-                settings::Output::RunInBackground(on) => Input::SetRunInBackground(on),
-                settings::Output::AutoReconnect(on) => Input::SetAutoReconnect(on),
-                settings::Output::AutoStart(_) => Input::None,
+                settings_page::Output::RunInBackground(on) => Input::SetRunInBackground(on),
+                settings_page::Output::AutoReconnect(on) => Input::SetAutoReconnect(on),
+                settings_page::Output::AutoStart(_) => Input::None,
             });
 
         // Initialize model
@@ -151,10 +148,10 @@ impl Component for Model {
             active_view: View::Devices,
             is_connected: false,
             // Components
-            dashboard,
-            devices,
-            fwupd,
-            settings,
+            dashboard_page,
+            devices_page,
+            fwupd_page,
+            settings_page,
             // Other
             infinitime: None,
             toast_overlay: adw::ToastOverlay::new(),
@@ -214,16 +211,16 @@ impl Component for Model {
             Input::SetView(view) => {
                 if self.active_view != view {
                     if self.active_view == View::Devices {
-                        self.devices.emit(devices::Input::StopDiscovery);
+                        self.devices_page.emit(devices_page::Input::StopDiscovery);
                     }
                     if view == View::Devices {
-                        self.devices.emit(devices::Input::StartDiscovery);
+                        self.devices_page.emit(devices_page::Input::StartDiscovery);
                     }
                     self.active_view = view;
                 }
             }
             Input::SetAutoReconnect(enabled) => {
-                self.devices.emit(devices::Input::SetAutoReconnect(enabled));
+                self.devices_page.emit(devices_page::Input::SetAutoReconnect(enabled));
             }
             Input::SetRunInBackground(enabled) => {
                 root.set_hide_on_close(enabled);
@@ -247,10 +244,10 @@ impl Component for Model {
             Input::DeviceDisconnected => {
                 log::info!("PineTime disconnected");
                 if let Some(infinitime) = self.infinitime.take() {
-                    self.devices.emit(devices::Input::DeviceConnectionLost(infinitime.device().address()));
+                    self.devices_page.emit(devices_page::Input::DeviceConnectionLost(infinitime.device().address()));
                 }
-                self.dashboard.emit(dashboard::Input::Disconnected);
-                self.fwupd.emit(firmware_update::Input::Disconnected);
+                self.dashboard_page.emit(dashboard_page::Input::Disconnected);
+                self.fwupd_page.emit(fwupd_page::Input::Disconnected);
                 sender.input(Input::SetView(View::Devices));
             }
             Input::DeviceReady(infinitime) => {
@@ -259,8 +256,8 @@ impl Component for Model {
                 if self.active_view == View::Devices {
                     self.active_view = View::Dashboard;
                 }
-                self.dashboard.emit(dashboard::Input::Connected(infinitime.clone()));
-                self.fwupd.emit(firmware_update::Input::Connected(infinitime.clone()));
+                self.dashboard_page.emit(dashboard_page::Input::Connected(infinitime.clone()));
+                self.fwupd_page.emit(fwupd_page::Input::Connected(infinitime.clone()));
                 // Handle disconnection
                 relm4::spawn(async move {
                     match infinitime.get_property_stream().await {
@@ -277,14 +274,14 @@ impl Component for Model {
                 });
             }
             Input::DeviceRejected => {
-                self.devices.emit(devices::Input::StartDiscovery);
+                self.devices_page.emit(devices_page::Input::StartDiscovery);
             }
             Input::FlashAssetFromFile(file, atype) => {
-                self.fwupd.emit(firmware_update::Input::FlashAssetFromFile(file, atype));
+                self.fwupd_page.emit(fwupd_page::Input::FlashAssetFromFile(file, atype));
                 sender.input(Input::SetView(View::FirmwareUpdate));
             }
             Input::FlashAssetFromUrl(url, atype) => {
-                self.fwupd.emit(firmware_update::Input::FlashAssetFromUrl(url, atype));
+                self.fwupd_page.emit(fwupd_page::Input::FlashAssetFromUrl(url, atype));
                 sender.input(Input::SetView(View::FirmwareUpdate));
             }
             Input::Toast(message) => {
