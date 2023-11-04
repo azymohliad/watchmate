@@ -352,11 +352,15 @@ pub fn run() {
     // Init icons
     relm4_icons::initialize_icons();
 
-    let start_in_background = env::args().any(|a| a == "--background");
+    // Handle CLI args
+    let known_args = ["--background"];
+    let (local_args, other_args): (Vec<_>, Vec<_>) = env::args()
+        .partition(|a| known_args.contains(&a.as_str()));
+    let start_in_background = local_args.contains(&String::from("--background"));
 
     // Run app
     RelmApp::new(APP_ID)
-        .with_args(vec![])
+        .with_args(other_args)
         .with_broker(&BROKER)
         .run::<Model>(start_in_background);
 }
