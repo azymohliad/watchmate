@@ -1,38 +1,48 @@
 use infinitime::{bluer, bt};
-use std::{sync::Arc, path::PathBuf};
+use std::{sync::Arc, path::PathBuf, env};
 use futures::{pin_mut, StreamExt};
-use gtk::{gio, prelude::{BoxExt, GtkWindowExt, SettingsExt, WidgetExt}};
+use gtk::{gio, glib, prelude::{ApplicationExt, BoxExt, GtkWindowExt, SettingsExt, WidgetExt}};
 use relm4::{
-    adw, gtk, Component, ComponentController, ComponentParts,
+    adw, gtk, actions::{AccelsPlus, RelmAction, RelmActionGroup},
+    Component, ComponentController, ComponentParts,
     ComponentSender, Controller, RelmApp, MessageBroker
 };
-use ashpd::{desktop::background::Background, WindowIdentifier};
 
 
-mod dashboard;
-mod devices;
-mod firmware_update;
-mod firmware_panel;
-mod media_player;
-mod notifications;
-mod settings;
+mod dashboard_page;
+mod devices_page;
+mod fwupd_page;
+mod settings_page;
 
-use firmware_update::AssetType;
 
 static APP_ID: &'static str = "io.gitlab.azymohliad.WatchMate";
+static SETTING_NOTIFICATIONS: &'static str = "forward-notifications";
+static SETTING_BACKGROUND: &'static str = "run-in-background";
+static SETTING_AUTO_START: &'static str = "auto-start";
+static SETTING_DEVICE_ADDRESS: &'static str = "auto-connect-address";
+
 static BROKER: relm4::MessageBroker<Input> = MessageBroker::new();
+
+
+relm4::new_action_group!(ViewActionGroup, "view");
+relm4::new_stateless_action!(DashboardViewAction, ViewActionGroup, "dashboard");
+relm4::new_stateless_action!(DevicesViewAction, ViewActionGroup, "devices");
+relm4::new_stateless_action!(SettingsViewAction, ViewActionGroup, "settings");
+relm4::new_stateless_action!(AboutAction, ViewActionGroup, "about");
+relm4::new_action_group!(WindowActionGroup, "win");
+relm4::new_stateless_action!(CloseAction, WindowActionGroup, "close");
+relm4::new_stateless_action!(QuitAction, WindowActionGroup, "quit");
+
 
 #[derive(Debug)]
 enum Input {
     SetView(View),
-    SetAutoReconnect(bool),
-    SetRunInBackground(bool),
     DeviceConnected(Arc<bluer::Device>),
     DeviceDisconnected,
     DeviceReady(Arc<bt::InfiniTime>),
     DeviceRejected,
-    FlashAssetFromFile(PathBuf, AssetType),
-    FlashAssetFromUrl(String, AssetType),
+    FlashAssetFromFile(PathBuf, fwupd_page::AssetType),
+    FlashAssetFromUrl(String, fwupd_page::AssetType),
     Toast(String),
     ToastStatic(&'static str),
     ToastWithLink {
@@ -40,6 +50,10 @@ enum Input {
         label: &'static str,
         url: &'static str,
     },
+    WindowShown, // Temporary hack
+    About,
+    Close,
+    Quit,
 }
 
 struct Model {
@@ -47,27 +61,33 @@ struct Model {
     active_view: View,
     is_connected: bool,
     // Components
-    dashboard: Controller<dashboard::Model>,
-    devices: Controller<devices::Model>,
-    fwupd: Controller<firmware_update::Model>,
-    settings: Controller<settings::Model>,
+    dashboard_page: Controller<dashboard_page::Model>,
+    devices_page: Controller<devices_page::Model>,
+    fwupd_page: Controller<fwupd_page::Model>,
+    settings_page: Controller<settings_page::Model>,
     // Other
     infinitime: Option<Arc<bt::InfiniTime>>,
     toast_overlay: adw::ToastOverlay,
+    hide_on_startup: bool,  // Temporary hack
 }
 
 #[relm4::component]
 impl Component for Model {
     type CommandOutput = ();
-    type Init = ();
+    type Init = bool;
     type Input = Input;
     type Output = ();
     type Widgets = Widgets;
 
     view! {
+        #[name = "main_window"]
         adw::ApplicationWindow {
             set_default_width: 480,
             set_default_height: 720,
+            set_hide_on_close: settings.boolean(SETTING_BACKGROUND),
+
+            // Temporary hack
+            connect_show => Input::WindowShown,
 
             #[local]
             toast_overlay -> adw::ToastOverlay {
@@ -77,16 +97,16 @@ impl Component for Model {
                 set_child = &gtk::Stack {
                     add_named[Some("dashboard_view")] = &gtk::Box {
                         // set_visible: watch!(components.dashboard.model.device.is_some()),
-                        append: model.dashboard.widget(),
+                        append: model.dashboard_page.widget(),
                     },
                     add_named[Some("devices_view")] = &gtk::Box {
-                        append: model.devices.widget(),
+                        append: model.devices_page.widget(),
                     },
                     add_named[Some("fwupd_view")] = &gtk::Box {
-                        append: model.fwupd.widget(),
+                        append: model.fwupd_page.widget(),
                     },
                     add_named[Some("settings_view")] = &gtk::Box {
-                        append: model.settings.widget(),
+                        append: model.settings_page.widget(),
                     },
                     #[watch]
                     set_visible_child_name: match model.active_view {
@@ -100,52 +120,97 @@ impl Component for Model {
         }
     }
 
-    fn init(_: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
-        let persistent_settings = gio::Settings::new(APP_ID);
+    fn init(start_in_background: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
+        let settings = gio::Settings::new(APP_ID);
+
         // Components
-        let dashboard = dashboard::Model::builder()
-            .launch((root.clone(), persistent_settings.clone()))
+        let dashboard_page = dashboard_page::Model::builder()
+            .launch((root.clone(), settings.clone()))
             .forward(&sender.input_sender(), |message| match message {
-                dashboard::Output::FlashAssetFromFile(file, atype) => Input::FlashAssetFromFile(file, atype),
-                dashboard::Output::FlashAssetFromUrl(url, atype) => Input::FlashAssetFromUrl(url, atype),
+                dashboard_page::Output::FlashAssetFromFile(file, atype) => Input::FlashAssetFromFile(file, atype),
+                dashboard_page::Output::FlashAssetFromUrl(url, atype) => Input::FlashAssetFromUrl(url, atype),
             });
 
-        let devices = devices::Model::builder()
-            .launch(())
+        let devices_page = devices_page::Model::builder()
+            .launch(settings.clone())
             .forward(&sender.input_sender(), |message| match message {
-                devices::Output::DeviceConnected(device) => Input::DeviceConnected(device),
+                devices_page::Output::DeviceConnected(device) => Input::DeviceConnected(device),
             });
 
-        let fwupd = firmware_update::Model::builder()
+        let fwupd_page = fwupd_page::Model::builder()
             .launch(())
             .detach();
 
-        let settings = settings::Model::builder()
-            .launch(persistent_settings.clone())
-            .forward(&sender.input_sender(), |message| match message {
-                settings::Message::AutoReconnect(on) => Input::SetAutoReconnect(on),
-                settings::Message::RunInBackground(on) => Input::SetRunInBackground(on),
-            });
+        let settings_page = settings_page::Model::builder()
+            .launch(settings.clone())
+            .detach();
 
-        let toast_overlay = adw::ToastOverlay::new();
-
+        // Initialize model
         let model = Model {
             // UI state
             active_view: View::Devices,
             is_connected: false,
             // Components
-            dashboard,
-            devices,
-            fwupd,
-            settings,
+            dashboard_page,
+            devices_page,
+            fwupd_page,
+            settings_page,
             // Other
             infinitime: None,
-            toast_overlay: toast_overlay.clone(),
+            toast_overlay: adw::ToastOverlay::new(),
+            hide_on_startup: start_in_background,
         };
 
+        // Widgets
+        let toast_overlay = model.toast_overlay.clone();
         let widgets = view_output!();
 
-        model.devices.emit(devices::Input::SetAutoReconnect(persistent_settings.boolean("auto-reconnect-enabled")));
+        // Settings
+        let window = widgets.main_window.clone();
+        settings.connect_changed(Some(SETTING_BACKGROUND), move |settings, _| {
+            window.set_hide_on_close(settings.boolean(SETTING_BACKGROUND));
+        });
+
+        // Actions
+        let app = relm4::main_application();
+        app.set_accelerators_for_action::<CloseAction>(&["<primary>W"]);
+        app.set_accelerators_for_action::<QuitAction>(&["<primary>Q"]);
+
+        let mut view_group = RelmActionGroup::<ViewActionGroup>::new();
+        view_group.add_action(RelmAction::<DashboardViewAction>::new_stateless(
+            glib::clone!(@strong sender => move |_| {
+                sender.input(Input::SetView(View::Dashboard));
+            }
+        )));
+        view_group.add_action(RelmAction::<DevicesViewAction>::new_stateless(
+            glib::clone!(@strong sender => move |_| {
+                sender.input(Input::SetView(View::Devices));
+            }
+        )));
+        view_group.add_action(RelmAction::<SettingsViewAction>::new_stateless(
+            glib::clone!(@strong sender => move |_| {
+                sender.input(Input::SetView(View::Settings));
+            }
+        )));
+        view_group.add_action(RelmAction::<AboutAction>::new_stateless(
+            glib::clone!(@strong sender => move |_| {
+                sender.input(Input::About);
+            }
+        )));
+        view_group.register_for_widget(&widgets.main_window);
+
+        let mut global_group = RelmActionGroup::<WindowActionGroup>::new();
+        global_group.add_action(RelmAction::<QuitAction>::new_stateless(
+            glib::clone!(@strong sender => move |_| {
+                sender.input(Input::Quit);
+            }
+        )));
+        global_group.add_action(RelmAction::<CloseAction>::new_stateless(
+            glib::clone!(@strong sender => move |_| {
+                sender.input(Input::Close);
+            }
+        )));
+        global_group.register_for_widget(&widgets.main_window);
 
         ComponentParts { model, widgets }
     }
@@ -156,37 +221,12 @@ impl Component for Model {
             Input::SetView(view) => {
                 if self.active_view != view {
                     if self.active_view == View::Devices {
-                        self.devices.emit(devices::Input::StopDiscovery);
+                        self.devices_page.emit(devices_page::Input::StopDiscovery);
                     }
                     if view == View::Devices {
-                        self.devices.emit(devices::Input::StartDiscovery);
+                        self.devices_page.emit(devices_page::Input::StartDiscovery);
                     }
                     self.active_view = view;
-                }
-            }
-            Input::SetAutoReconnect(enabled) => {
-                self.devices.emit(devices::Input::SetAutoReconnect(enabled));
-            }
-            Input::SetRunInBackground(enabled) => {
-                root.set_hide_on_close(enabled);
-                if enabled {
-                    let native_root = root.native().unwrap();
-                    let settings_sender = self.settings.sender().clone();
-                    relm4::spawn_local(async move {
-                        let identifier = WindowIdentifier::from_native(&native_root).await;
-                        let request = Background::request()
-                            .identifier(identifier)
-                            .reason("Watchmate needs to run in the background to maintain the connection to your PineTime");
-                        match request.send().await.and_then(|r| r.response()) {
-                            Ok(_response) => {}
-                            Err(err) => {
-                                _ = settings_sender.send(settings::Message::RunInBackground(false));
-                                sender.input(Input::SetRunInBackground(false));
-                                sender.input(Input::ToastStatic("Not allowed to run in background"));
-                                log::error!("Failed to request running in background: {err}");
-                            }
-                        }
-                    });
                 }
             }
             Input::DeviceConnected(device) => {
@@ -208,18 +248,20 @@ impl Component for Model {
             Input::DeviceDisconnected => {
                 log::info!("PineTime disconnected");
                 if let Some(infinitime) = self.infinitime.take() {
-                    self.devices.emit(devices::Input::DeviceConnectionLost(infinitime.device().address()));
+                    self.devices_page.emit(devices_page::Input::DeviceConnectionLost(infinitime.device().address()));
                 }
-                self.dashboard.emit(dashboard::Input::Disconnected);
-                self.fwupd.emit(firmware_update::Input::Disconnected);
+                self.dashboard_page.emit(dashboard_page::Input::Disconnected);
+                self.fwupd_page.emit(fwupd_page::Input::Disconnected);
                 sender.input(Input::SetView(View::Devices));
             }
             Input::DeviceReady(infinitime) => {
                 log::info!("PineTime recognized");
                 self.infinitime = Some(infinitime.clone());
-                self.active_view = View::Dashboard;
-                self.dashboard.emit(dashboard::Input::Connected(infinitime.clone()));
-                self.fwupd.emit(firmware_update::Input::Connected(infinitime.clone()));
+                if self.active_view == View::Devices {
+                    self.active_view = View::Dashboard;
+                }
+                self.dashboard_page.emit(dashboard_page::Input::Connected(infinitime.clone()));
+                self.fwupd_page.emit(fwupd_page::Input::Connected(infinitime.clone()));
                 // Handle disconnection
                 relm4::spawn(async move {
                     match infinitime.get_property_stream().await {
@@ -236,14 +278,14 @@ impl Component for Model {
                 });
             }
             Input::DeviceRejected => {
-                self.devices.emit(devices::Input::StartDiscovery);
+                self.devices_page.emit(devices_page::Input::StartDiscovery);
             }
             Input::FlashAssetFromFile(file, atype) => {
-                self.fwupd.emit(firmware_update::Input::FlashAssetFromFile(file, atype));
+                self.fwupd_page.emit(fwupd_page::Input::FlashAssetFromFile(file, atype));
                 sender.input(Input::SetView(View::FirmwareUpdate));
             }
             Input::FlashAssetFromUrl(url, atype) => {
-                self.fwupd.emit(firmware_update::Input::FlashAssetFromUrl(url, atype));
+                self.fwupd_page.emit(fwupd_page::Input::FlashAssetFromUrl(url, atype));
                 sender.input(Input::SetView(View::FirmwareUpdate));
             }
             Input::Toast(message) => {
@@ -261,6 +303,32 @@ impl Component for Model {
                         .launch(Some(&root), gio::Cancellable::NONE, |_| ());
                 });
                 self.toast_overlay.add_toast(toast);
+            }
+            Input::WindowShown => {
+                // Temporary hack required because Relm4 unconditionaly makes the
+                // main window visible upon gtk::Application::activate signal
+                if self.hide_on_startup {
+                    root.set_visible(false);
+                }
+                self.hide_on_startup = false;
+            }
+            Input::About => {
+                adw::AboutWindow::builder()
+                    .transient_for(root)
+                    .application_icon(APP_ID)
+                    .application_name("WatchMate")
+                    .version("v0.4.6")
+                    .website("https://github.com/azymohliad/watchmate")
+                    .issue_url("https://github.com/azymohliad/watchmate/issues")
+                    .license_type(gtk::License::Gpl30)
+                    .build()
+                    .present();
+            }
+            Input::Close => {
+                root.close();
+            }
+            Input::Quit => {
+                root.application().unwrap().quit();
             }
         }
     }
@@ -284,8 +352,15 @@ pub fn run() {
     // Init icons
     relm4_icons::initialize_icons();
 
+    // Handle CLI args
+    let known_args = ["--background"];
+    let (local_args, other_args): (Vec<_>, Vec<_>) = env::args()
+        .partition(|a| known_args.contains(&a.as_str()));
+    let start_in_background = local_args.contains(&String::from("--background"));
+
     // Run app
     RelmApp::new(APP_ID)
+        .with_args(other_args)
         .with_broker(&BROKER)
-        .run::<Model>(());
+        .run::<Model>(start_in_background);
 }
