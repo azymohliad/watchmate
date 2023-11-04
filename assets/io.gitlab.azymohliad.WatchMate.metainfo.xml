@@ -13,10 +13,10 @@
     <p>Features:</p>
     <ul>
       <li>Set time</li>
-      <li>Read various data from PineTime</li>
-      <li>OTA firmware and resources update</li>
+      <li>Read various data from the PineTime</li>
+      <li>Update firmware and resources OTA</li>
       <li>Automatically check for available firmware updates</li>
-      <li>Media player control</li>
+      <li>Control the media player</li>
       <li>Forward desktop notifications</li>
     </ul>
   </description>
@@ -53,76 +53,90 @@
   </recommends>
 
   <releases>
+    <release version="0.5.0" date="2023-11-04">
+      <description>
+        <ul>
+          <li>Added persistent settings.</li>
+          <li>Added an option to run in the background.</li>
+          <li>Added an option to auto-start on login.</li>
+          <li>Added automatic reconnection when the connection is lost.</li>
+          <li>Reworked automatic connection on startup.</li>
+          <li>Added an "About" dialog.</li>
+          <li>Made minor UI improvements.</li>
+          <li>Fixed recovery from system suspend.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.4.5" date="2023-05-19">
       <description>
         <ul>
-          <li>Add mobile-friendly declaration for Phosh</li>
-          <li>Bundle symbolic icons</li>
+          <li>Added mobile-friendly declaration for Phosh.</li>
+          <li>Bundled symbolic icons.</li>
         </ul>
       </description>
     </release>
     <release version="0.4.4" date="2023-03-19">
       <description>
         <ul>
-          <li>Add support for older versions of InfiniTime (tested with v0.8.3)</li>
+          <li>Added support for older versions of InfiniTime (tested with v0.8.3).</li>
         </ul>
       </description>
     </release>
     <release version="0.4.3" date="2023-03-15">
       <description>
         <ul>
-          <li>Warn when trying to flash unsupported firmware release or mismatching resource version</li>
-          <li>Disable resource flash and download buttons for releases without resources</li>
+          <li>Added warning when trying to flash unsupported firmware release or mismatching resource version.</li>
+          <li>Disabled resource flash and download buttons for releases without resources.</li>
         </ul>
       </description>
     </release>
     <release version="0.4.2" date="2023-02-20">
       <description>
         <ul>
-          <li>Improve notifications permission error message</li>
+          <li>Improved notifications permission error message.</li>
         </ul>
       </description>
     </release>
     <release version="0.4.1" date="2023-02-11">
       <description>
         <ul>
-          <li>Fix minimum window width issue</li>
+          <li>Fixed minimum window width issue.</li>
         </ul>
       </description>
     </release>
     <release version="0.4.0" date="2023-02-04">
       <description>
         <ul>
-          <li>Updated dependencies</li>
-          <li>Added basic desktop notifications propagation</li>
-          <li>Added external resources support</li>
-          <li>Added step count reading</li>
-          <li>Battery level now updates automatically, instead of at startup only</li>
-          <li>Implemented proper PineTime disconnection handling</li>
-          <li>Removed scanning toggle button, discovery is more automatic now</li>
-          <li>Various minor fixes and improvements</li>
+          <li>Updated dependencies.</li>
+          <li>Added basic desktop notifications propagation.</li>
+          <li>Added external resources support.</li>
+          <li>Added step count reading.</li>
+          <li>Battery level now updates automatically, instead of at startup only.</li>
+          <li>Implemented proper PineTime disconnection handling.</li>
+          <li>Removed scanning toggle button, discovery is more automatic now.</li>
+          <li>Various minor fixes and improvements.</li>
         </ul>
       </description>
     </release>
     <release version="0.3.0" date="2022-09-01">
       <description>
         <ul>
-          <li>Replaced println with a proper logging</li>
-          <li>Media players list now updates automatically and immediately</li>
-          <li>Added file save dialog for firmware download</li>
-          <li>Removed xdg-download filesystem permission for Flatpak</li>
-          <li>Enabled GPU acceleration for Flatpak</li>
-          <li>Fixed crash on startup if bluetooth adapter is disabled or missing</li>
+          <li>Replaced println with a proper logging.</li>
+          <li>Media players list now updates automatically and immediately.</li>
+          <li>Added file save dialog for firmware download.</li>
+          <li>Removed xdg-download filesystem permission for Flatpak.</li>
+          <li>Enabled GPU acceleration for Flatpak.</li>
+          <li>Fixed crash on startup if bluetooth adapter is disabled or missing.</li>
         </ul>
       </description>
     </release>
     <release version="0.2.0" date="2022-08-18">
       <description>
         <ul>
-          <li>Replaced file chooser widget with the dialog</li>
-          <li>Removed unwanted toast notifications</li>
-          <li>Implemented media player integration</li>
-          <li>Various UI improvements</li>
+          <li>Replaced file chooser widget with the dialog.</li>
+          <li>Removed unwanted toast notifications.</li>
+          <li>Implemented media player integration.</li>
+          <li>Various UI improvements.</li>
         </ul>
       </description>
     </release>

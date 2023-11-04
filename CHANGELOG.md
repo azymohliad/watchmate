@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.5.0 - 2023-11-04
 
 - Added persistent settings.
 - Added an option to run in the background.
@@ -9,6 +9,7 @@
 - Reworked automatic connection on startup.
 - Added an "About" dialog.
 - Made minor UI improvements.
+- Fixed recovery from system suspend.
 
 
 ## v0.4.6 - 2023-10-10
