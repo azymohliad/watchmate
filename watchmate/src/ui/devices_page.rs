@@ -1,8 +1,9 @@
 use crate::ui;
+use std::str::FromStr;
 use infinitime::{ bluer, bt };
 use std::sync::Arc;
 use futures::{pin_mut, StreamExt};
-use gtk::{gio, prelude::{BoxExt, ButtonExt, OrientableExt, ListBoxRowExt, WidgetExt}};
+use gtk::{gio, prelude::{BoxExt, ButtonExt, OrientableExt, ListBoxRowExt, WidgetExt, SettingsExt}};
 use relm4::{
     adw, gtk,
     factory::{FactoryComponent, FactorySender, FactoryVecDeque, DynamicIndex},
@@ -25,7 +26,7 @@ pub enum Input {
     DeviceDisconnecting(Arc<bluer::Device>),
     DeviceConnectionFailed,
     DeviceConnectionLost(bluer::Address),
-    SetAutoReconnect(bool),
+    SaveAddress(Option<bluer::Address>),
 }
 
 #[derive(Debug)]
@@ -41,12 +42,14 @@ pub enum CommandOutput {
 }
 
 pub struct Model {
+    settings: gio::Settings,
     devices: FactoryVecDeque<DeviceInfo>,
     adapter: Option<Arc<bluer::Adapter>>,
     gatt_server: Option<bluer::gatt::local::ApplicationHandle>,
     discovery_task: Option<JoinHandle<()>>,
-    auto_reconnect: bool,
-    auto_reconnect_address: Option<bluer::Address>,
+
+    saved_address: Option<bluer::Address>,
+    autoconnect_address: Option<bluer::Address>,
     disconnecting_address: Option<bluer::Address>,
 }
 
@@ -83,7 +86,7 @@ impl Model {
 #[relm4::component(pub)]
 impl Component for Model {
     type CommandOutput = CommandOutput;
-    type Init = ();
+    type Init = gio::Settings;
     type Input = Input;
     type Output = Output;
     type Widgets = Widgets;
@@ -184,7 +187,12 @@ impl Component for Model {
         }
     }
 
-    fn init(_: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
+    fn init(settings: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
+        let saved_address = match settings.string(super::SETTING_DEVICE_ADDRESS).as_str() {
+            "" => None,
+            address => bluer::Address::from_str(address).ok()
+        };
+
         let devices = FactoryVecDeque::builder()
             .launch(gtk::ListBox::new())
             .forward(sender.input_sender(), |output| match output {
@@ -192,14 +200,17 @@ impl Component for Model {
                 DeviceOutput::Disconnected(device) => Input::DeviceDisconnected(device),
                 DeviceOutput::Disconnecting(device) => Input::DeviceDisconnecting(device),
                 DeviceOutput::ConnectionFailed => Input::DeviceConnectionFailed,
+                DeviceOutput::SaveAddress(address) => Input::SaveAddress(address),
             });
+
         let model = Self {
+            settings,
             devices,
             adapter: None,
             gatt_server: None,
             discovery_task: None,
-            auto_reconnect: false,
-            auto_reconnect_address: None,
+            autoconnect_address: saved_address.clone(),
+            saved_address,
             disconnecting_address: None,
         };
 
@@ -245,7 +256,7 @@ impl Component for Model {
                 let address = info.address;
                 let mut devices = self.devices.guard();
                 devices.push_front(info);
-                if Some(address) == self.auto_reconnect_address {
+                if Some(address) == self.autoconnect_address {
                     log::debug!("Detected lost device: {}. Trying to reconnect...", address);
                     sender.input(Input::StopDiscovery);
                     devices.send(0, DeviceInput::Connect);
@@ -256,10 +267,11 @@ impl Component for Model {
                 if let Some(adapter) = &self.adapter {
                     if let Ok(device) = adapter.device(address) {
                         let device = Arc::new(device);
+                        let saved = Some(address) == self.saved_address;
                         relm4::spawn(async move {
                             if bt::InfiniTime::check_device(&device).await {
                                 log::debug!("Device discovered: {}", address);
-                                match DeviceInfo::new(device).await {
+                                match DeviceInfo::new(device, saved).await {
                                     Ok(info) => sender.input(Input::DeviceInfoReady(info)),
                                     Err(error) => log::error!("Failed to read device info: {}", error),
                                 }
@@ -284,7 +296,7 @@ impl Component for Model {
             Input::DeviceSelected(index) => {
                 log::debug!("Device selected: {}", index);
                 sender.input(Input::StopDiscovery);
-                self.auto_reconnect_address = None;
+                self.autoconnect_address = None;
                 if let Some(device) = self.devices.get(index as usize) {
                     if device.state != DeviceState::Transitioning {
                         self.devices.send(index as usize, DeviceInput::Connect);
@@ -294,14 +306,16 @@ impl Component for Model {
 
             Input::DeviceConnected(device) => {
                 log::debug!("Device connected successfully: {}", device.address());
-                self.auto_reconnect_address = None;
+                self.autoconnect_address = None;
+                _ = self.settings.set_string(super::SETTING_DEVICE_ADDRESS, &device.address().to_string());
+                sender.input(Input::SaveAddress(Some(device.address())));
                 sender.output(Output::DeviceConnected(device)).unwrap();
             }
 
             Input::DeviceDisconnected(device) => {
                 log::debug!("Device disconnected successfully: {}", device.address());
-                if Some(device.address()) == self.auto_reconnect_address {
-                    self.auto_reconnect_address = None;
+                if Some(device.address()) == self.autoconnect_address {
+                    self.autoconnect_address = None;
                 }
                 self.disconnecting_address = None;
                 // Repopulate known devices
@@ -326,15 +340,17 @@ impl Component for Model {
                 if let Some((idx, _)) = result {
                     devices.send(idx, DeviceInput::StateUpdated(DeviceState::Disconnected));
                 }
-                if self.auto_reconnect && Some(address) != self.disconnecting_address {
-                    self.auto_reconnect_address = Some(address);
+                if Some(address) != self.disconnecting_address && Some(address) == self.saved_address {
+                    self.autoconnect_address = Some(address);
                     sender.input(Input::StartDiscovery);
                 }
             }
 
-            Input::SetAutoReconnect(enabled) => {
-                self.auto_reconnect = enabled;
-                self.auto_reconnect_address = None;
+            Input::SaveAddress(address) => {
+                self.saved_address = address;
+                let address_str = address.map(|a| a.to_string()).unwrap_or_default();
+                _ = self.settings.set_string(super::SETTING_DEVICE_ADDRESS, &address_str);
+                self.devices.broadcast(DeviceInput::SavedAddress(address));
             }
         }
     }
@@ -353,10 +369,12 @@ impl Component for Model {
                     });
 
                     // Read known devices list
+                    let saved_address = self.saved_address.clone();
                     sender.oneshot_command(async move {
                         let mut devices = Vec::new();
                         for device in bt::InfiniTime::list_known_devices(&adapter).await.unwrap() {
-                            devices.push(DeviceInfo::new(Arc::new(device)).await.unwrap())
+                            let saved = Some(device.address()) == saved_address;
+                            devices.push(DeviceInfo::new(Arc::new(device), saved).await.unwrap())
                         }
                         CommandOutput::KnownDevices(devices)
                     });
@@ -392,14 +410,16 @@ impl Component for Model {
                         if let Ok(device) = adapter.device(address) {
                             let device = Arc::new(device);
                             sender.output(Output::DeviceConnected(device)).unwrap();
+                            self.autoconnect_address = None;
                             log::info!("InfiniTime ({}) is already connected", address.to_string());
                         }
                     }
                 } else {
-                    if devices_guard.len() == 1 {
-                        // If only one suitable device is known - try to connect to it automatically
-                        sender.input(Input::DeviceSelected(0));
-                        log::info!("Trying to connect to InfiniTime ({})", devices_guard[0].address.to_string());
+                    if let Some((i, d)) = devices_guard.iter().enumerate().find(
+                        |(_, d)| Some(d.address) == self.autoconnect_address
+                    ) {
+                        log::info!("Trying to connect to InfiniTime ({})", d.address.to_string());
+                        devices_guard.send(i, DeviceInput::Connect);
                     } else {
                         // Otherwise, start discovery
                         sender.input(Input::StartDiscovery);
@@ -410,17 +430,18 @@ impl Component for Model {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct DeviceInfo {
     address: bluer::Address,
     alias: String,
     rssi: Option<i16>,
     state: DeviceState,
     device: Arc<bluer::Device>,
+    saved: bool,
 }
 
 impl DeviceInfo {
-    async fn new(device: Arc<bluer::Device>) -> bluer::Result<Self> {
+    async fn new(device: Arc<bluer::Device>, saved: bool) -> bluer::Result<Self> {
         let state = if device.is_connected().await? {
             DeviceState::Connected
         } else {
@@ -432,22 +453,25 @@ impl DeviceInfo {
             rssi: device.rssi().await?,
             state,
             device,
+            saved,
         })
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum DeviceState {
     Disconnected,
     Transitioning,
     Connected,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum DeviceInput {
     Connect,
     Disconnect,
     StateUpdated(DeviceState),
+    SavedToggle,
+    SavedAddress(Option<bluer::Address>),
 }
 
 #[derive(Debug)]
@@ -456,6 +480,7 @@ pub enum DeviceOutput {
     Disconnected(Arc<bluer::Device>),
     Disconnecting(Arc<bluer::Device>),
     ConnectionFailed,
+    SaveAddress(Option<bluer::Address>),
 }
 
 // Factory for device list
@@ -474,8 +499,23 @@ impl FactoryComponent for DeviceInfo {
             gtk::Box {
                 set_orientation: gtk::Orientation::Horizontal,
                 set_margin_all: 12,
-                set_spacing: 10,
+                set_spacing: 5,
                 set_hexpand: true,
+
+                gtk::Button {
+                    #[watch]
+                    set_tooltip_text: match self.saved {
+                        true => Some("Disable automatic re-connection"),
+                        false => Some("Enable automatic re-connection"),
+                    },
+                    #[watch]
+                    set_icon_name: match self.saved {
+                        true => "heart-filled-symbolic",
+                        false => "heart-outline-thin-symbolic",
+                    },
+                    add_css_class: "flat",
+                    connect_clicked => DeviceInput::SavedToggle,
+                },
 
                 gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
@@ -487,25 +527,32 @@ impl FactoryComponent for DeviceInfo {
                         set_label: &self.alias,
                     },
 
-                    gtk::Label {
-                        set_halign: gtk::Align::Start,
-                        set_hexpand: true,
-                        set_label: &self.address.to_string(),
-                        add_css_class: "dim-label",
-                    },
-                },
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Horizontal,
+                        set_margin_all: 0,
+                        set_spacing: 10,
 
-                gtk::Label {
-                    set_label: &match self.rssi {
-                        Some(rssi) => format!("RSSI: {}", rssi),
-                        None => String::from("Known"),
+                        gtk::Label {
+                            set_halign: gtk::Align::Start,
+                            set_label: &self.address.to_string(),
+                            add_css_class: "dim-label",
+                        },
+
+                        gtk::Label {
+                            set_halign: gtk::Align::Start,
+                            set_hexpand: true,
+                            set_label: &match self.rssi {
+                                Some(rssi) => format!("RSSI: {}", rssi),
+                                None => String::from(""),
+                            },
+                            add_css_class: "dim-label",
+                        },
                     },
-                    add_css_class: "dim-label",
                 },
 
                 gtk::Button {
                     set_tooltip_text: Some("Click to disconnect"),
-                    set_icon_name: "bluetooth-symbolic",
+                    set_icon_name: "cross-symbolic",
                     add_css_class: "flat",
                     #[watch]
                     set_visible: self.state == DeviceState::Connected,
@@ -585,6 +632,18 @@ impl FactoryComponent for DeviceInfo {
 
             DeviceInput::StateUpdated(state) => {
                 self.state = state;
+            }
+
+            DeviceInput::SavedToggle => {
+                let address = match self.saved {
+                    true => None,
+                    false => Some(self.address),
+                };
+                _ = sender.output(DeviceOutput::SaveAddress(address))
+            }
+
+            DeviceInput::SavedAddress(address) => {
+                self.saved = Some(self.address) == address;
             }
         }
     }

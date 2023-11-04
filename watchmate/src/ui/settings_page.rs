@@ -1,8 +1,7 @@
 use crate::ui;
 use gtk::{
     gio, glib::Propagation, prelude::{
-        GtkApplicationExt, OrientableExt, WidgetExt, ButtonExt, SettingsExt,
-        SettingsExtManual
+        GtkApplicationExt, OrientableExt, WidgetExt, ButtonExt, SettingsExt
     }
 };
 use adw::prelude::{PreferencesPageExt, PreferencesGroupExt, PreferencesRowExt, ActionRowExt};
@@ -18,12 +17,6 @@ pub enum Input {
     AutoStartResponse(bool),
 }
 
-#[derive(Debug)]
-pub enum Output {
-    RunInBackground(bool),
-    AutoStart(bool),
-    AutoReconnect(bool),
-}
 
 pub struct Model {
     background_switch: gtk::Switch,
@@ -58,7 +51,7 @@ impl Component for Model {
     type CommandOutput = ();
     type Init = gio::Settings;
     type Input = Input;
-    type Output = Output;
+    type Output = ();
     type Widgets = Widgets;
 
     menu! {
@@ -106,7 +99,7 @@ impl Component for Model {
                         set_subtitle: "When closed",
                         #[local]
                         add_suffix = &background_switch -> gtk::Switch {
-                            set_active: model.settings.boolean("run-in-background-enabled"),
+                            set_active: model.settings.boolean(super::SETTING_BACKGROUND),
                             set_valign: gtk::Align::Center,
                             connect_state_set[sender] => move |_, state| {
                                 sender.input(Input::RunInBackgroundRequest(state));
@@ -115,24 +108,16 @@ impl Component for Model {
                         }
                     },
                     add = &adw::ActionRow {
-                        set_title: "Autostart",
+                        set_title: "Auto-start",
                         set_subtitle: "At login",
                         #[local]
                         add_suffix = &autostart_switch -> gtk::Switch {
-                            set_active: model.settings.boolean("auto-start-enabled"),
+                            set_active: model.settings.boolean(super::SETTING_AUTO_START),
                             set_valign: gtk::Align::Center,
                             connect_state_set[sender] => move |_, state| {
                                 sender.input(Input::AutoStartRequest(state));
                                 Propagation::Stop
                             }
-                        }
-                    },
-                    #[name = "autoreconnect_switch"]
-                    add = &adw::SwitchRow {
-                        set_title: "Automatically reconnect",
-                        set_subtitle: "When BLE connection is lost",
-                        connect_active_notify[sender] => move |wgt| {
-                            _ = sender.output(Output::AutoReconnect(wgt.is_active()));
                         }
                     },
                 }
@@ -150,12 +135,6 @@ impl Component for Model {
         let background_switch = model.background_switch.clone();
         let autostart_switch = model.autostart_switch.clone();
         let widgets = view_output!();
-        // Bind simple settings
-        model.settings.bind("auto-reconnect-enabled", &widgets.autoreconnect_switch, "active").build();
-        // Signal start-up settings
-        _ = sender.output(Output::RunInBackground(model.settings.boolean("run-in-background-enabled")));
-        _ = sender.output(Output::AutoStart(model.settings.boolean("auto-start-enabled")));
-        _ = sender.output(Output::AutoReconnect(model.settings.boolean("auto-reconnect-enabled")));
         ComponentParts { model, widgets }
     }
 
@@ -165,7 +144,7 @@ impl Component for Model {
                 if self.background_switch.state() == self.background_switch.is_active() {
                     // Switch state was reverted, do nothing
                 } else if enabled {
-                    let autostart = self.settings.boolean("auto-start-enabled");
+                    let autostart = self.settings.boolean(super::SETTING_AUTO_START);
                     self.background_portal_request(autostart, move |r| match r {
                         Ok(response ) => {
                             sender.input(Input::RunInBackgroundResponse(response.run_in_background()));
@@ -198,14 +177,12 @@ impl Component for Model {
             Input::RunInBackgroundResponse(enabled) => {
                 self.background_switch.set_state(enabled);
                 self.background_switch.set_active(enabled);
-                _ = self.settings.set_boolean("run-in-background-enabled", enabled);
-                _ = sender.output(Output::RunInBackground(enabled));
+                _ = self.settings.set_boolean(super::SETTING_BACKGROUND, enabled);
             }
             Input::AutoStartResponse(enabled) => {
                 self.autostart_switch.set_state(enabled);
                 self.autostart_switch.set_active(enabled);
-                _ = self.settings.set_boolean("auto-start-enabled", enabled);
-                _ = sender.output(Output::AutoStart(enabled));
+                _ = self.settings.set_boolean(super::SETTING_AUTO_START, enabled);
             }
         };
     }
