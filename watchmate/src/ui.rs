@@ -1,7 +1,7 @@
 use infinitime::{bluer, bt};
 use std::{sync::Arc, path::PathBuf};
 use futures::{pin_mut, StreamExt};
-use gtk::{gio, glib, prelude::{ApplicationExt, BoxExt, GtkWindowExt}};
+use gtk::{gio, glib, prelude::{ApplicationExt, BoxExt, GtkWindowExt, SettingsExt}};
 use relm4::{
     adw, gtk, actions::{AccelsPlus, RelmAction, RelmActionGroup},
     Component, ComponentController, ComponentParts,
@@ -14,9 +14,13 @@ mod devices_page;
 mod fwupd_page;
 mod settings_page;
 
-use fwupd_page::AssetType;
 
 static APP_ID: &'static str = "io.gitlab.azymohliad.WatchMate";
+static SETTING_NOTIFICATIONS: &'static str = "forward-notifications";
+static SETTING_BACKGROUND: &'static str = "run-in-background";
+static SETTING_AUTO_START: &'static str = "auto-start";
+static SETTING_DEVICE_ADDRESS: &'static str = "auto-connect-address";
+
 static BROKER: relm4::MessageBroker<Input> = MessageBroker::new();
 
 
@@ -33,14 +37,12 @@ relm4::new_stateless_action!(QuitAction, WindowActionGroup, "quit");
 #[derive(Debug)]
 enum Input {
     SetView(View),
-    SetAutoReconnect(bool),
-    SetRunInBackground(bool),
     DeviceConnected(Arc<bluer::Device>),
     DeviceDisconnected,
     DeviceReady(Arc<bt::InfiniTime>),
     DeviceRejected,
-    FlashAssetFromFile(PathBuf, AssetType),
-    FlashAssetFromUrl(String, AssetType),
+    FlashAssetFromFile(PathBuf, fwupd_page::AssetType),
+    FlashAssetFromUrl(String, fwupd_page::AssetType),
     Toast(String),
     ToastStatic(&'static str),
     ToastWithLink {
@@ -51,7 +53,6 @@ enum Input {
     About,
     Close,
     Quit,
-    None,
 }
 
 struct Model {
@@ -81,6 +82,7 @@ impl Component for Model {
         adw::ApplicationWindow {
             set_default_width: 480,
             set_default_height: 720,
+            set_hide_on_close: settings.boolean(SETTING_BACKGROUND),
 
             #[local]
             toast_overlay -> adw::ToastOverlay {
@@ -125,7 +127,7 @@ impl Component for Model {
             });
 
         let devices_page = devices_page::Model::builder()
-            .launch(())
+            .launch(settings.clone())
             .forward(&sender.input_sender(), |message| match message {
                 devices_page::Output::DeviceConnected(device) => Input::DeviceConnected(device),
             });
@@ -136,11 +138,7 @@ impl Component for Model {
 
         let settings_page = settings_page::Model::builder()
             .launch(settings.clone())
-            .forward(&sender.input_sender(), |message| match message {
-                settings_page::Output::RunInBackground(on) => Input::SetRunInBackground(on),
-                settings_page::Output::AutoReconnect(on) => Input::SetAutoReconnect(on),
-                settings_page::Output::AutoStart(_) => Input::None,
-            });
+            .detach();
 
         // Initialize model
         let model = Model {
@@ -160,6 +158,12 @@ impl Component for Model {
         // Widgets
         let toast_overlay = model.toast_overlay.clone();
         let widgets = view_output!();
+
+        // Settings
+        let window = widgets.main_window.clone();
+        settings.connect_changed(Some(SETTING_BACKGROUND), move |settings, _| {
+            window.set_hide_on_close(settings.boolean(SETTING_BACKGROUND));
+        });
 
         // Actions
         let app = relm4::main_application();
@@ -218,12 +222,6 @@ impl Component for Model {
                     }
                     self.active_view = view;
                 }
-            }
-            Input::SetAutoReconnect(enabled) => {
-                self.devices_page.emit(devices_page::Input::SetAutoReconnect(enabled));
-            }
-            Input::SetRunInBackground(enabled) => {
-                root.set_hide_on_close(enabled);
             }
             Input::DeviceConnected(device) => {
                 log::info!("Device connected: {}", device.address());
@@ -318,7 +316,6 @@ impl Component for Model {
             Input::Quit => {
                 root.application().unwrap().quit();
             }
-            Input::None => {}
         }
     }
 }

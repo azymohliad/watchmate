@@ -1,4 +1,4 @@
-use crate::ui::{self, AssetType};
+use crate::ui::{self, fwupd_page::AssetType};
 use infinitime::{tokio, bt};
 
 use std::{sync::Arc, path::PathBuf};

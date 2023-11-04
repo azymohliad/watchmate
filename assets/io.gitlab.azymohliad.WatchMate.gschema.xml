@@ -1,21 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <schemalist>
   <schema id="io.gitlab.azymohliad.WatchMate" path="/io/gitlab/azymohliad/WatchMate/">
-    <key name="notification-forwarding-enabled" type="b">
+    <key name="forward-notifications" type="b">
       <default>false</default>
       <summary>Notification forwarding</summary>
     </key>
-    <key name="run-in-background-enabled" type="b">
+    <key name="run-in-background" type="b">
       <default>false</default>
       <summary>Run in background</summary>
     </key>
-    <key name="auto-start-enabled" type="b">
+    <key name="auto-start" type="b">
       <default>false</default>
       <summary>Auto-start</summary>
     </key>
-    <key name="auto-reconnect-enabled" type="b">
-      <default>true</default>
-      <summary>Auto-reconnect</summary>
+    <key name="auto-connect-address" type="s">
+      <default>""</default>
+      <summary>Saved device address</summary>
     </key>
   </schema>
 </schemalist>

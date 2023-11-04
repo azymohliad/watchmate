@@ -92,10 +92,10 @@ impl Component for Model {
     }
 
     fn init(settings: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
-        let is_enabled = settings.boolean("notification-forwarding-enabled");
+        let is_enabled = settings.boolean(ui::SETTING_NOTIFICATIONS);
         let model = Self { is_enabled, ..Default::default() };
         let widgets = view_output!();
-        settings.bind("notification-forwarding-enabled", &widgets.switch, "active").build();
+        settings.bind(ui::SETTING_NOTIFICATIONS, &widgets.switch, "active").build();
         ComponentParts { model, widgets }
     }
 
