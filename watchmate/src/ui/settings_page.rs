@@ -37,7 +37,7 @@ impl Model {
             let request = Background::request()
                 .identifier(identifier)
                 .auto_start(autostart)
-                .command(["watchmate"])
+                .command(["watchmate", "--background"])
                 .reason("Keep the watch connected, forward notifications, control media player");
             let response = request.send().await.and_then(|r| r.response());
             handler(response);
@@ -109,7 +109,7 @@ impl Component for Model {
                     },
                     add = &adw::ActionRow {
                         set_title: "Auto-start",
-                        set_subtitle: "At login",
+                        set_subtitle: "In background at login",
                         #[local]
                         add_suffix = &autostart_switch -> gtk::Switch {
                             set_active: model.settings.boolean(super::SETTING_AUTO_START),
