@@ -45,7 +45,7 @@ pub async fn list_releases() -> Result<Vec<ReleaseInfo>> {
     let response = client
         .get("https://api.github.com/repos/InfiniTimeOrg/InfiniTime/releases")
         .header("Accept", "application/vnd.github+json")
-        .header("User-Agent", "WatchMate")
+        .header("User-Agent", "Watchmate")
         .send().await?;
 
     let status = response.status();
@@ -66,7 +66,7 @@ pub async fn download_content(url: impl IntoUrl) -> Result<Vec<u8>>
     let response = client
         .get(url)
         .header("Accept", "application/octet-stream")
-        .header("User-Agent", "WatchMate")
+        .header("User-Agent", "Watchmate")
         .send().await?;
 
     let status = response.status();
