@@ -1,7 +1,7 @@
 use infinitime::{bluer, bt};
-use std::{sync::Arc, path::PathBuf};
+use std::{sync::Arc, path::PathBuf, env};
 use futures::{pin_mut, StreamExt};
-use gtk::{gio, glib, prelude::{ApplicationExt, BoxExt, GtkWindowExt, SettingsExt}};
+use gtk::{gio, glib, prelude::{ApplicationExt, BoxExt, GtkWindowExt, SettingsExt, WidgetExt}};
 use relm4::{
     adw, gtk, actions::{AccelsPlus, RelmAction, RelmActionGroup},
     Component, ComponentController, ComponentParts,
@@ -50,6 +50,7 @@ enum Input {
         label: &'static str,
         url: &'static str,
     },
+    WindowShown, // Temporary hack
     About,
     Close,
     Quit,
@@ -67,12 +68,13 @@ struct Model {
     // Other
     infinitime: Option<Arc<bt::InfiniTime>>,
     toast_overlay: adw::ToastOverlay,
+    hide_on_startup: bool,  // Temporary hack
 }
 
 #[relm4::component]
 impl Component for Model {
     type CommandOutput = ();
-    type Init = ();
+    type Init = bool;
     type Input = Input;
     type Output = ();
     type Widgets = Widgets;
@@ -83,6 +85,9 @@ impl Component for Model {
             set_default_width: 480,
             set_default_height: 720,
             set_hide_on_close: settings.boolean(SETTING_BACKGROUND),
+
+            // Temporary hack
+            connect_show => Input::WindowShown,
 
             #[local]
             toast_overlay -> adw::ToastOverlay {
@@ -115,7 +120,7 @@ impl Component for Model {
         }
     }
 
-    fn init(_: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
+    fn init(start_in_background: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
         let settings = gio::Settings::new(APP_ID);
 
         // Components
@@ -153,6 +158,7 @@ impl Component for Model {
             // Other
             infinitime: None,
             toast_overlay: adw::ToastOverlay::new(),
+            hide_on_startup: start_in_background,
         };
 
         // Widgets
@@ -298,6 +304,14 @@ impl Component for Model {
                 });
                 self.toast_overlay.add_toast(toast);
             }
+            Input::WindowShown => {
+                // Temporary hack required because Relm4 unconditionaly makes the
+                // main window visible upon gtk::Application::activate signal
+                if self.hide_on_startup {
+                    root.set_visible(false);
+                }
+                self.hide_on_startup = false;
+            }
             Input::About => {
                 adw::AboutWindow::builder()
                     .transient_for(root)
@@ -338,8 +352,11 @@ pub fn run() {
     // Init icons
     relm4_icons::initialize_icons();
 
+    let start_in_background = env::args().any(|a| a == "--background");
+
     // Run app
     RelmApp::new(APP_ID)
+        .with_args(vec![])
         .with_broker(&BROKER)
-        .run::<Model>(());
+        .run::<Model>(start_in_background);
 }
