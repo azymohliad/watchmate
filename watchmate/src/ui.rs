@@ -316,7 +316,7 @@ impl Component for Model {
                 adw::AboutWindow::builder()
                     .transient_for(root)
                     .application_icon(APP_ID)
-                    .application_name("WatchMate")
+                    .application_name("Watchmate")
                     .version("v0.4.6")
                     .website("https://github.com/azymohliad/watchmate")
                     .issue_url("https://github.com/azymohliad/watchmate/issues")
