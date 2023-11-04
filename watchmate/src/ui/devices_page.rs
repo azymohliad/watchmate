@@ -1,5 +1,5 @@
 use crate::ui;
-use std::str::FromStr;
+use std::{str::FromStr, time::Duration};
 use infinitime::{ bluer, bt };
 use std::sync::Arc;
 use futures::{pin_mut, StreamExt};
@@ -250,6 +250,11 @@ impl Component for Model {
             Input::DiscoveryFailed => {
                 log::error!("Device discovery failed");
                 self.discovery_task = None;
+                // Usually this may happen when waking up from suspend. Retry
+                relm4::spawn(async move {
+                    relm4::tokio::time::sleep(Duration::from_secs(1)).await;
+                    sender.input(Input::StartDiscovery);
+                });
             }
 
             Input::DeviceInfoReady(info) => {
