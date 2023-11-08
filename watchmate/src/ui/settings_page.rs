@@ -146,12 +146,18 @@ impl Component for Model {
                 } else if enabled {
                     let autostart = self.settings.boolean(super::SETTING_AUTO_START);
                     self.background_portal_request(autostart, move |r| match r {
-                        Ok(response ) => {
+                        Ok(response) => {
                             sender.input(Input::RunInBackgroundResponse(response.run_in_background()));
+                            if !response.run_in_background() {
+                                ui::BROKER.send(ui::Input::ToastStatic("Not allowed to run in background"));
+                            }
                         }
                         Err(error) => {
-                            sender.input(Input::RunInBackgroundResponse(false));
+                            // Enable the background mode anyway, it might not require the
+                            // permission if the portal is not implemented
+                            sender.input(Input::RunInBackgroundResponse(true));
                             log::error!("Background portal request failed: {error}");
+                            ui::BROKER.send(ui::Input::ToastStatic("Background permission request failed"));
                         }
                     });
                 } else {
@@ -166,10 +172,14 @@ impl Component for Model {
                     self.background_portal_request(enabled, move |r| match r {
                         Ok(response) => {
                             sender.input(Input::AutoStartResponse(response.auto_start()));
+                            if response.auto_start() != enabled {
+                                ui::BROKER.send(ui::Input::ToastStatic("Not allowed to change autostart setting"));
+                            }
                         }
                         Err(error) => {
                             sender.input(Input::AutoStartResponse(old_state));
                             log::error!("Background portal request failed: {error}");
+                            ui::BROKER.send(ui::Input::ToastStatic("Autostart request failed"));
                         }
                     });
                 }
