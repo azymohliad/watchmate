@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.5.1 - 2023-11-09
+
+- Fix the background mode on systems without the Background portal.
+
 ## v0.5.0 - 2023-11-04
 
 - Added persistent settings.

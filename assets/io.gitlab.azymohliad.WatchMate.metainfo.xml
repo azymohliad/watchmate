@@ -53,6 +53,13 @@
   </recommends>
 
   <releases>
+    <release version="0.5.1" date="2023-11-09">
+      <description>
+        <ul>
+          <li>Fix the background mode on systems without the Background portal.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.5.0" date="2023-11-04">
       <description>
         <ul>
