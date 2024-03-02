@@ -125,7 +125,7 @@ impl Component for Model {
         }
     }
 
-    fn init(settings: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
+    fn init(settings: Self::Init, root: Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
         let model = Self {
             background_switch: gtk::Switch::new(),
             autostart_switch: gtk::Switch::new(),

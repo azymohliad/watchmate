@@ -88,7 +88,7 @@ impl Component for Model {
         }
     }
 
-    fn init(_: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
+    fn init(_: Self::Init, root: Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
         let dropdown = gtk::DropDown::default();
         let model = Self { dropdown: dropdown.clone(), ..Default::default() };
         let widgets = view_output!();

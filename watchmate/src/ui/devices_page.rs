@@ -187,7 +187,7 @@ impl Component for Model {
         }
     }
 
-    fn init(settings: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
+    fn init(settings: Self::Init, root: Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
         let saved_address = match settings.string(super::SETTING_DEVICE_ADDRESS).as_str() {
             "" => None,
             address => bluer::Address::from_str(address).ok()
@@ -584,7 +584,7 @@ impl FactoryComponent for DeviceInfo {
     fn init_widgets(
         &mut self,
         _index: &DynamicIndex,
-        root: &Self::Root,
+        root: Self::Root,
         _returned_widget: &gtk::ListBoxRow,
         sender: FactorySender<Self>,
     ) -> Self::Widgets {

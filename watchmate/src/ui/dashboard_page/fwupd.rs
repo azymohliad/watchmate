@@ -255,7 +255,7 @@ impl Component for Model {
         }
     }
 
-    fn init(main_window: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
+    fn init(main_window: Self::Init, root: Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
         let file_filter = gtk::FileFilter::new();
         file_filter.add_pattern("*.zip");
 
@@ -296,8 +296,8 @@ impl Component for Model {
             .launch(AlertSettings {
                 text: String::from("Warning: downgrading!"),
                 secondary_text: Some(String::from("Are you sure you want to downgrade the firmware?")),
-                confirm_label: String::from("Proceed"),
-                cancel_label: String::from("Cancel"),
+                confirm_label: Some(String::from("Proceed")),
+                cancel_label: Some(String::from("Cancel")),
                 option_label: None,
                 is_modal: true,
                 destructive_accept: true,
@@ -313,8 +313,8 @@ impl Component for Model {
             .launch(AlertSettings {
                 text: String::from("Warning: version mismatch!"),
                 secondary_text: Some(String::from("Selected resources do not match the current firmware version")),
-                confirm_label: String::from("Proceed"),
-                cancel_label: String::from("Cancel"),
+                confirm_label: Some(String::from("Proceed")),
+                cancel_label: Some(String::from("Cancel")),
                 option_label: None,
                 is_modal: true,
                 destructive_accept: true,

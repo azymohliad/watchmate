@@ -11,10 +11,10 @@ futures = "0.3"
 anyhow = "1.0"
 version-compare = "0.1"
 log = "0.4"
-env_logger = "0.10"
-ashpd = { version = "0.6.7", features = ["gtk4", "tokio"], default-features = false }
-relm4 = { git = "https://github.com/Relm4/Relm4", features = ["libadwaita", "gnome_45"] }
-relm4-components = { git = "https://github.com/Relm4/Relm4" }
+env_logger = "0.11"
+ashpd = { version = "0.6.8", features = ["gtk4", "tokio"], default-features = false }
+relm4 = { version = "0.7.0-rc.1", features = ["libadwaita", "gnome_45"] }
+relm4-components = { version = "0.7.0-rc.1" }
 relm4-icons = { version = "0.7.0-alpha.2", features = [
     "arrow3-up",
     "bluetooth",

@@ -91,7 +91,7 @@ impl Component for Model {
         }
     }
 
-    fn init(settings: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
+    fn init(settings: Self::Init, root: Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
         let is_enabled = settings.boolean(ui::SETTING_NOTIFICATIONS);
         let model = Self { is_enabled, ..Default::default() };
         let widgets = view_output!();
