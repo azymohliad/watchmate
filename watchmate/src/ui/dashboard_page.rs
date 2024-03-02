@@ -443,7 +443,7 @@ impl Component for Model {
         }
     }
 
-    fn init((window, settings): Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
+    fn init((window, settings): Self::Init, root: Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
 
         let player_panel = media_player::Model::builder()
             .launch(())

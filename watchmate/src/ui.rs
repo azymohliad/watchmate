@@ -120,7 +120,7 @@ impl Component for Model {
         }
     }
 
-    fn init(start_in_background: Self::Init, root: &Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
+    fn init(start_in_background: Self::Init, root: Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
         let settings = gio::Settings::new(APP_ID);
 
         // Components
