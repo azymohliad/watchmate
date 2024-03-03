@@ -36,6 +36,16 @@ Or via the following community-maintained distro packages:
 - [Libadwaita](https://gtk-rs.org/gtk4-rs/stable/latest/book/libadwaita.html#linux)
 - [Rust](https://www.rust-lang.org/tools/install)
 
+##### Add glib schema for persistent settings
+
+Settings schema can be installed locally as follows:
+
+```
+mkdir -p $HOME/.local/share/glib-2.0/schemas/
+cp assets/io.gitlab.azymohliad.WatchMate.gschema.xml $HOME/.local/share/glib-2.0/schemas/
+glib-compile-schemas $HOME/.local/share/glib-2.0/schemas/
+```
+
 ##### Build and Run
 
 To compile and run the project, execute the following command from repo directory:
