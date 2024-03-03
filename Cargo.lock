@@ -3159,7 +3159,6 @@ dependencies = [
  "relm4",
  "relm4-components",
  "relm4-icons",
- "tokio",
  "version-compare",
 ]
 

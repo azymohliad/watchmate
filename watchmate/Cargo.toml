@@ -7,7 +7,6 @@ edition = "2021"
 
 [dependencies]
 infinitime = { path = "../infinitime", features = ["freedesktop", "github"] }
-tokio = { version = "1.36", features = ["time"] }
 futures = "0.3"
 anyhow = "1.0"
 version-compare = "0.1"

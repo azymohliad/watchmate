@@ -8,8 +8,10 @@
   <summary>Manage your PineTime</summary>
 
   <description>
-    <p>Companion app for InfiniTime-powered PineTime smart watch.</p>
-    <p>Visually optimized for GNOME, adaptive for phone and desktop, Linux only.</p>
+    <p>
+      Companion app for InfiniTime-powered PineTime smart watch.
+      Visually optimized for GNOME, adaptive for phone and desktop, Linux only.
+    </p>
     <p>Features:</p>
     <ul>
       <li>Set time</li>
@@ -154,11 +156,8 @@
     </release>
   </releases>
 
-  <custom>
-    <value key="Purism::form_factor">workstation</value>
-    <value key="Purism::form_factor">mobile</value>
-  </custom>
-
-  <developer_name>Andrii Zymohliad</developer_name>
+  <developer id="io.gitlab.azymohliad">
+    <name>Andrii Zymohliad</name>
+  </developer>
   <update_contact>azymohliad@proton.me</update_contact>
 </component>
