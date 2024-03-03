@@ -13,7 +13,10 @@ use relm4::{
 
 #[derive(Debug)]
 pub enum Input {
+    InitSession,
     InitAdapter,
+    AdapterAdded(String),
+    AdapterRemoved(String),
     StartDiscovery,
     StopDiscovery,
     DiscoveryFailed,
@@ -36,6 +39,7 @@ pub enum Output {
 
 #[derive(Debug)]
 pub enum CommandOutput {
+    InitSessionResult(bluer::Result<bluer::Session>),
     InitAdapterResult(bluer::Result<bluer::Adapter>),
     GattServicesResult(bluer::Result<bluer::gatt::local::ApplicationHandle>),
     KnownDevices(Vec<DeviceInfo>),
@@ -44,6 +48,7 @@ pub enum CommandOutput {
 pub struct Model {
     settings: gio::Settings,
     devices: FactoryVecDeque<DeviceInfo>,
+    session: Option<Arc<bluer::Session>>,
     adapter: Option<Arc<bluer::Adapter>>,
     gatt_server: Option<bluer::gatt::local::ApplicationHandle>,
     discovery_task: Option<JoinHandle<()>>,
@@ -54,30 +59,56 @@ pub struct Model {
 }
 
 impl Model {
-    async fn init_adapter() -> bluer::Result<bluer::Adapter> {
-        let session = bluer::Session::new().await?;
+    async fn init_adapter(session: Arc<bluer::Session>) -> bluer::Result<bluer::Adapter> {
         let adapter = session.default_adapter().await?;
-        adapter.set_powered(true).await?;
+        adapter.set_discovery_filter(bluer::DiscoveryFilter {
+            transport: bluer::DiscoveryTransport::Le,
+            pattern: Some(String::from("InfiniTime")),
+            ..Default::default()
+        }).await?;
         Ok(adapter)
+    }
+
+    async fn run_session_stream(session: Arc<bluer::Session>, sender: ComponentSender<Self>) {
+        match session.events().await {
+            Ok(stream) => {
+                pin_mut!(stream);
+                while let Some(event) = stream.next().await {
+                    match event {
+                        bluer::SessionEvent::AdapterAdded(name) => {
+                            sender.input(Input::AdapterAdded(name));
+                        }
+                        bluer::SessionEvent::AdapterRemoved(name) => {
+                            sender.input(Input::AdapterRemoved(name));
+                        }
+                    }
+                }
+            }
+            Err(error) => {
+                log::error!("Failed to monitor bluetooth session events: {}", error)
+            }
+        }
     }
 
     async fn run_discovery(adapter: Arc<bluer::Adapter>, sender: ComponentSender<Self>) {
         match adapter.discover_devices().await {
             Ok(stream) => {
                 pin_mut!(stream);
-                loop {
-                    match stream.next().await {
-                        Some(bluer::AdapterEvent::DeviceAdded(address)) => {
+                while let Some(event) = stream.next().await {
+                    match event {
+                        bluer::AdapterEvent::DeviceAdded(address) => {
                             sender.input(Input::DeviceAdded(address));
                         }
-                        Some(bluer::AdapterEvent::DeviceRemoved(address)) => {
+                        bluer::AdapterEvent::DeviceRemoved(address) => {
                             sender.input(Input::DeviceRemoved(address));
                         }
-                        _ => (),
+                        _ => ()
                     }
                 }
             }
-            Err(_) => sender.input(Input::DiscoveryFailed),
+            Err(err) => {
+                log::error!("Failed to start discovery session: {}", err);
+            }
         }
     }
 }
@@ -144,12 +175,20 @@ impl Component for Model {
                 set_maximum_size: 400,
                 set_vexpand: true,
 
-                if model.adapter.is_some() {
-                    gtk::Box {
-                        set_orientation: gtk::Orientation::Vertical,
-                        set_margin_all: 12,
-                        set_spacing: 10,
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Vertical,
+                    set_margin_all: 12,
+                    set_spacing: 10,
 
+                    if model.session.is_none() {
+                        gtk::Label {
+                            set_label: "Unable to start bluetooth session!",
+                        }
+                    } else if model.adapter.is_none() {
+                        gtk::Label {
+                            set_label: "Bluetooth adapter not found!",
+                        }
+                    } else {
                         gtk::ScrolledWindow {
                             set_hscrollbar_policy: gtk::PolicyType::Never,
                             set_vexpand: true,
@@ -163,24 +202,7 @@ impl Component for Model {
                                     sender.input(Input::DeviceSelected(row.index()))
                                 }
                             },
-                        },
-                    }
-                } else {
-                    gtk::Box {
-                        set_orientation: gtk::Orientation::Vertical,
-                        set_margin_all: 12,
-                        set_spacing: 10,
-                        set_valign: gtk::Align::Center,
-
-                        gtk::Label {
-                            set_label: "Bluetooth adapter not found!",
-                        },
-
-                        gtk::Button {
-                            set_label: "Retry",
-                            set_halign: gtk::Align::Center,
-                            connect_clicked => Input::InitAdapter,
-                        },
+                        }
                     }
                 }
             }
@@ -206,6 +228,7 @@ impl Component for Model {
         let model = Self {
             settings,
             devices,
+            session: None,
             adapter: None,
             gatt_server: None,
             discovery_task: None,
@@ -217,24 +240,48 @@ impl Component for Model {
         let factory_widget = model.devices.widget();
         let widgets = view_output!();
 
-        sender.input(Input::InitAdapter);
+        sender.input(Input::InitSession);
 
         ComponentParts { model, widgets }
     }
 
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, _root: &Self::Root) {
         match msg {
-            Input::InitAdapter => {
+            Input::InitSession => {
                 sender.oneshot_command(async move {
-                    CommandOutput::InitAdapterResult(Self::init_adapter().await)
+                    CommandOutput::InitSessionResult(bluer::Session::new().await)
                 });
+            }
+
+            Input::InitAdapter => {
+                if let Some(session) = self.session.clone() {
+                    sender.oneshot_command(async move {
+                        CommandOutput::InitAdapterResult(Self::init_adapter(session).await)
+                    });
+                }
+            }
+
+            Input::AdapterAdded(_name) => {
+                if self.adapter.is_none() {
+                    sender.input(Input::InitAdapter);
+                }
+            }
+
+            Input::AdapterRemoved(name) => {
+                if self.adapter.as_ref().map(|a| a.name()) == Some(&name) {
+                    log::warn!("Bluetooth adapter is lost");
+                    self.adapter = None;
+                }
             }
 
             Input::StartDiscovery => {
                 if self.discovery_task.is_none() {
                     if let Some(adapter) = self.adapter.clone() {
                         self.devices.guard().clear();
-                        self.discovery_task = Some(relm4::spawn(Self::run_discovery(adapter, sender)));
+                        self.discovery_task = Some(relm4::spawn(async move {
+                            Self::run_discovery(adapter.clone(), sender.clone()).await;
+                            sender.input(Input::DiscoveryFailed);
+                        }));
                         log::info!("Device discovery started");
                     }
                 }
@@ -250,7 +297,11 @@ impl Component for Model {
             Input::DiscoveryFailed => {
                 log::error!("Device discovery failed");
                 self.discovery_task = None;
-                // Usually this may happen when waking up from suspend. Retry
+                // Retry. Usually the discovery fails when the bluetooth
+                // adapter is lost, and in that case this retry will be
+                // ignored and will be attempted next time only after
+                // the adapter is back. But in case it fails while the
+                // adapter is still available, it will retry every second.
                 relm4::spawn(async move {
                     relm4::tokio::time::sleep(Duration::from_secs(1)).await;
                     sender.input(Input::StartDiscovery);
@@ -362,8 +413,20 @@ impl Component for Model {
 
     fn update_cmd(&mut self, msg: Self::CommandOutput, sender: ComponentSender<Self>, _root: &Self::Root) {
         match msg {
+            CommandOutput::InitSessionResult(result) => match result {
+                Ok(session) => {
+                    let session = Arc::new(session);
+                    self.session = Some(session.clone());
+                    relm4::spawn(Self::run_session_stream(session, sender.clone()));
+                    sender.input(Input::InitAdapter);
+                }
+                Err(error) => {
+                    log::error!("Failed to initialize bluetooth session: {error}");
+                }
+            }
             CommandOutput::InitAdapterResult(result) => match result {
                 Ok(adapter) => {
+                    log::debug!("Bluetooth adapter is initialized");
                     let adapter = Arc::new(adapter);
                     self.adapter = Some(adapter.clone());
 
