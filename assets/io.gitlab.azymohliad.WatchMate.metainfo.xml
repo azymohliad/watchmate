@@ -55,6 +55,13 @@
   </recommends>
 
   <releases>
+    <release version="0.5.2" date="2024-03-13">
+      <description>
+        <ul>
+          <li>Fix occasional high CPU usage when trying to reconnect.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.5.1" date="2023-11-09">
       <description>
         <ul>
