@@ -1,15 +1,32 @@
 use crate::ui;
-use std::str::FromStr;
+use std::{str::FromStr, time::Duration};
 use infinitime::{ bluer, bt };
 use std::sync::Arc;
 use futures::{pin_mut, StreamExt};
 use gtk::{gio, prelude::{BoxExt, ButtonExt, OrientableExt, ListBoxRowExt, WidgetExt, SettingsExt}};
 use relm4::{
     adw, gtk,
+    tokio::time::{sleep, timeout},
     factory::{FactoryComponent, FactorySender, FactoryVecDeque, DynamicIndex},
     ComponentParts, ComponentSender, Component, JoinHandle, RelmWidgetExt,
 };
 
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum DiscoveryMode {
+    Periodic { active: Duration, pause: Duration },
+    Continuous,
+}
+
+impl DiscoveryMode {
+    pub fn is_continous(&self) -> bool {
+        self == &Self::Continuous
+    }
+
+    pub fn is_periodic(&self) -> bool {
+        !self.is_continous()
+    }
+}
 
 #[derive(Debug)]
 pub enum Input {
@@ -20,6 +37,8 @@ pub enum Input {
     StartDiscovery,
     StopDiscovery,
     DiscoveryFailed,
+    DiscoveryPaused(bool),
+    DiscoveryMode(DiscoveryMode),
     DeviceInfoReady(DeviceInfo),
     DeviceAdded(bluer::Address),
     DeviceRemoved(bluer::Address),
@@ -52,7 +71,8 @@ pub struct Model {
     adapter: Option<Arc<bluer::Adapter>>,
     gatt_server: Option<bluer::gatt::local::ApplicationHandle>,
     discovery_task: Option<JoinHandle<()>>,
-
+    discovery_mode: DiscoveryMode,
+    discovery_paused: bool,
     saved_address: Option<bluer::Address>,
     autoconnect_address: Option<bluer::Address>,
     disconnecting_address: Option<bluer::Address>,
@@ -111,6 +131,24 @@ impl Model {
             }
         }
     }
+
+    async fn run_periodic_discovery(
+        adapter: Arc<bluer::Adapter>,
+        sender: ComponentSender<Self>,
+        active_duration: Duration,
+        pause_duration: Duration
+    ) {
+        let mut finished = false;
+        while !finished {
+            // Active interval
+            sender.input(Input::DiscoveryPaused(false));
+            let discovery = Self::run_discovery(adapter.clone(), sender.clone());
+            finished = timeout(active_duration, discovery).await.is_ok();
+            // Pause interval
+            sender.input(Input::DiscoveryPaused(true));
+            sleep(pause_duration).await;
+        }
+    }
 }
 
 
@@ -153,7 +191,8 @@ impl Component for Model {
                     gtk::Spinner {
                         #[watch]
                         set_visible: model.discovery_task.is_some(),
-                        set_spinning: true,
+                        #[watch]
+                        set_spinning: !model.discovery_paused,
                     }
                 },
 
@@ -232,6 +271,8 @@ impl Component for Model {
             adapter: None,
             gatt_server: None,
             discovery_task: None,
+            discovery_mode: DiscoveryMode::Continuous,
+            discovery_paused: false,
             autoconnect_address: saved_address.clone(),
             saved_address,
             disconnecting_address: None,
@@ -278,8 +319,17 @@ impl Component for Model {
                 if self.discovery_task.is_none() {
                     if let Some(adapter) = self.adapter.clone() {
                         self.devices.guard().clear();
+                        let discovery_mode = self.discovery_mode.clone();
+                        self.discovery_paused = false;
                         self.discovery_task = Some(relm4::spawn(async move {
-                            Self::run_discovery(adapter.clone(), sender.clone()).await;
+                            match discovery_mode {
+                                DiscoveryMode::Periodic { active, pause } => {
+                                    Self::run_periodic_discovery(adapter, sender.clone(), active, pause).await;
+                                }
+                                DiscoveryMode::Continuous => {
+                                    Self::run_discovery(adapter, sender.clone()).await;
+                                }
+                            }
                             sender.input(Input::DiscoveryFailed);
                         }));
                         log::info!("Device discovery started");
@@ -297,6 +347,30 @@ impl Component for Model {
             Input::DiscoveryFailed => {
                 log::error!("Device discovery failed");
                 self.discovery_task = None;
+            }
+
+            Input::DiscoveryPaused(paused) => {
+                if !paused {
+                    self.devices.guard().clear();
+                }
+                self.discovery_paused = paused;
+            }
+
+            Input::DiscoveryMode(mode) => {
+                match &mode {
+                    DiscoveryMode::Periodic { active, pause } => {
+                        log::info!("Setting discovery mode to periodic: {}s scan | {}s pause", active.as_secs(), pause.as_secs());
+                    }
+                    DiscoveryMode::Continuous => {
+                        log::info!("Setting discovery mode to continuous");
+                    }
+                }
+                self.discovery_mode = mode;
+                // Restart ongoing discovery
+                if self.discovery_task.is_some() {
+                    sender.input(Input::StopDiscovery);
+                    sender.input(Input::StartDiscovery);
+                }
             }
 
             Input::DeviceInfoReady(info) => {
@@ -477,6 +551,7 @@ impl Component for Model {
                     if let Some((i, d)) = devices_guard.iter().enumerate().find(
                         |(_, d)| Some(d.address) == self.autoconnect_address
                     ) {
+                        // If saved device is available, try to connect to it
                         log::info!("Trying to connect to InfiniTime ({})", d.address.to_string());
                         devices_guard.send(i, DeviceInput::Connect);
                     } else {

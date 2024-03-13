@@ -1,5 +1,5 @@
 use infinitime::{bluer, bt};
-use std::{sync::Arc, path::PathBuf, env};
+use std::{env, path::PathBuf, sync::Arc, time::Duration};
 use futures::{pin_mut, StreamExt};
 use gtk::{gio, glib, prelude::{ApplicationExt, BoxExt, GtkWindowExt, SettingsExt, WidgetExt}};
 use relm4::{
@@ -50,7 +50,8 @@ enum Input {
         label: &'static str,
         url: &'static str,
     },
-    WindowShown, // Temporary hack
+    WindowShown,
+    WindowHidden,
     About,
     Close,
     Quit,
@@ -86,8 +87,8 @@ impl Component for Model {
             set_default_height: 720,
             set_hide_on_close: settings.boolean(SETTING_BACKGROUND),
 
-            // Temporary hack
             connect_show => Input::WindowShown,
+            connect_hide => Input::WindowHidden,
 
             #[local]
             toast_overlay -> adw::ToastOverlay {
@@ -309,9 +310,29 @@ impl Component for Model {
                 // main window visible upon gtk::Application::activate signal
                 if self.hide_on_startup {
                     root.set_visible(false);
+                    self.hide_on_startup = false;
                 }
-                self.hide_on_startup = false;
+
+                if root.is_visible() {
+                    self.devices_page.emit(
+                        devices_page::Input::DiscoveryMode(
+                            devices_page::DiscoveryMode::Continuous
+                        )
+                    )
+                }
             }
+
+            Input::WindowHidden => {
+                self.devices_page.emit(
+                    devices_page::Input::DiscoveryMode(
+                        devices_page::DiscoveryMode::Periodic {
+                            active: Duration::from_secs(5),
+                            pause: Duration::from_secs(60),
+                        }
+                    )
+                );
+            }
+
             Input::About => {
                 adw::AboutWindow::builder()
                     .transient_for(root)
