@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.5.2 - 2024-03-13
+
+- Fix occasional high CPU usage when trying to reconnect.
+
 ## v0.5.1 - 2023-11-09
 
 - Fix the background mode on systems without the Background portal.
