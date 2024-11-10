@@ -5,8 +5,6 @@ fn main() {
         // Optional app ID
         Some("io.gitlab.azymohliad.WatchMate"),
         // Custom base resource path:
-        // * defaults to `/com/example/myapp` in this case if not specified explicitly
-        // * or `/org/relm4` if app ID was not specified either
         None::<&str>,
         // Directory with custom icons (if any)
         None::<&str>,
