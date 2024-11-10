@@ -3257,7 +3257,7 @@ checksum = "65fc09f10666a9f147042251e0dda9c18f166ff7de300607007e96bdebc1068d"
 
 [[package]]
 name = "watchmate"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "anyhow",
  "ashpd",

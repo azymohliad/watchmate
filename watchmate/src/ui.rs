@@ -319,7 +319,7 @@ impl Component for Model {
                     .transient_for(root)
                     .application_icon(APP_ID)
                     .application_name("Watchmate")
-                    .version("v0.5.2")
+                    .version("v0.5.3")
                     .website("https://github.com/azymohliad/watchmate")
                     .issue_url("https://github.com/azymohliad/watchmate/issues")
                     .license_type(gtk::License::Gpl30)

@@ -1,12 +1,17 @@
 # Changelog
 
+## v0.5.3 - 2024-11-10
+
+- Fixed compilation issue with Rust >= 1.80.
+- Updated dependencies. Migrated to the latest Relm4.
+
 ## v0.5.2 - 2024-03-13
 
-- Fix occasional high CPU usage when trying to reconnect.
+- Fixed occasional high CPU usage when trying to reconnect.
 
 ## v0.5.1 - 2023-11-09
 
-- Fix the background mode on systems without the Background portal.
+- Fixed the background mode on systems without the Background portal.
 
 ## v0.5.0 - 2023-11-04
 
