@@ -1,9 +1,12 @@
 use super::super::bt;
-use std::str::FromStr;
-use futures::{pin_mut, stream, Stream, StreamExt};
 use anyhow::Result;
-use zbus::{fdo::DBusProxy, Connection, names::OwnedBusName};
-use mpris2_zbus::{player::{Player, PlaybackStatus, LoopStatus}, metadata::Metadata};
+use futures::{pin_mut, stream, Stream, StreamExt};
+use mpris2_zbus::{
+    metadata::Metadata,
+    player::{LoopStatus, PlaybackStatus, Player},
+};
+use std::str::FromStr;
+use zbus::{fdo::DBusProxy, names::OwnedBusName, Connection};
 
 pub use mpris2_zbus::media_player::MediaPlayer;
 
@@ -15,22 +18,14 @@ pub enum PlayersListEvent {
     PlayerRemoved(OwnedBusName),
 }
 
-pub async fn get_players_update_stream(connection: &Connection) -> Result<impl Stream<Item = PlayersListEvent>> {
+pub async fn get_players_update_stream(
+    connection: &Connection,
+) -> Result<impl Stream<Item = PlayersListEvent>> {
     let known_players = MediaPlayer::available_players(&connection).await?;
-    let known_players_events = stream::iter(known_players)
-        .map(PlayersListEvent::PlayerAdded);
+    let known_players_events = stream::iter(known_players).map(PlayersListEvent::PlayerAdded);
 
     let new_events = DBusProxy::new(connection).await?
         .receive_name_owner_changed().await?
-        // .filter_map(|msg| future::ready(msg.args().ok()))
-        // .filter(|args| future::ready(args.name.starts_with("org.mpris.MediaPlayer2")))
-        // .filter_map(|args| future::ready(
-        //     match (args.old_owner.as_ref(), args.new_owner.as_ref()) {
-        //         (Some(_), None) => Some(PlayersListEvent::PlayerRemoved(args.name.into())),
-        //         (None, Some(_)) => Some(PlayersListEvent::PlayerAdded(args.name.into())),
-        //         _ => None,
-        //     })
-        // );
         .filter_map(|msg| async move {
             msg.args().ok().and_then(|args| {
                 if args.name.starts_with("org.mpris.MediaPlayer2") {
@@ -50,7 +45,8 @@ pub async fn get_players_update_stream(connection: &Connection) -> Result<impl S
 
 pub async fn update_track_metadata(metadata: &Metadata, infinitime: &bt::InfiniTime) -> Result<()> {
     let artists = metadata.artists();
-    let artist = artists.as_ref()
+    let artist = artists
+        .as_ref()
         .and_then(|s| s.first())
         .map(String::as_str)
         .unwrap_or("Unknown Artist");
@@ -58,12 +54,18 @@ pub async fn update_track_metadata(metadata: &Metadata, infinitime: &bt::InfiniT
     infinitime.write_mp_artist(artist).await?;
 
     let album = metadata.album();
-    let album = album.as_ref().map(String::as_str).unwrap_or("Unknown Album");
+    let album = album
+        .as_ref()
+        .map(String::as_str)
+        .unwrap_or("Unknown Album");
     log::debug!("Album: {}", album);
     infinitime.write_mp_album(album).await?;
 
     let title = metadata.title();
-    let track = title.as_ref().map(String::as_str).unwrap_or("Unknown Track");
+    let track = title
+        .as_ref()
+        .map(String::as_str)
+        .unwrap_or("Unknown Track");
     log::debug!("Track: {}", track);
     infinitime.write_mp_track(&track).await?;
 
@@ -83,7 +85,9 @@ pub async fn update_player_info(player: &Player, infinitime: &bt::InfiniTime) ->
         infinitime.write_mp_repeat(repeat).await?;
     }
     if let Ok(shuffle) = player.shuffle().await {
-        infinitime.write_mp_shuffle(shuffle.unwrap_or(false)).await?;
+        infinitime
+            .write_mp_shuffle(shuffle.unwrap_or(false))
+            .await?;
     }
     if let Ok(position) = player.position().await {
         let position = position.unwrap_or_default().as_seconds_f32() as u32;
@@ -100,7 +104,10 @@ pub async fn update_player_info(player: &Player, infinitime: &bt::InfiniTime) ->
     Ok(())
 }
 
-pub async fn run_control_session(media_player: &MediaPlayer, infinitime: &bt::InfiniTime) -> Result<()> {
+pub async fn run_control_session(
+    media_player: &MediaPlayer,
+    infinitime: &bt::InfiniTime,
+) -> Result<()> {
     let player = media_player.player().await?;
 
     // Obtain even streams
@@ -130,7 +137,10 @@ pub async fn run_control_session(media_player: &MediaPlayer, infinitime: &bt::In
     update_player_info(&player, infinitime).await?;
 
     // Process events
-    log::info!("Media Player Control session started for: {}", media_player.identity().await?);
+    log::info!(
+        "Media Player Control session started for: {}",
+        media_player.identity().await?
+    );
     loop {
         tokio::select! {
             Some(event) = control_event_stream.next() => {

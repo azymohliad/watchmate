@@ -1,17 +1,18 @@
-use crate::ui;
 use super::AssetType;
+use crate::ui;
 use infinitime::gh;
 
-use std::path::PathBuf;
-use relm4::{
-    adw, gtk::{self, gio, glib, prelude::*},
-    actions::{RelmAction, RelmActionGroup},
-    ComponentController, ComponentParts, ComponentSender, Component, Controller, JoinHandle, RelmWidgetExt
-};
-use relm4_components::{open_dialog::*, save_dialog::*, alert::*};
 use anyhow::Result;
+use relm4::{
+    actions::{RelmAction, RelmActionGroup},
+    adw,
+    gtk::{self, gio, glib, prelude::*},
+    Component, ComponentController, ComponentParts, ComponentSender, Controller, JoinHandle,
+    RelmWidgetExt,
+};
+use relm4_components::{alert::*, open_dialog::*, save_dialog::*};
+use std::path::PathBuf;
 use version_compare as vercomp;
-
 
 #[derive(Debug)]
 pub enum Input {
@@ -112,9 +113,7 @@ impl Model {
             let content = self.download_content.take().unwrap();
             let filepath = self.download_filepath.take().unwrap();
             sender.oneshot_command(async move {
-                CommandOutput::SaveFileResponse(
-                    gh::save_file(&content, filepath).await
-                )
+                CommandOutput::SaveFileResponse(gh::save_file(&content, filepath).await)
             });
         }
     }
@@ -255,7 +254,11 @@ impl Component for Model {
         }
     }
 
-    fn init(main_window: Self::Init, root: Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
+    fn init(
+        main_window: Self::Init,
+        root: Self::Root,
+        sender: ComponentSender<Self>,
+    ) -> ComponentParts<Self> {
         let file_filter = gtk::FileFilter::new();
         file_filter.add_pattern("*.zip");
 
@@ -294,13 +297,16 @@ impl Component for Model {
         let firmware_downgrade_warning = Alert::builder()
             .transient_for(&main_window)
             .launch(AlertSettings {
-                text: String::from("Warning: downgrading!"),
-                secondary_text: Some(String::from("Are you sure you want to downgrade the firmware?")),
+                text: Some(String::from("Warning: downgrading!")),
+                secondary_text: Some(String::from(
+                    "Are you sure you want to downgrade the firmware?",
+                )),
                 confirm_label: Some(String::from("Proceed")),
                 cancel_label: Some(String::from("Cancel")),
                 option_label: None,
                 is_modal: true,
                 destructive_accept: true,
+                extra_child: None,
             })
             .forward(sender.input_sender(), |message| match message {
                 AlertResponse::Confirm => Input::FlashFirmwareFromRelease,
@@ -311,13 +317,16 @@ impl Component for Model {
         let resource_mismatch_warning = Alert::builder()
             .transient_for(&main_window)
             .launch(AlertSettings {
-                text: String::from("Warning: version mismatch!"),
-                secondary_text: Some(String::from("Selected resources do not match the current firmware version")),
+                text: Some(String::from("Warning: version mismatch!")),
+                secondary_text: Some(String::from(
+                    "Selected resources do not match the current firmware version",
+                )),
                 confirm_label: Some(String::from("Proceed")),
                 cancel_label: Some(String::from("Cancel")),
                 option_label: None,
                 is_modal: true,
                 destructive_accept: true,
+                extra_child: None,
             })
             .forward(sender.input_sender(), |message| match message {
                 AlertResponse::Confirm => Input::FlashResourcesFromRelease,
@@ -345,30 +354,35 @@ impl Component for Model {
 
         let mut group = RelmActionGroup::<FirmwareUpdateGroup>::new();
         group.add_action(RelmAction::<FlashFirmwareAction>::new_stateless(
-            glib::clone!(@strong sender => move |_| {
-                sender.input(Input::FlashFirmwareFromReleaseClicked);
-            }
-        )));
+            glib::clone!(#[strong] sender, move |_| {
+                    sender.input(Input::FlashFirmwareFromReleaseClicked);
+                }
+            ),
+        ));
         group.add_action(RelmAction::<FlashResourcesAction>::new_stateless(
-            glib::clone!(@strong sender => move |_| {
-                sender.input(Input::FlashResourcesFromReleaseClicked);
-            }
-        )));
+            glib::clone!(#[strong] sender, move |_| {
+                    sender.input(Input::FlashResourcesFromReleaseClicked);
+                }
+            ),
+        ));
         group.add_action(RelmAction::<DownloadFirmwareAction>::new_stateless(
-            glib::clone!(@strong sender => move |_| {
-                sender.input(Input::DownloadFirmware);
-            }
-        )));
+            glib::clone!(#[strong] sender, move |_| {
+                    sender.input(Input::DownloadFirmware);
+                }
+            ),
+        ));
         group.add_action(RelmAction::<DownloadResourcesAction>::new_stateless(
-            glib::clone!(@strong sender => move |_| {
-                sender.input(Input::DownloadResources);
-            }
-        )));
+            glib::clone!(#[strong] sender, move |_| {
+                    sender.input(Input::DownloadResources);
+                }
+            ),
+        ));
         group.add_action(RelmAction::<ReleaseNotesAction>::new_stateless(
-            glib::clone!(@strong sender => move |_| {
-                sender.input(Input::ReleaseNotes);
-            }
-        )));
+            glib::clone!(#[strong] sender, move |_| {
+                    sender.input(Input::ReleaseNotes);
+                }
+            ),
+        ));
         group.register_for_widget(&widgets.root);
 
         sender.input(Input::RequestReleases);
@@ -395,8 +409,11 @@ impl Component for Model {
             }
             Input::ReleaseNotes => {
                 if let Some(release) = self.selected_release_info() {
-                    gtk::UriLauncher::new(&release.url)
-                        .launch(adw::ApplicationWindow::NONE, gio::Cancellable::NONE, |_| ());
+                    gtk::UriLauncher::new(&release.url).launch(
+                        adw::ApplicationWindow::NONE,
+                        gio::Cancellable::NONE,
+                        |_| (),
+                    );
                 }
             }
             Input::DownloadFirmware => {
@@ -424,15 +441,15 @@ impl Component for Model {
                 }
             }
             Input::DownloadAsset(asset) => {
-                    let url = asset.url;
-                    let filename = asset.name;
-                    let task = relm4::spawn(async move {
-                        sender.input(Input::FinishedDownloading(
-                            gh::download_content(url.as_str()).await
-                        ))
-                    });
-                    self.download_task = Some(task);
-                    self.save_dialog.emit(SaveDialogMsg::SaveAs(filename));
+                let url = asset.url;
+                let filename = asset.name;
+                let task = relm4::spawn(async move {
+                    sender.input(Input::FinishedDownloading(
+                        gh::download_content(url.as_str()).await,
+                    ))
+                });
+                self.download_task = Some(task);
+                self.save_dialog.emit(SaveDialogMsg::SaveAs(filename));
             }
             Input::CancelDownloading => {
                 self.download_task.take().map(|h| h.abort());
@@ -465,7 +482,8 @@ impl Component for Model {
             }
             Input::FlashFirmwareFromReleaseClicked => {
                 if let Some(release) = self.selected_release_info() {
-                    let manifest = vercomp::Manifest { ignore_text: true, ..Default::default() };
+                    let mut manifest = vercomp::Manifest::default();
+                    manifest.ignore_text = true;
                     let selected = vercomp::Version::from_manifest(&release.tag, &manifest);
                     let current = vercomp::Version::from_manifest(&self.current_version, &manifest);
                     if let (Some(selected), Some(current)) = (selected, current) {
@@ -499,7 +517,8 @@ impl Component for Model {
             }
             Input::FlashResourcesFromReleaseClicked => {
                 if let Some(release) = self.selected_release_info() {
-                    let manifest = vercomp::Manifest { ignore_text: true, ..Default::default() };
+                    let mut manifest = vercomp::Manifest::default();
+                    manifest.ignore_text = true;
                     let selected = vercomp::Version::from_manifest(&release.tag, &manifest);
                     let current = vercomp::Version::from_manifest(&self.current_version, &manifest);
                     if let (Some(selected), Some(current)) = (selected, current) {
@@ -534,11 +553,19 @@ impl Component for Model {
         }
     }
 
-    fn update_cmd(&mut self, msg: Self::CommandOutput, sender: ComponentSender<Self>, _root: &Self::Root) {
+    fn update_cmd(
+        &mut self,
+        msg: Self::CommandOutput,
+        sender: ComponentSender<Self>,
+        _root: &Self::Root,
+    ) {
         match msg {
             CommandOutput::FirmwareReleasesResponse(response) => match response {
                 Ok(releases) => {
-                    let tags = releases.iter().map(|r| r.tag.as_str()).collect::<Vec<&str>>();
+                    let tags = releases
+                        .iter()
+                        .map(|r| r.tag.as_str())
+                        .collect::<Vec<&str>>();
                     let latest = tags.first().map(|t| t.to_string());
                     self.tags = Some(gtk::StringList::new(&tags));
                     self.releases = FirmwareReleasesState::Some(releases);
@@ -550,7 +577,7 @@ impl Component for Model {
                     sender.output(Output::LatestFirmwareVersion(None)).unwrap();
                     log::error!("Failed to fetch firmware releases: {error}");
                 }
-            }
+            },
             CommandOutput::SaveFileResponse(response) => match response {
                 Ok(()) => {
                     ui::BROKER.send(ui::Input::ToastStatic("Firmware downloaded"));
@@ -559,15 +586,34 @@ impl Component for Model {
                     log::error!("Failed to save firmware file: {error}");
                     ui::BROKER.send(ui::Input::ToastStatic("Failed to save DFU file"));
                 }
-            }
+            },
         }
     }
 }
 
-
 relm4::new_action_group!(FirmwareUpdateGroup, "fwupd");
-relm4::new_stateless_action!(FlashFirmwareAction, FirmwareUpdateGroup, "flash-firmware");
-relm4::new_stateless_action!(FlashResourcesAction, FirmwareUpdateGroup, "flash-resources");
-relm4::new_stateless_action!(DownloadFirmwareAction, FirmwareUpdateGroup, "download-firmware");
-relm4::new_stateless_action!(DownloadResourcesAction, FirmwareUpdateGroup, "download-resouces");
-relm4::new_stateless_action!(ReleaseNotesAction, FirmwareUpdateGroup, "open-release-notes");
+relm4::new_stateless_action!(
+    FlashFirmwareAction,
+    FirmwareUpdateGroup,
+    "flash-firmware"
+);
+relm4::new_stateless_action!(
+    FlashResourcesAction,
+    FirmwareUpdateGroup,
+    "flash-resources"
+);
+relm4::new_stateless_action!(
+    DownloadFirmwareAction,
+    FirmwareUpdateGroup,
+    "download-firmware"
+);
+relm4::new_stateless_action!(
+    DownloadResourcesAction,
+    FirmwareUpdateGroup,
+    "download-resouces"
+);
+relm4::new_stateless_action!(
+    ReleaseNotesAction,
+    FirmwareUpdateGroup,
+    "open-release-notes"
+);
