@@ -55,6 +55,14 @@
   </recommends>
 
   <releases>
+    <release version="0.5.3" date="2024-11-10">
+      <description>
+        <ul>
+          <li>Fix compilation with Rust >= 1.80.</li>
+          <li>Update dependencies, migrate to the latest Relm4.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.5.2" date="2024-03-13">
       <description>
         <ul>
