@@ -6,17 +6,17 @@ edition = "2021"
 [dependencies]
 futures = "0.3"
 bluer = { version = "0.17", features = ["bluetoothd"] }
-tokio = { version = "1.36", features = ["rt-multi-thread", "fs"] }
+tokio = { version = "1.41", features = ["rt-multi-thread", "fs"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "*"
-uuid = "1.7"
+uuid = "1.11"
 anyhow = "1.0"
 chrono = "0.4"
-zip = "0.6"
+zip = "2.2"
 log = "0.4"
-version-compare = "0.1"
-reqwest = { version = "0.11", features = [ "json" ], optional = true }
-zbus = { version = "3.15", default-features = false, features = ["tokio"], optional = true }
+version-compare = "0.2"
+reqwest = { version = "0.12", features = ["json"], optional = true }
+zbus = { version = "~4.2", default-features = false, features = ["tokio"], optional = true }
 mpris2-zbus = { git = "https://github.com/pop-os/dbus-settings-bindings", optional = true }
 
 [features]

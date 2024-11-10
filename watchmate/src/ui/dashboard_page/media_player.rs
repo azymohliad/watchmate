@@ -1,11 +1,8 @@
-use infinitime::{
-    zbus, bt, fdo::mpris
-};
-use std::sync::Arc;
 use futures::StreamExt;
 use gtk::prelude::{BoxExt, OrientableExt, WidgetExt};
-use relm4::{gtk, ComponentParts, ComponentSender, Component, JoinHandle, RelmWidgetExt};
-
+use infinitime::{bt, fdo::mpris, zbus};
+use relm4::{gtk, Component, ComponentParts, ComponentSender, JoinHandle, RelmWidgetExt};
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum Input {
@@ -34,7 +31,6 @@ pub struct Model {
     dbus_session: Option<Arc<zbus::Connection>>,
     dropdown: gtk::DropDown,
 }
-
 
 impl Model {
     fn stop_control_task(&mut self) {
@@ -88,15 +84,20 @@ impl Component for Model {
         }
     }
 
-    fn init(_: Self::Init, root: Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
+    fn init(
+        _: Self::Init,
+        root: Self::Root,
+        sender: ComponentSender<Self>,
+    ) -> ComponentParts<Self> {
         let dropdown = gtk::DropDown::default();
-        let model = Self { dropdown: dropdown.clone(), ..Default::default() };
+        let model = Self {
+            dropdown: dropdown.clone(),
+            ..Default::default()
+        };
         let widgets = view_output!();
         sender.oneshot_command(async move {
             match zbus::Connection::session().await {
-                Ok(connection) => {
-                    CommandOutput::DBusConnection(connection)
-                }
+                Ok(connection) => CommandOutput::DBusConnection(connection),
                 Err(error) => {
                     log::error!("Failed to establish D-Bus session connection: {error}");
                     CommandOutput::None
@@ -125,8 +126,12 @@ impl Component for Model {
                         let player = self.player_handles[index].clone();
                         let task_handle = relm4::spawn(async move {
                             match mpris::run_control_session(&player, &infinitime).await {
-                                Ok(()) => log::warn!("Media player control session ended unexpectedly"),
-                                Err(error) => log::error!("Media player control session error: {error}"),
+                                Ok(()) => {
+                                    log::warn!("Media player control session ended unexpectedly")
+                                }
+                                Err(error) => {
+                                    log::error!("Media player control session error: {error}")
+                                }
                             }
                             sender.input(Input::PlayerControlSessionEnded);
                         });
@@ -161,7 +166,9 @@ impl Component for Model {
                                     }
                                 }
                             }).await,
-                            Err(error) => log::error!("Failed to start player list update session: {error}"),
+                            Err(error) => {
+                                log::error!("Failed to start player list update session: {error}")
+                            }
                         }
                         sender.input(Input::PlayerUpdateSessionEnded);
                     });
@@ -182,7 +189,11 @@ impl Component for Model {
                 }
             }
             Input::PlayerRemoved(bus) => {
-                if let Some(index) = self.player_handles.iter().position(|p| p.destination() == &bus) {
+                if let Some(index) = self
+                    .player_handles
+                    .iter()
+                    .position(|p| p.inner().destination() == &bus)
+                {
                     let name = self.player_names.string(index as u32).unwrap();
                     self.player_names.remove(index as u32);
                     self.player_handles.remove(index);
@@ -195,7 +206,12 @@ impl Component for Model {
         }
     }
 
-    fn update_cmd(&mut self, msg: Self::CommandOutput, sender: ComponentSender<Self>, _root: &Self::Root) {
+    fn update_cmd(
+        &mut self,
+        msg: Self::CommandOutput,
+        sender: ComponentSender<Self>,
+        _root: &Self::Root,
+    ) {
         match msg {
             CommandOutput::None => {}
             CommandOutput::DBusConnection(connection) => {
@@ -205,4 +221,3 @@ impl Component for Model {
         }
     }
 }
-

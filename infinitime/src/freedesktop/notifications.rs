@@ -1,8 +1,11 @@
-use std::collections::HashMap;
-use zbus::zvariant::{Type, Value};
-use serde::Deserialize;
 use anyhow::Result;
 use futures::TryStreamExt;
+use serde::Deserialize;
+use std::collections::HashMap;
+use zbus::{
+    match_rule::MatchRule,
+    zvariant::{Type, Value},
+};
 
 use crate::bt;
 
@@ -28,19 +31,24 @@ pub async fn run_notification_session(infinitime: &bt::InfiniTime) -> Result<()>
         .build()
         .await?;
 
-    let rules = "type='method_call',member='Notify',path='/org/freedesktop/Notifications',interface='org.freedesktop.Notifications',eavesdrop=true";
-    proxy.become_monitor(&[rules], 0).await?;
+    let rule = MatchRule::builder()
+        .msg_type(zbus::message::Type::MethodCall)
+        .interface("org.freedesktop.Notifications")?
+        .member("Notify")?
+        .path("/org/freedesktop/Notifications")?
+        .build();
+    proxy.become_monitor(&[rule], 0).await?;
 
     let mut stream = zbus::MessageStream::from(&connection);
     while let Some(msg) = stream.try_next().await? {
-        match msg.body::<DesktopNotification>() {
+        match msg.body().deserialize::<DesktopNotification>() {
             Ok(notification) => {
                 // Dirty hack to avoid duplicated notifications:
-                // For some reason, every notification produces two identical calls on DBus,
-                // except one has hints["sender-pid"] as U32 and another one as I64, so we
-                // can deduplicate them by filtering out one of these types.
+                // For some reason, every notification produces two calls on DBus
+                // with identical fields, except the second contains extra hints:
+                // "x-shell-sender" and "x-shell-sender-pid".
                 // TODO: Find proper solution.
-                if let Some(Value::U32(_)) = notification.hints.get("sender-pid") {
+                if notification.hints.contains_key("x-shell-sender") {
                     continue;
                 }
 

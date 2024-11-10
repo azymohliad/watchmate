@@ -8,11 +8,13 @@ use relm4::{
     ComponentSender, Controller, RelmApp, MessageBroker
 };
 
-
 mod dashboard_page;
 mod devices_page;
 mod fwupd_page;
 mod settings_page;
+mod icon_names {
+    include!(concat!(env!("OUT_DIR"), "/icon_names.rs"));
+}
 
 
 static APP_ID: &'static str = "io.gitlab.azymohliad.WatchMate";
@@ -178,22 +180,22 @@ impl Component for Model {
 
         let mut view_group = RelmActionGroup::<ViewActionGroup>::new();
         view_group.add_action(RelmAction::<DashboardViewAction>::new_stateless(
-            glib::clone!(@strong sender => move |_| {
+            glib::clone!(#[strong] sender, move |_| {
                 sender.input(Input::SetView(View::Dashboard));
             }
         )));
         view_group.add_action(RelmAction::<DevicesViewAction>::new_stateless(
-            glib::clone!(@strong sender => move |_| {
+            glib::clone!(#[strong] sender, move |_| {
                 sender.input(Input::SetView(View::Devices));
             }
         )));
         view_group.add_action(RelmAction::<SettingsViewAction>::new_stateless(
-            glib::clone!(@strong sender => move |_| {
+            glib::clone!(#[strong] sender, move |_| {
                 sender.input(Input::SetView(View::Settings));
             }
         )));
         view_group.add_action(RelmAction::<AboutAction>::new_stateless(
-            glib::clone!(@strong sender => move |_| {
+            glib::clone!(#[strong] sender, move |_| {
                 sender.input(Input::About);
             }
         )));
@@ -201,12 +203,12 @@ impl Component for Model {
 
         let mut global_group = RelmActionGroup::<WindowActionGroup>::new();
         global_group.add_action(RelmAction::<QuitAction>::new_stateless(
-            glib::clone!(@strong sender => move |_| {
+            glib::clone!(#[strong] sender, move |_| {
                 sender.input(Input::Quit);
             }
         )));
         global_group.add_action(RelmAction::<CloseAction>::new_stateless(
-            glib::clone!(@strong sender => move |_| {
+            glib::clone!(#[strong] sender, move |_| {
                 sender.input(Input::Close);
             }
         )));
@@ -350,7 +352,10 @@ pub fn run() {
     gtk::init().unwrap();
 
     // Init icons
-    relm4_icons::initialize_icons();
+    relm4_icons::initialize_icons(
+        icon_names::GRESOURCE_BYTES,
+        icon_names::RESOURCE_PREFIX
+    );
 
     // Handle CLI args
     let known_args = ["--background"];
