@@ -1,3 +1,4 @@
+mod weather;
 mod ui;
 
 fn main() {

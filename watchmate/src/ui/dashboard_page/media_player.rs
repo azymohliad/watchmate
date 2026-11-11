@@ -1,7 +1,8 @@
 use futures::StreamExt;
-use gtk::prelude::{BoxExt, OrientableExt, WidgetExt};
+use gtk::prelude::WidgetExt;
+use adw::prelude::{PreferencesRowExt, ActionRowExt};
 use infinitime::{bt, fdo::mpris, zbus};
-use relm4::{gtk, Component, ComponentParts, ComponentSender, JoinHandle, RelmWidgetExt};
+use relm4::{adw, gtk, Component, ComponentParts, ComponentSender, JoinHandle};
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -55,32 +56,26 @@ impl Component for Model {
     type Widgets = Widgets;
 
     view! {
-        gtk::Box {
-            set_orientation: gtk::Orientation::Horizontal,
-            set_margin_all: 12,
-            set_spacing: 10,
+        #[root]
+        adw::ActionRow {
+            set_title: "Media Player",
 
-            gtk::Label {
-                set_label: "Media Player",
-                set_halign: gtk::Align::Start,
+            add_suffix = &gtk::Label {
+                set_label: "Not running",
+                #[watch]
+                set_visible: model.player_handles.is_empty(),
+                add_css_class: "dim-label",
             },
 
-            if model.player_handles.is_empty() {
-                gtk::Label {
-                    set_label: "Not running",
-                    set_hexpand: true,
-                    set_halign: gtk::Align::End,
-                    add_css_class: "dim-label",
-                }
-            } else {
-                #[local]
-                dropdown -> gtk::DropDown {
-                    set_hexpand: true,
-                    #[watch]
-                    set_model: Some(&model.player_names),
-                    connect_selected_notify => Input::PlayerControlSessionStart,
-                }
-            }
+            #[local]
+            add_suffix = &dropdown -> gtk::DropDown {
+                #[watch]
+                set_visible: !model.player_handles.is_empty(),
+                #[watch]
+                set_model: Some(&model.player_names),
+                set_valign: gtk::Align::Center,
+                connect_selected_notify => Input::PlayerControlSessionStart,
+            },
         }
     }
 

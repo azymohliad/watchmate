@@ -4,6 +4,7 @@ use infinitime::{ bluer, bt };
 use std::sync::Arc;
 use futures::{pin_mut, StreamExt};
 use gtk::{gio, prelude::{BoxExt, ButtonExt, OrientableExt, ListBoxRowExt, WidgetExt, SettingsExt}};
+use adw::prelude::{ActionRowExt, PreferencesRowExt};
 use relm4::{
     adw, gtk,
     factory::{FactoryComponent, FactorySender, FactoryVecDeque, DynamicIndex},
@@ -128,9 +129,6 @@ impl Component for Model {
             "Settings" => super::SettingsViewAction,
             section! {
                 "About" => super::AboutAction,
-            },
-            section! {
-                "Quit" => super::QuitAction,
             }
         }
     }
@@ -197,6 +195,7 @@ impl Component for Model {
                             factory_widget -> gtk::ListBox {
                                 // set_margin_all: 5,
                                 set_valign: gtk::Align::Start,
+                                set_selection_mode: gtk::SelectionMode::None,
                                 add_css_class: "boxed-list",
                                 connect_row_activated[sender] => move |_, row| {
                                     sender.input(Input::DeviceSelected(row.index()))
@@ -554,75 +553,46 @@ impl FactoryComponent for DeviceInfo {
 
     view! {
         #[root]
-        gtk::ListBoxRow {
-            gtk::Box {
-                set_orientation: gtk::Orientation::Horizontal,
-                set_margin_all: 12,
-                set_spacing: 5,
-                set_hexpand: true,
+        adw::ActionRow {
+            #[watch]
+            set_title: &self.alias,
+            #[watch]
+            set_subtitle: &match self.rssi {
+                Some(rssi) => format!("{}  ·  RSSI: {}", self.address, rssi),
+                None => self.address.to_string(),
+            },
 
-                gtk::Button {
-                    #[watch]
-                    set_tooltip_text: match self.saved {
-                        true => Some("Disable automatic re-connection"),
-                        false => Some("Enable automatic re-connection"),
-                    },
-                    #[watch]
-                    set_icon_name: match self.saved {
-                        true => "heart-filled-symbolic",
-                        false => "heart-outline-thin-symbolic",
-                    },
-                    add_css_class: "flat",
-                    connect_clicked => DeviceInput::SavedToggle,
+            add_prefix = &gtk::Button {
+                #[watch]
+                set_tooltip_text: match self.saved {
+                    true => Some("Disable automatic re-connection"),
+                    false => Some("Enable automatic re-connection"),
                 },
-
-                gtk::Box {
-                    set_orientation: gtk::Orientation::Vertical,
-                    set_spacing: 10,
-
-                    gtk::Label {
-                        set_halign: gtk::Align::Start,
-                        set_hexpand: true,
-                        set_label: &self.alias,
-                    },
-
-                    gtk::Box {
-                        set_orientation: gtk::Orientation::Horizontal,
-                        set_margin_all: 0,
-                        set_spacing: 10,
-
-                        gtk::Label {
-                            set_halign: gtk::Align::Start,
-                            set_label: &self.address.to_string(),
-                            add_css_class: "dim-label",
-                        },
-
-                        gtk::Label {
-                            set_halign: gtk::Align::Start,
-                            set_hexpand: true,
-                            set_label: &match self.rssi {
-                                Some(rssi) => format!("RSSI: {}", rssi),
-                                None => String::from(""),
-                            },
-                            add_css_class: "dim-label",
-                        },
-                    },
+                #[watch]
+                set_icon_name: match self.saved {
+                    true => "heart-filled-symbolic",
+                    false => "heart-outline-thin-symbolic",
                 },
+                add_css_class: "flat",
+                set_valign: gtk::Align::Center,
+                connect_clicked => DeviceInput::SavedToggle,
+            },
 
-                gtk::Button {
-                    set_tooltip_text: Some("Click to disconnect"),
-                    set_icon_name: "cross-symbolic",
-                    add_css_class: "flat",
-                    #[watch]
-                    set_visible: self.state == DeviceState::Connected,
-                    connect_clicked => DeviceInput::Disconnect,
-                },
+            add_suffix = &gtk::Button {
+                set_tooltip_text: Some("Click to disconnect"),
+                set_icon_name: "cross-symbolic",
+                add_css_class: "flat",
+                set_valign: gtk::Align::Center,
+                #[watch]
+                set_visible: self.state == DeviceState::Connected,
+                connect_clicked => DeviceInput::Disconnect,
+            },
 
-                gtk::Spinner {
-                    #[watch]
-                    set_visible: self.state == DeviceState::Transitioning,
-                    set_spinning: true,
-                },
+            add_suffix = &gtk::Spinner {
+                #[watch]
+                set_visible: self.state == DeviceState::Transitioning,
+                set_spinning: true,
+                set_valign: gtk::Align::Center,
             },
         }
     }

@@ -4,8 +4,8 @@ use infinitime::{tokio, bt};
 use std::{sync::Arc, path::PathBuf};
 use futures::{stream, StreamExt};
 use gtk::prelude::{BoxExt, ButtonExt, OrientableExt, ListBoxRowExt, WidgetExt};
-use adw::prelude::{PreferencesRowExt, ExpanderRowExt};
-use relm4::{adw, gtk::{self, gio}, ComponentController, ComponentParts, ComponentSender, Component, Controller, JoinHandle, RelmWidgetExt};
+use adw::prelude::{PreferencesRowExt, PreferencesPageExt, PreferencesGroupExt, ExpanderRowExt, ActionRowExt};
+use relm4::{adw, gtk::{self, gio}, ComponentController, ComponentParts, ComponentSender, Component, Controller, JoinHandle};
 use anyhow::{Result, Context};
 use version_compare::Version;
 
@@ -146,14 +146,12 @@ impl Component for Model {
             "Settings" => super::SettingsViewAction,
             section! {
                 "About" => super::AboutAction,
-            },
-            section! {
-                "Quit" => super::QuitAction,
             }
         }
     }
 
     view! {
+        #[root]
         gtk::Box {
             set_hexpand: true,
             set_orientation: gtk::Orientation::Vertical,
@@ -164,13 +162,6 @@ impl Component for Model {
                     set_label: "Watchmate",
                 },
 
-                pack_start = &gtk::Button {
-                    set_tooltip_text: Some("Devices"),
-                    set_icon_name: "bluetooth-symbolic",
-                    connect_clicked => |_| {
-                        ui::BROKER.send(ui::Input::SetView(ui::View::Devices));
-                    },
-                },
                 pack_end = &gtk::MenuButton {
                     set_icon_name: "open-menu-symbolic",
                     #[wrap(Some)]
@@ -178,267 +169,165 @@ impl Component for Model {
                 }
             },
 
-            gtk::ScrolledWindow {
-                set_hscrollbar_policy: gtk::PolicyType::Never,
+            adw::PreferencesPage {
                 set_vexpand: true,
 
-                adw::Clamp {
-                    set_maximum_size: 400,
-                    set_vexpand: true,
+                    add = &adw::PreferencesGroup {
+                        set_title: "Device",
+                        #[watch]
+                        set_visible: model.infinitime.is_some(),
 
-                    if model.infinitime.is_some() {
-                        gtk::Box {
-                            set_orientation: gtk::Orientation::Vertical,
-                            set_margin_all: 12,
-                            set_spacing: 10,
+                        adw::ActionRow {
+                            set_title: "Battery",
+                            #[watch]
+                            set_sensitive: model.battery_level.is_some(),
 
-                            gtk::ListBox {
-                                set_valign: gtk::Align::Start,
-                                add_css_class: "boxed-list",
+                            add_suffix = &gtk::LevelBar {
+                                set_min_value: 0.0,
+                                set_max_value: 100.0,
+                                #[watch]
+                                set_value: model.battery_level.unwrap_or(0) as f64,
+                                #[watch]
+                                set_visible: model.battery_level.is_some(),
+                                set_valign: gtk::Align::Center,
+                                set_width_request: 120,
+                            },
 
-                                gtk::ListBoxRow {
-                                    set_selectable: false,
+                            add_suffix = &gtk::Label {
+                                #[watch]
+                                set_label: match model.battery_level {
+                                    Some(soc) => format!("{}%", soc),
+                                    None => String::from("Loading..."),
+                                }.as_str(),
+                                add_css_class: "dim-label",
+                            },
+                        },
+
+                        adw::ActionRow {
+                            set_title: "Heart Rate",
+                            #[watch]
+                            set_sensitive: model.heart_rate.is_some(),
+
+                            add_suffix = &gtk::Label {
+                                #[watch]
+                                set_label: match model.heart_rate {
+                                    Some(rate) => format!("{} BPM", rate),
+                                    None => String::from("Loading..."),
+                                }.as_str(),
+                                add_css_class: "dim-label",
+                            },
+                        },
+
+                        adw::ActionRow {
+                            set_title: "Step Count",
+                            #[watch]
+                            set_sensitive: model.step_count.is_some(),
+
+                            add_suffix = &gtk::Label {
+                                #[watch]
+                                set_label: match model.step_count {
+                                    Some(rate) => format!("{}", rate),
+                                    None => String::from("Loading..."),
+                                }.as_str(),
+                                add_css_class: "dim-label",
+                            },
+                        },
+                    },
+
+                    add = &adw::PreferencesGroup {
+                        set_title: "Host Integration",
+                        #[watch]
+                        set_visible: model.infinitime.is_some(),
+                        #[watch]
+                        set_sensitive: model.alias.is_some(),
+
+                        add = model.player_panel.widget(),
+                        add = model.notifications_panel.widget(),
+                    },
+
+                    add = &adw::PreferencesGroup {
+                        set_title: "System Info",
+                        #[watch]
+                        set_visible: model.infinitime.is_some(),
+
+                        adw::ActionRow {
+                            set_title: "Name",
+                            #[watch]
+                            set_sensitive: model.alias.is_some(),
+
+                            add_suffix = &gtk::Label {
+                                #[watch]
+                                set_label: match &model.alias {
+                                    Some(alias) => alias,
+                                    None => "Loading...",
+                                },
+                                add_css_class: "dim-label",
+                            },
+                        },
+
+                        adw::ActionRow {
+                            set_title: "Address",
+                            #[watch]
+                            set_sensitive: model.address.is_some(),
+
+                            add_suffix = &gtk::Label {
+                                #[watch]
+                                set_label: match &model.address {
+                                    Some(address) => address,
+                                    None => "Loading...",
+                                },
+                                add_css_class: "dim-label",
+                            },
+                        },
+
+                        adw::ExpanderRow {
+                            set_title: "Firmware Version",
+                            #[watch]
+                            set_sensitive: model.fw_version.is_some(),
+
+                            add_suffix = &gtk::Box {
+                                set_spacing: 10,
+
+                                gtk::Label {
                                     #[watch]
-                                    set_sensitive: model.battery_level.is_some(),
-
-                                    gtk::Box {
-                                        set_orientation: gtk::Orientation::Horizontal,
-                                        set_margin_all: 12,
-                                        set_spacing: 10,
-
-                                        gtk::Label {
-                                            set_label: "Battery",
-                                        },
-
-                                        gtk::LevelBar {
-                                            set_min_value: 0.0,
-                                            set_max_value: 100.0,
-                                            #[watch]
-                                            set_value: model.battery_level.unwrap_or(0) as f64,
-                                            #[watch]
-                                            set_visible: model.battery_level.is_some(),
-                                            set_hexpand: true,
-                                            set_valign: gtk::Align::Center,
-                                        },
-
-                                        gtk::Label {
-                                            #[watch]
-                                            set_label: match model.battery_level {
-                                                Some(soc) => format!("{}%", soc),
-                                                None => String::from("Loading..."),
-                                            }.as_str(),
-                                            add_css_class: "dim-label",
-                                        },
+                                    set_label: match &model.fw_version {
+                                        Some(version) => version,
+                                        None => "Loading...",
                                     },
+                                    add_css_class: "dim-label",
                                 },
 
-                                gtk::ListBoxRow {
-                                    set_selectable: false,
+                                gtk::Image {
                                     #[watch]
-                                    set_sensitive: model.heart_rate.is_some(),
-
-                                    gtk::Box {
-                                        set_orientation: gtk::Orientation::Horizontal,
-                                        set_margin_all: 12,
-                                        set_spacing: 10,
-
-                                        gtk::Label {
-                                            set_label: "Heart Rate",
-                                            set_hexpand: true,
-                                            set_halign: gtk::Align::Start,
-                                        },
-
-                                        gtk::Label {
-                                            #[watch]
-                                            set_label: match model.heart_rate {
-                                                Some(rate) => format!("{} BPM", rate),
-                                                None => String::from("Loading..."),
-                                            }.as_str(),
-                                            add_css_class: "dim-label",
-                                            set_hexpand: true,
-                                            set_halign: gtk::Align::End,
-                                        },
-                                    },
-                                },
-
-                                gtk::ListBoxRow {
-                                    set_selectable: false,
-                                    #[watch]
-                                    set_sensitive: model.step_count.is_some(),
-
-                                    gtk::Box {
-                                        set_orientation: gtk::Orientation::Horizontal,
-                                        set_margin_all: 12,
-                                        set_spacing: 10,
-
-                                        gtk::Label {
-                                            set_label: "Step Count",
-                                            set_hexpand: true,
-                                            set_halign: gtk::Align::Start,
-                                        },
-
-                                        gtk::Label {
-                                            #[watch]
-                                            set_label: match model.step_count {
-                                                Some(rate) => format!("{}", rate),
-                                                None => String::from("Loading..."),
-                                            }.as_str(),
-                                            add_css_class: "dim-label",
-                                            set_hexpand: true,
-                                            set_halign: gtk::Align::End,
-                                        },
-                                    },
+                                    set_visible: model.fw_update_available,
+                                    set_tooltip_text: Some("Firmware update available"),
+                                    set_icon_name: Some("arrow3-up-symbolic"),
                                 },
                             },
 
-                            gtk::Label {
-                                set_label: "Host Integration",
-                                set_halign: gtk::Align::Start,
-                                set_margin_top: 20,
+                            add_row = &gtk::ListBoxRow {
+                                set_selectable: false,
+                                #[watch]
+                                set_child: Some(model.firmware_panel.widget()),
                             },
+                        },
+                    },
+                    add = &adw::PreferencesGroup {
+                        #[watch]
+                        set_visible: model.infinitime.is_none(),
 
-                            gtk::ListBox {
-                                set_valign: gtk::Align::Start,
-                                add_css_class: "boxed-list",
+                        adw::ActionRow {
+                            set_title: "InfiniTime watch is not connected",
 
-                                gtk::ListBoxRow {
-                                    set_selectable: false,
-                                    #[watch]
-                                    set_sensitive: model.alias.is_some(),
-                                    set_child: Some(model.player_panel.widget()),
-                                },
-
-                                gtk::ListBoxRow {
-                                    set_selectable: false,
-                                    #[watch]
-                                    set_sensitive: model.alias.is_some(),
-                                    set_child: Some(model.notifications_panel.widget()),
-                                },
-                            },
-
-                            gtk::Label {
-                                set_label: "System Info",
-                                set_halign: gtk::Align::Start,
-                                set_margin_top: 20,
-                            },
-
-                            gtk::ListBox {
-                                set_valign: gtk::Align::Start,
-                                add_css_class: "boxed-list",
-
-                                gtk::ListBoxRow {
-                                    set_selectable: false,
-                                    #[watch]
-                                    set_sensitive: model.alias.is_some(),
-
-                                    gtk::Box {
-                                        set_orientation: gtk::Orientation::Horizontal,
-                                        set_margin_all: 12,
-                                        set_spacing: 10,
-
-                                        gtk::Label {
-                                            set_label: "Name",
-                                            set_hexpand: true,
-                                            set_halign: gtk::Align::Start,
-                                        },
-
-                                        gtk::Label {
-                                            #[watch]
-                                            set_label: match &model.alias {
-                                                Some(alias) => alias,
-                                                None => "Loading...",
-                                            },
-                                            add_css_class: "dim-label",
-                                            set_hexpand: true,
-                                            set_halign: gtk::Align::End,
-                                        },
-                                    },
-                                },
-
-                                gtk::ListBoxRow {
-                                    set_selectable: false,
-                                    #[watch]
-                                    set_sensitive: model.address.is_some(),
-
-                                    gtk::Box {
-                                        set_orientation: gtk::Orientation::Horizontal,
-                                        set_margin_all: 12,
-                                        set_spacing: 10,
-
-                                        gtk::Label {
-                                            set_label: "Address",
-                                            set_hexpand: true,
-                                            set_halign: gtk::Align::Start,
-                                        },
-
-                                        gtk::Label {
-                                            #[watch]
-                                            set_label: match &model.address {
-                                                Some(address) => address,
-                                                None => "Loading...",
-                                            },
-                                            add_css_class: "dim-label",
-                                            set_hexpand: true,
-                                            set_halign: gtk::Align::End,
-                                        },
-                                    },
-                                },
-
-                                adw::ExpanderRow {
-                                    set_title: "Firmware Version",
-                                    #[watch]
-                                    set_sensitive: model.fw_version.is_some(),
-
-                                    add_suffix = &gtk::Box {
-                                        set_spacing: 10,
-
-                                        gtk::Label {
-                                            #[watch]
-                                            set_label: match &model.fw_version {
-                                                Some(version) => version,
-                                                None => "Loading...",
-                                            },
-                                            add_css_class: "dim-label",
-                                        },
-
-                                        gtk::Image {
-                                            #[watch]
-                                            set_visible: model.fw_update_available,
-                                            set_tooltip_text: Some("Firmware update available"),
-                                            set_icon_name: Some("arrow3-up-symbolic"),
-                                        },
-                                    },
-
-                                    add_row = &gtk::ListBoxRow {
-                                        set_selectable: false,
-                                        #[watch]
-                                        set_child: Some(model.firmware_panel.widget()),
-                                    },
-                                },
-                            },
-                        }
-                    } else {
-                        gtk::Box {
-                            set_orientation: gtk::Orientation::Vertical,
-                            set_margin_all: 12,
-                            set_spacing: 10,
-                            set_valign: gtk::Align::Center,
-
-                            gtk::Label {
-                                set_label: "InfiniTime watch is not connected",
-                            },
-
-                            gtk::Button {
+                            add_suffix = &gtk::Button {
                                 set_label: "Devices",
-                                set_halign: gtk::Align::Center,
-
+                                set_valign: gtk::Align::Center,
                                 connect_clicked => |_| {
                                     ui::BROKER.send(ui::Input::SetView(ui::View::Devices));
                                 },
                             },
-                        }
-                    }
-                }
+                        },
+                    },
             },
         }
     }

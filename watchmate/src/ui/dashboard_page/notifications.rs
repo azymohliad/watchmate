@@ -1,8 +1,9 @@
 use crate::ui;
 use infinitime::{zbus, bt, fdo::notifications};
 use std::sync::Arc;
-use gtk::{gio, prelude::{BoxExt, OrientableExt, WidgetExt, SettingsExt, SettingsExtManual}};
-use relm4::{gtk, ComponentParts, ComponentSender, Component, JoinHandle, RelmWidgetExt};
+use gtk::{gio, prelude::{WidgetExt, SettingsExt, SettingsExtManual}};
+use adw::prelude::{PreferencesRowExt, ActionRowExt};
+use relm4::{adw, gtk, ComponentParts, ComponentSender, Component, JoinHandle};
 
 
 #[derive(Debug)]
@@ -68,22 +69,15 @@ impl Component for Model {
     type Widgets = Widgets;
 
     view! {
-        gtk::Box {
-            set_orientation: gtk::Orientation::Horizontal,
-            set_margin_all: 12,
-            set_spacing: 10,
-
-            gtk::Label {
-                set_label: "Notifications",
-                set_halign: gtk::Align::Start,
-            },
+        #[root]
+        adw::ActionRow {
+            set_title: "Notifications",
 
             #[name = "switch"]
-            gtk::Switch {
+            add_suffix = &gtk::Switch {
                 #[watch]
                 set_state: model.is_enabled && model.task.is_some(),
-                set_halign: gtk::Align::End,
-                set_hexpand: true,
+                set_valign: gtk::Align::Center,
                 connect_active_notify[sender] => move |switch| {
                     sender.input(Input::SetNotificationSession(switch.is_active()));
                 }

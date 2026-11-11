@@ -17,5 +17,9 @@
       <default>""</default>
       <summary>Saved device address</summary>
     </key>
+    <key name="weather-enabled" type="b"><default>false</default><summary>Send weather to PineTime</summary></key>
+    <key name="weather-latitude" type="s"><default>""</default><summary>Latitude in decimal degrees</summary></key>
+    <key name="weather-longitude" type="s"><default>""</default><summary>Longitude in decimal degrees</summary></key>
+    <key name="weather-location" type="s"><default>""</default><summary>Weather location name</summary></key>
   </schema>
 </schemalist>
