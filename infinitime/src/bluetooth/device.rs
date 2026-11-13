@@ -60,6 +60,11 @@ impl InfiniTime {
         Ok(u32::from_le_bytes(data))
     }
 
+    pub async fn write_weather(&self, payload: &[u8]) -> Result<()> {
+        self.chr(&uuids::CHR_SIMPLE_WEATHER)?.write(payload).await?;
+        Ok(())
+    }
+
     // -- Media player control --
 
     // -- Event streams --

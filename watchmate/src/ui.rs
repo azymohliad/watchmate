@@ -3,7 +3,7 @@ use std::{sync::Arc, path::PathBuf, env};
 use futures::{pin_mut, StreamExt};
 use gtk::{gio, glib, prelude::{ApplicationExt, BoxExt, GtkWindowExt, SettingsExt, WidgetExt}};
 use relm4::{
-    adw, gtk, actions::{AccelsPlus, RelmAction, RelmActionGroup},
+    adw::{self, prelude::AdwDialogExt}, gtk, actions::{AccelsPlus, RelmAction, RelmActionGroup},
     Component, ComponentController, ComponentParts,
     ComponentSender, Controller, RelmApp, MessageBroker
 };
@@ -53,6 +53,7 @@ enum Input {
         url: &'static str,
     },
     WindowShown, // Temporary hack
+    ShowSettings,
     About,
     Close,
     Quit,
@@ -70,6 +71,7 @@ struct Model {
     // Other
     infinitime: Option<Arc<bt::InfiniTime>>,
     toast_overlay: adw::ToastOverlay,
+    weather_task: Option<tokio::task::JoinHandle<()>>,
     hide_on_startup: bool,  // Temporary hack
 }
 
@@ -107,15 +109,11 @@ impl Component for Model {
                     add_named[Some("fwupd_view")] = &gtk::Box {
                         append: model.fwupd_page.widget(),
                     },
-                    add_named[Some("settings_view")] = &gtk::Box {
-                        append: model.settings_page.widget(),
-                    },
                     #[watch]
                     set_visible_child_name: match model.active_view {
                         View::Dashboard => "dashboard_view",
                         View::Devices => "devices_view",
                         View::FirmwareUpdate => "fwupd_view",
-                        View::Settings => "settings_view",
                     },
                 },
             },
@@ -160,6 +158,7 @@ impl Component for Model {
             // Other
             infinitime: None,
             toast_overlay: adw::ToastOverlay::new(),
+            weather_task: None,
             hide_on_startup: start_in_background,
         };
 
@@ -191,7 +190,7 @@ impl Component for Model {
         )));
         view_group.add_action(RelmAction::<SettingsViewAction>::new_stateless(
             glib::clone!(#[strong] sender, move |_| {
-                sender.input(Input::SetView(View::Settings));
+                sender.input(Input::ShowSettings);
             }
         )));
         view_group.add_action(RelmAction::<AboutAction>::new_stateless(
@@ -248,6 +247,7 @@ impl Component for Model {
                 });
             }
             Input::DeviceDisconnected => {
+                if let Some(task) = self.weather_task.take() { task.abort(); }
                 log::info!("PineTime disconnected");
                 if let Some(infinitime) = self.infinitime.take() {
                     self.devices_page.emit(devices_page::Input::DeviceConnectionLost(infinitime.device().address()));
@@ -264,6 +264,28 @@ impl Component for Model {
                 }
                 self.dashboard_page.emit(dashboard_page::Input::Connected(infinitime.clone()));
                 self.fwupd_page.emit(fwupd_page::Input::Connected(infinitime.clone()));
+                // Start weather immediately and refresh every 30 minutes while connected.
+                if let Some(task) = self.weather_task.take() { task.abort(); }
+                let weather_settings = gio::Settings::new(APP_ID);
+                if weather_settings.boolean("weather-enabled") {
+                    let lat = weather_settings.string("weather-latitude").parse::<f64>();
+                    let lon = weather_settings.string("weather-longitude").parse::<f64>();
+                    if let (Ok(lat), Ok(lon)) = (lat, lon) {
+                        let name = weather_settings.string("weather-location").to_string();
+                        let watch = infinitime.clone();
+                        self.weather_task = Some(relm4::spawn(async move {
+                            let mut interval = tokio::time::interval(std::time::Duration::from_secs(1800));
+                            loop {
+                                interval.tick().await;
+                                if let Err(err) = crate::weather::update(&watch, lat, lon, &name).await {
+                                    log::warn!("Weather update failed: {err:#}");
+                                }
+                            }
+                        }));
+                    } else {
+                        log::warn!("Weather enabled but coordinates are invalid");
+                    }
+                }
                 // Handle disconnection
                 relm4::spawn(async move {
                     match infinitime.get_property_stream().await {
@@ -314,9 +336,11 @@ impl Component for Model {
                 }
                 self.hide_on_startup = false;
             }
+            Input::ShowSettings => {
+                self.settings_page.widget().present(Some(root));
+            }
             Input::About => {
-                adw::AboutWindow::builder()
-                    .transient_for(root)
+                adw::AboutDialog::builder()
                     .application_icon(APP_ID)
                     .application_name("Watchmate")
                     .version("v0.5.3")
@@ -324,7 +348,7 @@ impl Component for Model {
                     .issue_url("https://github.com/azymohliad/watchmate/issues")
                     .license_type(gtk::License::Gpl30)
                     .build()
-                    .present();
+                    .present(Some(root));
             }
             Input::Close => {
                 root.close();
@@ -343,7 +367,6 @@ pub enum View {
     Dashboard,
     Devices,
     FirmwareUpdate,
-    Settings,
 }
 
 

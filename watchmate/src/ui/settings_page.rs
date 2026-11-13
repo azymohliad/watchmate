@@ -1,10 +1,10 @@
 use crate::ui;
 use gtk::{
-    gio, glib::Propagation, prelude::{
-        GtkApplicationExt, OrientableExt, WidgetExt, ButtonExt, SettingsExt
+    gio, prelude::{
+        GtkApplicationExt, WidgetExt, SettingsExt, EditableExt
     }
 };
-use adw::prelude::{PreferencesPageExt, PreferencesGroupExt, PreferencesRowExt, ActionRowExt};
+use adw::prelude::{AdwDialogExt, PreferencesPageExt, PreferencesGroupExt, PreferencesRowExt, ActionRowExt, PreferencesDialogExt, ComboRowExt};
 use relm4::{adw, gtk, ComponentParts, ComponentSender, Component};
 use ashpd::{desktop::background::Background, WindowIdentifier, Error};
 
@@ -15,12 +15,19 @@ pub enum Input {
     RunInBackgroundResponse(bool),
     AutoStartRequest(bool),
     AutoStartResponse(bool),
+    CitySearch(String),
+    CitySearchResult(String, Vec<crate::weather::GeocodingResult>),
+    CitySelected(u32),
 }
 
 
 pub struct Model {
-    background_switch: gtk::Switch,
-    autostart_switch: gtk::Switch,
+    background_row: adw::SwitchRow,
+    autostart_row: adw::SwitchRow,
+    city_row: adw::ComboRow,
+    city_results: Vec<crate::weather::GeocodingResult>,
+    city_query: String,
+    city_search_task: Option<gtk::glib::JoinHandle<()>>,
     settings: gio::Settings,
 }
 
@@ -54,70 +61,75 @@ impl Component for Model {
     type Output = ();
     type Widgets = Widgets;
 
-    menu! {
-        main_menu: {
-            "Back to Dashboard" => super::DashboardViewAction,
-            "Devices" => super::DevicesViewAction,
-            section! {
-                "About" => super::AboutAction,
-            },
-            section! {
-                "Quit" => super::QuitAction,
-            }
-        }
-    }
-
     view! {
-        gtk::Box {
-            set_hexpand: true,
-            set_orientation: gtk::Orientation::Vertical,
+        #[root]
+        adw::PreferencesDialog {
+            set_title: "Settings",
 
-            adw::HeaderBar {
-                #[wrap(Some)]
-                set_title_widget = &gtk::Label {
-                    set_label: "Settings",
-                },
-
-                pack_start = &gtk::Button {
-                    set_tooltip_text: Some("Back"),
-                    set_icon_name: "go-previous-symbolic",
-                    connect_clicked => |_| {
-                        ui::BROKER.send(ui::Input::SetView(super::View::Dashboard));
-                    },
-                },
-                pack_end = &gtk::MenuButton {
-                    set_icon_name: "open-menu-symbolic",
-                    #[wrap(Some)]
-                    set_popover = &gtk::PopoverMenu::from_model(Some(&main_menu)) {}
-                }
-            },
-
-            adw::PreferencesPage {
+            add = &adw::PreferencesPage {
                 add = &adw::PreferencesGroup {
-                    add = &adw::ActionRow {
-                        set_title: "Run in background",
+                    #[local_ref]
+                    background_row -> adw::SwitchRow {
+                        set_title: "Run in Background",
                         set_subtitle: "When closed",
-                        #[local]
-                        add_suffix = &background_switch -> gtk::Switch {
-                            set_active: model.settings.boolean(super::SETTING_BACKGROUND),
-                            set_valign: gtk::Align::Center,
-                            connect_state_set[sender] => move |_, state| {
-                                sender.input(Input::RunInBackgroundRequest(state));
-                                Propagation::Stop
-                            }
+                        set_active: model.settings.boolean(super::SETTING_BACKGROUND),
+                        connect_active_notify[sender] => move |row| {
+                            sender.input(Input::RunInBackgroundRequest(row.is_active()));
                         }
                     },
-                    add = &adw::ActionRow {
-                        set_title: "Auto-start",
+                    #[local_ref]
+                    autostart_row -> adw::SwitchRow {
+                        set_title: "Auto-Start",
                         set_subtitle: "In background at login",
-                        #[local]
-                        add_suffix = &autostart_switch -> gtk::Switch {
-                            set_active: model.settings.boolean(super::SETTING_AUTO_START),
-                            set_valign: gtk::Align::Center,
-                            connect_state_set[sender] => move |_, state| {
-                                sender.input(Input::AutoStartRequest(state));
-                                Propagation::Stop
-                            }
+                        set_active: model.settings.boolean(super::SETTING_AUTO_START),
+                        connect_active_notify[sender] => move |row| {
+                            sender.input(Input::AutoStartRequest(row.is_active()));
+                        }
+                    },
+                },
+                add = &adw::PreferencesGroup {
+                    set_title: "Weather (Open-Meteo)",
+                    add = &adw::SwitchRow {
+                        set_title: "Send Weather to PineTime",
+                        set_subtitle: "Takes effect after reconnecting the watch",
+                        set_active: model.settings.boolean("weather-enabled"),
+                        connect_active_notify[settings = model.settings.clone()] => move |row| {
+                            _ = settings.set_boolean("weather-enabled", row.is_active());
+                        }
+                    },
+                    add = &adw::EntryRow {
+                        set_title: "Search City",
+                        connect_changed[sender] => move |row| {
+                            sender.input(Input::CitySearch(row.text().to_string()));
+                        }
+                    },
+                    #[local_ref]
+                    city_row -> adw::ComboRow {
+                        set_title: "Search Results",
+                        set_visible: false,
+                        connect_selected_notify[sender] => move |row| {
+                            sender.input(Input::CitySelected(row.selected()));
+                        }
+                    },
+                    add = &adw::EntryRow {
+                        set_title: "Latitude (e.g. 52.15)",
+                        set_text: &model.settings.string("weather-latitude"),
+                        connect_changed[settings = model.settings.clone()] => move |row| {
+                            _ = settings.set_string("weather-latitude", &row.text());
+                        }
+                    },
+                    add = &adw::EntryRow {
+                        set_title: "Longitude (e.g. 10.33)",
+                        set_text: &model.settings.string("weather-longitude"),
+                        connect_changed[settings = model.settings.clone()] => move |row| {
+                            _ = settings.set_string("weather-longitude", &row.text());
+                        }
+                    },
+                    add = &adw::EntryRow {
+                        set_title: "Location Name",
+                        set_text: &model.settings.string("weather-location"),
+                        connect_changed[settings = model.settings.clone()] => move |row| {
+                            _ = settings.set_string("weather-location", &row.text());
                         }
                     },
                 }
@@ -127,13 +139,18 @@ impl Component for Model {
 
     fn init(settings: Self::Init, root: Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
         let model = Self {
-            background_switch: gtk::Switch::new(),
-            autostart_switch: gtk::Switch::new(),
+            background_row: adw::SwitchRow::new(),
+            autostart_row: adw::SwitchRow::new(),
+            city_row: adw::ComboRow::new(),
+            city_results: Vec::new(),
+            city_query: String::new(),
+            city_search_task: None,
             settings,
         };
 
-        let background_switch = model.background_switch.clone();
-        let autostart_switch = model.autostart_switch.clone();
+        let background_row = model.background_row.clone();
+        let autostart_row = model.autostart_row.clone();
+        let city_row = model.city_row.clone();
         let widgets = view_output!();
         ComponentParts { model, widgets }
     }
@@ -141,8 +158,8 @@ impl Component for Model {
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, _root: &Self::Root) {
         match msg {
             Input::RunInBackgroundRequest(enabled) => {
-                if self.background_switch.state() == self.background_switch.is_active() {
-                    // Switch state was reverted, do nothing
+                if enabled == self.settings.boolean(super::SETTING_BACKGROUND) {
+                    // Already in this state, nothing to do
                 } else if enabled {
                     let autostart = self.settings.boolean(super::SETTING_AUTO_START);
                     self.background_portal_request(autostart, move |r| match r {
@@ -165,10 +182,10 @@ impl Component for Model {
                 }
             }
             Input::AutoStartRequest(enabled) => {
-                if self.autostart_switch.state() == self.autostart_switch.is_active() {
-                    // Switch state was reverted, do nothing
+                if enabled == self.settings.boolean(super::SETTING_AUTO_START) {
+                    // Already in this state, nothing to do
                 } else {
-                    let old_state = self.autostart_switch.state();
+                    let old_state = self.settings.boolean(super::SETTING_AUTO_START);
                     self.background_portal_request(enabled, move |r| match r {
                         Ok(response) => {
                             sender.input(Input::AutoStartResponse(response.auto_start()));
@@ -185,14 +202,56 @@ impl Component for Model {
                 }
             }
             Input::RunInBackgroundResponse(enabled) => {
-                self.background_switch.set_state(enabled);
-                self.background_switch.set_active(enabled);
+                self.background_row.set_active(enabled);
                 _ = self.settings.set_boolean(super::SETTING_BACKGROUND, enabled);
             }
             Input::AutoStartResponse(enabled) => {
-                self.autostart_switch.set_state(enabled);
-                self.autostart_switch.set_active(enabled);
+                self.autostart_row.set_active(enabled);
                 _ = self.settings.set_boolean(super::SETTING_AUTO_START, enabled);
+            }
+            Input::CitySearch(query) => {
+                let query = query.trim().to_string();
+                if let Some(task) = self.city_search_task.take() {
+                    task.abort();
+                }
+                if query.chars().count() < 2 {
+                    self.city_query.clear();
+                    self.city_row.set_visible(false);
+                    return;
+                }
+                self.city_query = query.clone();
+                self.city_search_task = Some(relm4::spawn_local(async move {
+                    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+                    match crate::weather::search_city(&query).await {
+                        Ok(results) => sender.input(Input::CitySearchResult(query, results)),
+                        Err(err) => {
+                            log::error!("City search failed: {err}");
+                            ui::BROKER.send(ui::Input::ToastStatic("City search failed"));
+                        }
+                    }
+                }));
+            }
+            Input::CitySearchResult(query, results) => {
+                if query != self.city_query {
+                    return;
+                }
+                if results.is_empty() {
+                    ui::BROKER.send(ui::Input::ToastStatic("No city found"));
+                    self.city_row.set_visible(false);
+                    return;
+                }
+                let labels: Vec<String> = results.iter().map(|r| r.label()).collect();
+                let model = gtk::StringList::new(&labels.iter().map(String::as_str).collect::<Vec<_>>());
+                self.city_row.set_model(Some(&model));
+                self.city_results = results;
+                self.city_row.set_visible(true);
+            }
+            Input::CitySelected(index) => {
+                if let Some(city) = self.city_results.get(index as usize) {
+                    _ = self.settings.set_string("weather-latitude", &city.latitude.to_string());
+                    _ = self.settings.set_string("weather-longitude", &city.longitude.to_string());
+                    _ = self.settings.set_string("weather-location", &city.name);
+                }
             }
         };
     }

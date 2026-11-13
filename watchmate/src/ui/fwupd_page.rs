@@ -158,22 +158,22 @@ impl Component for Model {
                 },
             },
 
-            adw::Clamp {
-                set_maximum_size: 400,
+            adw::StatusPage {
                 set_vexpand: true,
+                set_icon_name: Some("system-software-update-symbolic"),
+                set_title: "Firmware Update",
+                #[watch]
+                set_description: Some(&model.progress_status),
+
+                #[wrap(Some)]
+                set_child = &adw::Clamp {
+                    set_maximum_size: 400,
 
                 gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
                     set_margin_all: 12,
                     set_spacing: 10,
                     set_valign: gtk::Align::Center,
-
-                    gtk::Label {
-                        #[watch]
-                        set_label: &model.progress_status,
-                        set_halign: gtk::Align::Center,
-                        set_margin_top: 20,
-                    },
 
                     gtk::LevelBar {
                         set_min_value: 0.0,
@@ -227,6 +227,7 @@ impl Component for Model {
                             },
                         },
                     }
+                },
                 },
             },
         }
